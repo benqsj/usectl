@@ -1,0 +1,31 @@
+import Image from "next/image";
+import { Button } from "@/components/ui/Button";
+
+export function HeroSection() {
+  return (
+    <section className="relative flex flex-col items-center px-6 pt-16 pb-28 text-center md:pb-36">
+      <div className=" flex items-center justify-center gap-3">
+        <Image src="/herosection/Subtract.svg" alt="" width={58} height={26} aria-hidden="true" />
+        <span className="font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/70">
+          Managed Kubernetes &amp; AI Agent Infrastructure
+        </span>
+      </div>
+
+      <h1 className="mt-[4px] font-heading text-[98px] leading-[1.05] font-bold sm:text-nowrap">
+        One server. <span className="text-brand">Unlimited</span> machines.
+      </h1>
+
+      <p className="mt-2 max-w-[1080px] text-[28px] text-white/70">
+        Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
+        without a DevOps team. Build it. Launch it.
+      </p>
+
+      <div className="mt-[35px] flex flex-wrap items-center justify-center gap-4">
+        <Button href="#">Create Machine</Button>
+        <Button href="#" withArrow>
+          See how it works
+        </Button>
+      </div>
+    </section>
+  );
+}
