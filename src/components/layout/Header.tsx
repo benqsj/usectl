@@ -11,8 +11,8 @@ const NAV_LINKS = [
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/80 backdrop-blur">
-      <div className="relative mx-auto flex h-24 w-full max-w-[1722px] items-center px-6 lg:px-[99px]">
+    <header className="sticky top-0 z-50 w-full border-b border-white/10">
+      <div className="relative mx-auto flex h-24 w-full max-w-[1722px] items-center pl-6 pr-6 lg:pl-[106px] lg:pr-0">
         <Link href="/" aria-label="usectl home" className="shrink-0">
           <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority />
         </Link>

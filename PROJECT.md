@@ -1,0 +1,69 @@
+# usectl Landing — Project Log
+
+Living project context. Read this first after `/clear` or in a new session — it has what `documentation.md` (the spec) doesn't: decisions already made, what's built, what's still open, and where the Figma data lives.
+
+Repo: https://github.com/benqsj/usectl (branch `main`, pushed).
+
+## Spec
+
+`documentation.md` at repo root is the full technical spec (stack rules, architecture layers, animation philosophy, phased build order). Follow it. This file only tracks state and decisions *on top of* that spec.
+
+## Figma
+
+- File key: `uv4OBAdNJBr7GbSovRhnkj` (file: "Usectil-Landing")
+- Design is a single fixed **dark theme**, not light/dark adaptive. Page background (`--background` in `globals.css`) is `#1e1d1d` (corrected 2026-09-16 — was `#0a0a0a`, a guess; user gave the exact hex, which also matches the grain-overlay rectangle's own fill color noted below).
+- Canvas reference size: 1920 wide. Page content container: `max-w-[1722px]` centered with `mx-auto` — on a 1920 viewport this auto-margins to exactly 99px each side, which **is** the Figma inset. Don't *also* add `px-[99px]` on top of `max-w-[1722px]` — that double-applies the inset (bug found and fixed 2026-09-16). Pattern used: `max-w-[1722px] mx-auto w-full px-6 lg:px-0` (the `px-6` is only a mobile-safety fallback below `lg`).
+- User supplied two reference screenshots in `public/figma/`: one is a tight crop of the actual rendered header (trustworthy — matches real node data), the other is a zoomed-out Figma **editor** canvas screenshot with Figma's own toolbar visible in it. The latter may partly be showing Figma's own canvas/alignment grid rather than exported design content — treat it as directional, not pixel-source-of-truth. The precise numeric line data (82px pitch, x=99–1820.8) came from `get_metadata`, which is authoritative.
+- **Figma MCP is rate-limited** (View seat on a Professional plan, not Editor) — tool calls run out fast. Batch `get_design_context` calls, don't re-fetch nodes already logged below.
+
+### Known node IDs (page `0:1`, top-level frame `26:28` "FullLanding", h=13528; a duplicate frame `31:5803` exists offset at x=1960, same content)
+
+| Node | Name | What |
+|---|---|---|
+| `26:29` / `31:5804` | Rectangle 1 | Full-page grain/noise overlay, `#1e1d1d` `mix-blend-multiply` + feTurbulence filter. Exported as `public/background/background-lines.svg` (1920×13528). |
+| `26:31`–`26:52` / `31:5806`–`31:5827` | Line 75–97 | Vertical column-grid hairlines, full page height, spaced **82px apart**, spanning the content container (x=99 to x=1820.8 in canvas coords, i.e. edge-to-edge of the `max-w-[1722px]` container). Exact stroke color/opacity **not confirmed** (rate-limited before I could query it) — implemented as `rgba(255,255,255,0.04)`, 1px (lowered from `0.08` per user feedback 2026-09-16, "too strong"). **Verify against Figma and correct if wrong.** A few of the middle lines (`26:39`–`26:44`) start at y≈173 instead of y=0 (hidden behind hero content up top) — not replicated; current implementation runs all lines full height. |
+| `26:53` | Line 97 | Horizontal header/content divider at y=96, full width. |
+| `26:186` | Group 1 | Header logo (usectl wordmark), x=106 y=39, 150×24. Matches `public/logo/logo.svg`. |
+| `26:190` | Group 1564 | Header nav links: The Machine, Agents, Features, Pricing, Documentation. Space Grotesk 16px, `rgba(255,255,255,0.8)`, items spaced with a consistent 32px gap. |
+| `26:3243` area (~y=13259) | Footer | Footer content exists (nav columns, address, email, phone, newsletter signup with checkbox) — **not yet built**. |
+
+Header frame in Figma has **no CTA button / no hamburger icon** on the right — confirmed by scanning all nodes in the y=0–96 band. Current header is logo (left) + nav (absolutely centered) with empty space right of nav. Flag this to the user if a CTA was intended but missing from the exported frame.
+
+## Stack (installed)
+
+Next.js 16 (App Router, Turbopack) · React 19 · TypeScript (strict) · Tailwind CSS v4 · GSAP 3 + `@gsap/react`. No Lenis, no Three.js/R3F yet — not justified until a section needs them (per spec §2/§18).
+
+## Implemented so far
+
+- Project scaffold: folder structure per spec §3 (`components/{layout,sections,ui,animations}`, `animations/`, `scenes/`, `hooks/`, `lib/`, `types/`).
+- `src/app/layout.tsx` — root layout, SEO metadata skeleton (title/OG/Twitter all `TODO:` placeholders — need real copy), fonts: Geist (default), Space Grotesk (`--font-heading`, used for nav).
+- `src/app/globals.css` — dark theme tokens, `prefers-reduced-motion` baseline.
+- `src/components/layout/Header.tsx` — Server Component, sticky, logo + centered nav (`absolute left-1/2 -translate-x-1/2`), nav hidden below `md` (no mobile menu built yet — Figma header has no hamburger, so this is a gap, not a deliberate call to skip mobile nav). Logo sits `106px` from the container's left edge at `lg+` (`pl-[106px]` on the inner flex row, matches Figma node `26:186` x=106). Header itself and both the logo `Link`/`<nav>` are fully transparent — no background patch — the grid lines are correctly masked out from `BackgroundLines.tsx` now (see below), so a color-patch workaround is no longer needed.
+- `src/components/layout/BackgroundLines.tsx` — Server Component, `position:absolute inset-0 -z-10` inside `<body>` (body is `relative`), renders the grain texture (`background-lines.svg`) + a grid of lines — vertical **and horizontal**, now as **two separate divs** (split 2026-09-16, previously one div with two layered gradients):
+  - **Vertical (column) lines**: bounded to the content container (`mx-auto max-w-[1722px]`, matches Figma's x=99..1820.8 span), pitch `82px` (Figma-confirmed). Masked around the header logo/nav (see below) — these DO render inside the header row, just not behind the logo/nav text. **Right-edge line missing, fixed 2026-09-16**: at the 1920 reference width, `1722/82 = 21` exactly, so the pattern's last repetition falls precisely on the container's right boundary — a CSS gradient line starting exactly at an element's edge has 0 visible width (classic fencepost/off-by-one clipping), so the rightmost vertical line was fully invisible while the leftmost (at local x=0) was fully visible. Fixed by shifting the whole pattern left `backgroundPositionX: -${LINE_THICKNESS_PX/2}px` (half the line thickness) — both edges now show a symmetric partial line instead of one full + one missing. Verified with a pixel-level measurement (see below): before the fix, 21 lines detected (x=99 to x=1739); after, 22 lines (x=99 to x=1820), matching Figma's authoritative x=99..1820.8 span almost exactly.
+  - **Horizontal (row) lines**: full viewport width, `inset-x-0` (literally `left:0`/`right:0`, edge-to-edge — corrected 2026-09-16, was previously bounded to the same 1722px container as the vertical lines, which cut them short of the true page edges). Pitch `114px` (corrected 2026-09-16 from an earlier `96px` guess). Starts at `top: ROW_GRID_TOP` = `calc(96px + ROW_PITCH)` — i.e. **no horizontal line renders inside the header row at all**; the header's own `border-b` is the only line at that seam. **First-gap-vs-rest mismatch, fixed 2026-09-16**: the offset used to be a plain JS-computed constant `96 + 114 = 210px` — correct only exactly at the 1920 reference width, since `114` (the value baked into that constant) doesn't itself scale with viewport the way `ROW_PITCH` (vw-based) does for every *later* gap. At any other viewport (e.g. a 1512px laptop screen), the header-to-first-line gap stayed a fixed 114px while every subsequent gap shrank proportionally (~90px at 1512), so the first gap visibly didn't match the rest — exactly the user's report. Fixed by using `calc(96px + ${ROW_PITCH})` instead of a precomputed px number, so the first gap is always exactly one (fluid) `ROW_PITCH`, matching every later gap at any viewport width. Verified by measuring pixel rows at both 1920 (gaps: 114,114,114,114,114) and 1512 (gaps: 90,90,90,89,90,90) — uniform at both.
+  - **Fluid scaling**: both pitches are expressed in `vw`, derived from a `CANVAS_WIDTH_REF = 1920` (Figma canvas reference) via a `vw()` helper — e.g. `82px` becomes `4.27vw` — so the grid scales proportionally on smaller screens instead of snapping at a breakpoint (per user request 2026-09-16). **Uneven-crispness tradeoff, addressed 2026-09-16**: `vw`-based pitch puts hairlines at non-integer physical pixel positions, so at 1px thickness the browser anti-aliased each line slightly differently (some crisper/darker, some fainter) — confirmed visible at higher test contrast (0.15) via a Playwright screenshot. Asked the user; they chose to widen the lines rather than give up fluid scaling, so `LINE_THICKNESS_PX = 2` now (was a `1px` hairline) — thicker lines make the sub-pixel anti-aliasing variance much less noticeable, confirmed by another Playwright screenshot.
+  - Line color is very faint: `rgba(255,255,255,0.02)`.
+  - **Logo/nav masking**: an inline `<svg><mask id="grid-lines-mask">` (white base rect + two black cutout rects for `LOGO_HOLE`/`NAV_HOLE`) is referenced via CSS `mask: url(#grid-lines-mask)` on the vertical-lines div only, so line strokes don't cross the header logo/nav text while the grain layer (untouched, separate div) still shows through seamlessly — no visible color-patch box. **Root cause of two earlier failed attempts** (a `mask-composite: exclude` multi-layer approach, then a `mask-image: url(data:image/svg+xml,...)` approach) traced and fixed 2026-09-16: the base "cover everything" rect used `width="100%" height="100%"` with default `maskContentUnits="userSpaceOnUse"` — percentages don't reliably resolve to the masked HTML element's box in that mode (no defined SVG viewport), so the rect collapsed to zero size and masked the **entire** element instead of just the two holes. Fixed by using an explicit huge fixed-size rect (`x="-100000" y="-100000" width="200000" height="200000"`) instead of percentages.
+  - **Verification method**: installed Playwright's Chromium locally (`npx playwright install chromium`) and screenshotted `localhost:3000` directly (at a temporarily bumped opacity for visibility, then reverted) — this is now the go-to way to visually verify CSS changes in this project when `claude-in-chrome` isn't connected; don't trust "looks right in the rendered HTML" without an actual screenshot, per the two prior mask failures. Went one step further 2026-09-16 for the edge/gap bugs above: a pure PNG-pixel-row/column brightness scan (small hand-written script, stdlib `zlib`+`struct` only, no Pillow available) to get exact line positions/gaps as numbers instead of eyeballing a screenshot — much more reliable for "is this gap exactly Npx" questions than visual inspection, especially at the very low production opacity (0.02) where lines are barely visible to the eye at all. Worth reaching for again for any future pixel-exact grid/spacing claim.
+- `src/app/page.tsx` — empty `<main>`, hero pending.
+- Removed create-next-app's default SVGs (`file.svg`, `globe.svg`, `next.svg`, `vercel.svg`, `window.svg`) from `public/`.
+
+## Open items / TODO
+
+- Hero section — waiting on Figma node from user.
+- Footer — Figma content exists (`26:3243` area) but not requested/built yet.
+- Verify vertical line color/opacity against actual Figma stroke (currently a guess: `white/2%`, 1px — lowered twice 2026-09-16 per user feedback).
+- Verify the `82px`/`114px` grid pitch and `99px` edge inset against Figma directly (currently: 82px column pitch is Figma-confirmed from earlier metadata; 114px row pitch and the fluid-vw scaling approach are per user instruction 2026-09-16, not yet cross-checked against a fresh Figma render). Figma MCP hit its View-seat rate limit on 2026-09-16 mid-verification (`get_metadata`/`get_screenshot` calls blocked). Re-check once the limit resets.
+- The fluid `vw()` scaling in `BackgroundLines.tsx` only applies to the grid line pitch — the actual content container (`Header.tsx` and future sections, `mx-auto max-w-[1722px]` convention) is still fixed-width-then-collapsing, not vw-fluid. They only align exactly at the `1920px` reference width; at other widths there's minor drift between the grid and the container. Not raised as a problem yet — revisit together with the spec's §14 responsive pass if it becomes visible.
+- Playwright's Chromium is now installed locally (`~/Library/Caches/ms-playwright`) — use `npx playwright screenshot --viewport-size=W,H <url> <out.png>` to visually verify CSS/layout changes directly, instead of trusting "looks right in the rendered HTML/CSS" (see the mask bug above — code and server HTML looked completely correct while the feature was 100% broken in an actual browser).
+- Header: confirm whether a CTA button belongs on the right (currently empty).
+- Mobile nav (hamburger menu) — not in the Figma header frame; ask before building one.
+- SEO metadata (`layout.tsx`) still has placeholder `TODO:` copy — fill in once real product copy exists.
+- Responsive pass (spec §14) and animation system (spec §4 Phase 4) not started — site is currently static, no scroll-driven behavior yet.
+
+## Conventions established
+
+- Shared content container: `mx-auto max-w-[1722px] px-6 lg:px-[99px]` — reuse this, don't invent a new max-width per section.
+- Server Components by default; only mark `"use client"` where GSAP/interactivity is actually needed (spec §4).
+- Update **this file** after any non-trivial change (new section, new dependency, new architectural decision, new Figma node explored) so a cleared session can resume without re-deriving context.
