@@ -14,7 +14,7 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-white/10">
       <div
         className="relative flex h-24 w-full items-center"
-        style={{ paddingLeft: "5.520833vw", paddingRight: "5.15625vw" }}
+        style={{ paddingLeft: "6.770833vw", paddingRight: "5.15625vw" }}
       >
         <Link href="/" aria-label="usectl home" className="shrink-0">
           <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority />
