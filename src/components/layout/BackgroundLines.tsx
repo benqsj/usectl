@@ -1,12 +1,6 @@
 import type { CSSProperties } from "react";
+import { INSET_VW, COLUMN_PITCH, ROW_PITCH, HEADER_HEIGHT_PX } from "@/lib/grid";
 
-const CANVAS_WIDTH_REF = 1920; // Figma canvas reference width — everything below is expressed in vw so it scales fluidly on any screen size, matching the FullHD proportions exactly instead of snapping at a breakpoint
-const vw = (px: number) => `${(px / CANVAS_WIDTH_REF) * 100}vw`;
-
-const INSET_VW = vw(99); // content container inset — must stay in sync with Header.tsx's own left/right padding
-const COLUMN_PITCH = vw(82); // vertical lines
-const ROW_PITCH = vw(114); // horizontal lines
-const HEADER_HEIGHT_PX = 96; // Header.tsx h-24 — fixed, doesn't scale
 const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
 const LINE_COLOR = "rgba(255,255,255,0.02)";
 const LINE_THICKNESS_PX = 2; // thicker than a hairline on purpose — with fluid (vw) pitch, 1px lines land on fractional device pixels and anti-alias unevenly (some crisp, some blurry); 2px makes that variance much less noticeable
