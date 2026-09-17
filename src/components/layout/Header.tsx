@@ -11,7 +11,7 @@ const NAV_LINKS = [
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10">
+    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/60 backdrop-blur-md">
       <div
         className="relative flex h-24 w-full items-center"
         style={{ paddingLeft: "6.770833vw", paddingRight: "5.15625vw" }}
