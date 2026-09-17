@@ -82,7 +82,7 @@ interface MachineScrollRefs {
 // from EXIT_GROW_START to the end of the pin, the wordmark fades/blurs away while topside.svg
 // grows further, both tied directly to scroll progress (freezes if scrolling stops, reverses
 // smoothly on scrolling back). Scrolling back up out of the pin entirely unwinds everything;
-// re-entering from below (GROUP_2's direction) snaps straight to the fully-finished state.
+// re-entering from below (the steps 3-8 section's direction) snaps straight to the fully-finished state.
 export function useMachineScrollAnimation({
   sectionRef,
   wordmarkRef,
@@ -269,7 +269,7 @@ export function useMachineScrollAnimation({
         // Guarded by INSTANT_WINDOW_MS — see its comment for why onEnter can fire during initial
         // setup (not just a later real scroll-crossing) when already positioned inside the pin.
         onEnter: () => (performance.now() < instantUntil ? jumpWordmarkToFinal() : playWordmarkEntrance()),
-        // Re-entering from below (GROUP_2's direction, past the pin's end) — the whole sequence
+        // Re-entering from below (the steps 3-8 section's direction, past the pin's end) — the whole sequence
         // was already seen going forward, so just show its true end state, no replay.
         onEnterBack: () => {
           topsideEntered = true;
@@ -277,7 +277,7 @@ export function useMachineScrollAnimation({
           gsap.set(wordmark, { opacity: 0, filter: BLUR_HIDDEN_FILTER });
           gsap.set(topside, { opacity: 1, scale: TOPSIDE_END_SCALE });
         },
-        // Scrolled back up out of the pin (past its start, back toward GROUP_1) — unwind
+        // Scrolled back up out of the pin (past its start, back toward the intro steps) — unwind
         // everything, not just the wordmark entrance.
         onLeaveBack: () => {
           topsideEntered = false;

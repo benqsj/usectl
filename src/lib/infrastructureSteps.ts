@@ -1,19 +1,16 @@
-// Content for the two "pinned scroll, content swaps IN PLACE" sequences that sit around the
-// standalone "machine" screen section (that screen is a real, separate section — not part of
-// this file). Architecture (per 2026-09 discussion):
+// Content for the two "pinned scroll, content swaps IN PLACE" sequences around the standalone
+// "machine" screen section. Architecture (revised 2026-09-17 — the earlier 4 + 4 split was a
+// mistake):
 //
-//   [group 1: 4 steps, pinned — eyebrow/heading/paragraph swap as you scroll, layout/image/
-//    progress bar stay fixed, no real page scroll happens]
-//   -> real scroll transition ->
-//   [machine screen — unrelated content, own component]
-//   -> real scroll transition ->
-//   [group 2: 4 steps, pinned — same mechanism as group 1]
+//   [INTRO: steps 1-2, pinned, with the 2-part titanium server on the right:
+//      step 1 (bottom part lit) -> scroll opens the server -> step 2 (top part lit)]
+//   -> real scroll ->
+//   [machine screen — own component]
+//   -> real scroll ->
+//   [AFTER_MACHINE: steps 3-8, pinned, text only for now (server visual comes later)]
 //
-// Each step maps 1:1 to a stop along that group's pinned scroll range, and each step's index also
-// drives the small statistic-bar progress fill (0/4 -> 4/4 per group, green) once that's wired up.
-// Icons are NOT wired up yet (text-only for now, per instruction) — steps 3+4 and steps 7+8
-// intentionally repeat the SAME heading/paragraph within their group; they're meant to be
-// distinguished only by icon once that's built, not by text.
+// Icons are NOT wired up yet (text-only for now, per instruction). Steps 3+4 and 7+8
+// intentionally repeat the SAME heading/paragraph; they will only be told apart by icon.
 
 export interface InfrastructureStep {
   eyebrow: string;
@@ -23,7 +20,7 @@ export interface InfrastructureStep {
 
 // Steps 1-4 — first pinned sequence. Step 1 is the section's current/existing content
 // (InfrastructureSection.tsx as it is today) — steps 2-4 are new.
-export const INFRASTRUCTURE_STEPS_GROUP_1: InfrastructureStep[] = [
+const STEPS_1_TO_4: InfrastructureStep[] = [
   {
     eyebrow: "Infrastructure Freedom",
     heading: "You came here to build.",
@@ -58,7 +55,7 @@ export const INFRASTRUCTURE_STEPS_GROUP_1: InfrastructureStep[] = [
 // Steps 5-8 — second pinned sequence, after the machine screen. Eyebrow label not yet confirmed
 // for this group (reused "Infrastructure Freedom" as a placeholder — same as group 1); update once
 // the real label is known.
-export const INFRASTRUCTURE_STEPS_GROUP_2: InfrastructureStep[] = [
+const STEPS_5_TO_8: InfrastructureStep[] = [
   {
     eyebrow: "Infrastructure Freedom",
     heading: "Run each part independently.",
@@ -86,3 +83,10 @@ export const INFRASTRUCTURE_STEPS_GROUP_2: InfrastructureStep[] = [
       "Run AI agents alongside the apps, APIs, databases, and tools they use. Your coding assistant can also deploy updates and inspect logs through the usectl CLI.",
   },
 ];
+
+const ALL_STEPS = [...STEPS_1_TO_4, ...STEPS_5_TO_8];
+
+// Steps 1-2 — before the machine screen.
+export const INFRASTRUCTURE_STEPS_INTRO: InfrastructureStep[] = ALL_STEPS.slice(0, 2);
+// Steps 3-8 — after the machine screen.
+export const INFRASTRUCTURE_STEPS_AFTER_MACHINE: InfrastructureStep[] = ALL_STEPS.slice(2);

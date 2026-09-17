@@ -3,13 +3,9 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HEADER_HEIGHT_PX } from "@/lib/grid";
-import { INFRASTRUCTURE_PIN_SCROLL_DISTANCE } from "@/lib/infrastructureLayout";
-import { activeServerLayer, serverLayerOffset } from "@/lib/serverLayerSteps";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX, BLUR_VISIBLE_FILTER } from "@/components/ui/BlurText";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
-
-const PIN_SCROLL_DISTANCE = INFRASTRUCTURE_PIN_SCROLL_DISTANCE;
 
 // --- Step swap: TRIGGERED, time-based (matches the approved server-layers demo) ----------------
 // Only "which step is active" follows scroll: the pinned range is split into `stepCount` equal
@@ -35,8 +31,16 @@ const FIELD_IN: Record<Field, { stagger: number; delay: number }> = {
 // Server timings — exactly the demo's values (seconds).
 const SERVER_LIT_IN = { duration: 0.7, delay: 0.1 };
 const SERVER_LIT_OUT = { duration: 0.45 };
-const SERVER_MOVE_DURATION = 0.8;
 const SERVER_FLASH = { from: "brightness(1.7) blur(3px)", to: "brightness(1) blur(0px)", duration: 0.9 };
+// Small "pop" on the part that just lit up.
+const SERVER_BUMP_PX = 10;
+
+// The server opens together WITH the step swap (per user: the separation and the switch should
+// happen at the same moment), so it's a triggered tween like everything else — not scrubbed.
+const SERVER_OPEN_DURATION = 0.8;
+
+// Which server part is lit on a step: bottom first, then top (bottom-up).
+const SERVER_PART_ORDER = ["bottom", "top"] as const;
 
 interface InfrastructureScrollRefs {
   // Pin trigger AND pin target — the card div, not the outer <section>, so the section's own
@@ -44,14 +48,17 @@ interface InfrastructureScrollRefs {
   // below).
   cardRef: RefObject<HTMLDivElement | null>;
   fillRef: RefObject<HTMLDivElement | null>;
-  // Layered server wrapper (children: `[data-server-layer]`, each with a `[data-server-lit]`
-  // variant) + the green halo that follows the lit layer.
+  // Server wrapper (children: `[data-server-part="bottom|top"]`, each with a `[data-server-lit]`
+  // variant). Empty when the section has no server.
   serverRef: RefObject<HTMLDivElement | null>;
-  haloRef: RefObject<HTMLSpanElement | null>;
+  // How far the bottom part moves down when the server opens, in % of the part's own height
+  // (0 = no server).
+  serverOpenOffsetPercent: number;
+  pinScrollDistance: number;
   // Number of steps rendered (BlurText elements carry `data-step` 0..stepCount-1 and
   // `data-field` eyebrow|heading|paragraph — see InfrastructureSectionClient.tsx).
   stepCount: number;
-  // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
+  // Server-rendered placeholder spacer that pre-reserves `pinScrollDistance` worth of height
   // before any client JS runs — see the long comment where this is collapsed, below. Mirrors
   // heroScrollAnimation.ts's identical fix for an identical, already-diagnosed bug (see
   // PROJECT.md): without it, a hard refresh while scrolled past this pin restores scrollY against
@@ -61,14 +68,16 @@ interface InfrastructureScrollRefs {
 }
 
 // Pins the card once it's vertically centered in the space below the sticky header, holds the
-// page still for PIN_SCROLL_DISTANCE worth of scroll, and on the SAME ScrollTrigger: scrubs the
-// static bar's green fill, and triggers the step swap (text + server) whenever progress crosses
-// into a new step slice. Then releases and lets the page continue scrolling normally.
+// page still for `pinScrollDistance` worth of scroll, and on the SAME ScrollTrigger: scrubs the
+// static bar's green fill (and, with a server, the server opening), and triggers the step swap
+// (text + lit server part) whenever progress crosses into a new step. Then releases and lets the
+// page continue scrolling normally.
 export function useInfrastructureScrollAnimation({
   cardRef,
   fillRef,
   serverRef,
-  haloRef,
+  serverOpenOffsetPercent,
+  pinScrollDistance,
   stepCount,
   ssrScrollReserveRef,
 }: InfrastructureScrollRefs) {
@@ -104,31 +113,37 @@ export function useInfrastructureScrollAnimation({
         });
       };
 
-      // --- server helpers ---
-      const serverLayers = Array.from(serverRef.current?.querySelectorAll<HTMLElement>("[data-server-layer]") ?? []);
-      const serverLit = serverLayers
-        .map((layer) => layer.querySelector<HTMLElement>("[data-server-lit]"))
-        .filter((el): el is HTMLElement => el !== null);
-      // Layer pitch / height in px (CSS-var driven, differs per breakpoint) — re-measured on refresh.
-      const haloY = (active: number) => {
-        const gap = serverLayers[1]?.offsetTop ?? 0;
-        const height = serverLayers[serverLayers.length - 1]?.offsetHeight ?? 0;
-        return active * gap + height * 0.3;
-      };
+      // --- server helpers (no-ops when the section has no server) ---
+      const hasServer = serverOpenOffsetPercent > 0;
+      const serverPart = (name: string) =>
+        serverRef.current?.querySelector<HTMLElement>(`[data-server-part="${name}"]`) ?? null;
+      const parts = SERVER_PART_ORDER.map((name) => {
+        const el = serverPart(name);
+        return { el, lit: el?.querySelector<HTMLElement>("[data-server-lit]") ?? null };
+      });
+      const partEls = parts.flatMap((p) => (p.el ? [p.el] : []));
+      const litEls = parts.flatMap((p) => (p.lit ? [p.lit] : []));
+      const bottomPart = parts[0].el;
+      const activePart = (step: number) => step % SERVER_PART_ORDER.length;
+
+      // The server is closed on step 1 and open from step 2 on.
+      const openPercentFor = (step: number) => (step >= 1 ? serverOpenOffsetPercent : 0);
+
+      const stepAt = (progress: number) => Math.min(stepCount - 1, Math.floor(progress * stepCount));
 
       // Lands on `step` with no motion (initial mount, refresh/resize, reduced motion).
       const jumpToStep = (step: number) => {
-        gsap.killTweensOf([...allWords, ...serverLayers, ...serverLit]);
-        if (haloRef.current) gsap.killTweensOf(haloRef.current);
+        gsap.killTweensOf([...allWords, ...partEls, ...litEls]);
 
         gsap.set(allWords, HIDDEN);
         for (const field of FIELDS) gsap.set(wordsOf(step, field), VISIBLE);
         setAriaActive(step);
 
-        const active = activeServerLayer(step);
-        serverLayers.forEach((layer, i) => gsap.set(layer, { y: serverLayerOffset(active, i) }));
-        serverLit.forEach((lit, i) => gsap.set(lit, { opacity: i === active ? 1 : 0, filter: "none" }));
-        if (haloRef.current) gsap.set(haloRef.current, { y: haloY(active) });
+        parts.forEach((p, i) => {
+          if (p.lit) gsap.set(p.lit, { opacity: i === activePart(step) ? 1 : 0, filter: "none" });
+          if (p.el) gsap.set(p.el, { y: 0 });
+        });
+        if (bottomPart) gsap.set(bottomPart, { yPercent: openPercentFor(step) });
       };
 
       jumpToStep(0);
@@ -143,29 +158,42 @@ export function useInfrastructureScrollAnimation({
       gsap.set(fill, { clipPath: "inset(0% 100% 0% 0%)" });
 
       const animateServer = (to: number) => {
-        const active = activeServerLayer(to);
-        serverLayers.forEach((layer, i) => {
-          const lit = serverLit[i];
-          const on = i === active;
-          gsap.killTweensOf([layer, lit]);
+        if (!hasServer) return;
+        const active = activePart(to);
+        parts.forEach((p, i) => {
+          if (!p.lit) return;
+          gsap.killTweensOf(p.lit);
           gsap.to(
-            lit,
-            on
+            p.lit,
+            i === active
               ? { opacity: 1, duration: SERVER_LIT_IN.duration, delay: SERVER_LIT_IN.delay, ease: "power2.out" }
               : { opacity: 0, duration: SERVER_LIT_OUT.duration, ease: "power2.in" },
           );
-          gsap.to(layer, { y: serverLayerOffset(active, i), duration: SERVER_MOVE_DURATION, ease: "power3.out" });
         });
-        if (haloRef.current) {
-          gsap.killTweensOf(haloRef.current);
-          gsap.to(haloRef.current, { y: haloY(active), duration: SERVER_MOVE_DURATION, ease: "power3.out" });
+        const { el, lit } = parts[active];
+        if (lit) {
+          gsap.fromTo(
+            lit,
+            { filter: SERVER_FLASH.from },
+            { filter: SERVER_FLASH.to, duration: SERVER_FLASH.duration, ease: "power2.out" },
+          );
         }
-        // Quick flash on the newly lit layer.
-        gsap.fromTo(
-          serverLit[active],
-          { filter: SERVER_FLASH.from },
-          { filter: SERVER_FLASH.to, duration: SERVER_FLASH.duration, ease: "power2.out" },
-        );
+        // Opening (the parts moving apart) runs in the same tween batch as the lighting swap.
+        if (bottomPart) {
+          gsap.killTweensOf(bottomPart, "yPercent");
+          gsap.to(bottomPart, {
+            yPercent: openPercentFor(to),
+            duration: SERVER_OPEN_DURATION,
+            ease: "power3.out",
+          });
+        }
+        if (el) {
+          gsap.killTweensOf(el, "y");
+          gsap
+            .timeline()
+            .to(el, { y: -SERVER_BUMP_PX, duration: 0.3, ease: "power2.out" })
+            .to(el, { y: 0, duration: 0.8, ease: "power3.out" });
+        }
       };
 
       const animateToStep = (to: number, from: number) => {
@@ -204,7 +232,7 @@ export function useInfrastructureScrollAnimation({
       // contextSafe: these tweens are created later from ScrollTrigger callbacks, outside the
       // useGSAP callback — wrapping them registers them with the context so unmount reverts them.
       const syncToProgress = contextSafe!((progress: number, instant: boolean) => {
-        const next = Math.min(stepCount - 1, Math.floor(progress * stepCount));
+        const next = stepAt(progress);
         if (instant) {
           jumpToStep(next);
         } else if (next !== currentStep) {
@@ -223,7 +251,7 @@ export function useInfrastructureScrollAnimation({
             // Header is a fixed HEADER_HEIGHT_PX tall, so "centered in the space below it" sits
             // HEADER_HEIGHT_PX/2 below the viewport's true geometric center.
             start: `center center+=${HEADER_HEIGHT_PX / 2}`,
-            end: `+=${PIN_SCROLL_DISTANCE}`,
+            end: `+=${pinScrollDistance}`,
             scrub: true,
             pin: true,
             // GSAP disables automatic pin-spacing by default when the pinned element's parent is
@@ -233,7 +261,7 @@ export function useInfrastructureScrollAnimation({
             pinSpacing: true,
             invalidateOnRefresh: true,
             onUpdate: (self) => syncToProgress(self.progress, performance.now() < instantUntil),
-            // Resize / initial refresh: land on the right step (and re-measure the halo) instantly.
+            // Resize / initial refresh: land on the right step instantly.
             onRefresh: (self) => syncToProgress(self.progress, true),
           },
         })
@@ -251,6 +279,6 @@ export function useInfrastructureScrollAnimation({
         }, 100);
       }
     },
-    { scope: cardRef, dependencies: [stepCount] },
+    { scope: cardRef, dependencies: [stepCount, pinScrollDistance, serverOpenOffsetPercent] },
   );
 }

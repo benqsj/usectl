@@ -1,29 +1,51 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, type CSSProperties } from "react";
+import { useRef } from "react";
 import { InfrastructureStaticBar } from "./InfrastructureStaticBar";
 import { useInfrastructureScrollAnimation } from "@/animations/infrastructureScrollAnimation";
-import { INFRASTRUCTURE_PIN_SCROLL_DISTANCE } from "@/lib/infrastructureLayout";
 import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import { BlurText } from "@/components/ui/BlurText";
-import type { ServerLayerVariant } from "@/lib/serverLayerVariants";
-import { SERVER_CAP_WIDTH_PERCENT, activeServerLayer, serverLayerOffset } from "@/lib/serverLayerSteps";
+import type { MachineServerParts } from "@/lib/machineServerParts";
+
+// The hero's cap layer is 383 wide, the other layers 372 (both 256 tall) — same ratio as
+// HeroSectionClient.tsx. Kept here, NOT imported from serverStackLayers.ts: that module reads the
+// files with node:fs and importing a VALUE from it would pull fs into this client bundle (it
+// breaks the build; only `import type` from a server-only module is safe).
+
+const STACK_CAP_WIDTH_PERCENT = (383 / 372) * 100;
 
 interface InfrastructureSectionClientProps {
   steps: InfrastructureStep[];
   className: string;
-  serverLayers: ServerLayerVariant[];
+  // 2-part titanium server (intro) — animated. null when this section doesn't have it.
+  machineServer: MachineServerParts | null;
+  // Hero's 4 layer SVGs (steps 3-8) — rendered STATIC, no animation yet.
+  stackLayers: string[] | null;
+  pinScrollDistance: number;
 }
 
-export function InfrastructureSectionClient({ steps, className, serverLayers }: InfrastructureSectionClientProps) {
+export function InfrastructureSectionClient({
+  steps,
+  className,
+  machineServer,
+  stackLayers,
+  pinScrollDistance,
+}: InfrastructureSectionClientProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
   const serverRef = useRef<HTMLDivElement>(null);
-  const haloRef = useRef<HTMLSpanElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
-  useInfrastructureScrollAnimation({ cardRef, fillRef, serverRef, haloRef, ssrScrollReserveRef, stepCount: steps.length });
+  useInfrastructureScrollAnimation({
+    cardRef,
+    fillRef,
+    serverRef,
+    ssrScrollReserveRef,
+    stepCount: steps.length,
+    pinScrollDistance,
+    serverOpenOffsetPercent: machineServer ? (machineServer.openOffset / machineServer.height) * 100 : 0,
+  });
 
   return (
     <section className={className}>
@@ -86,56 +108,71 @@ export function InfrastructureSectionClient({ steps, className, serverLayers }: 
             </div>
           </div>
 
-          {/* Layered server: the hero's 4 layer SVGs, slightly separated, one layer lit green per
-              step (bottom-up). Each layer carries a dark and a lit variant (built server-side in
-              serverLayerVariants.ts); useInfrastructureScrollAnimation crossfades them, lifts the lit
-              layer and moves the halo, scrubbed on the same progress as the text swap. The SSR
-              state below matches step 0. --w sets the stack width; gap and layer height derive
-              from it (layer SVGs are 372x256, cap 383x256). */}
+          {/* Right column. Either the animated 2-part titanium server (intro), the hero's 4-layer
+              server rendered static (steps 3-8, no animation yet), or nothing — in every case the
+              column keeps the same width so the text layout doesn't shift between sections.
+              The top margin sits the server on the card's optical centre (the static bar below the
+              row pulls that centre down). */}
           <div
             ref={serverRef}
             aria-hidden="true"
-            className="relative mt-[100px] shrink-0 [--w:160px] md:max-[1799px]:[--w:200px] min-[1800px]:[--w:400px]"
-            style={
-              {
-                "--gap": "calc(var(--w) * 0.19)",
-                "--lh": "calc(var(--w) * 256 / 372)",
-                width: "var(--w)",
-                height: "calc(3 * var(--gap) + var(--lh))",
-              } as CSSProperties
-            }
+            className={`relative w-[260px] shrink-0 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] ${
+              // The machine server's own top margin sits it on the card's optical centre (the
+              // static bar below the row pulls that centre down); the static stack is centred by
+              // the row itself.
+              machineServer ? "mt-[120px] min-[1800px]:mt-[140px]" : ""
+            }`}
+            style={machineServer ? { aspectRatio: `${machineServer.width} / ${machineServer.height}` } : undefined}
           >
-            <span
-              ref={haloRef}
-              className="pointer-events-none absolute top-0 left-1/2 aspect-[3/1] w-[115%] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(0,255,135,0.35),rgba(0,255,135,0))] blur-[18px]"
-              style={{ transform: `translateY(calc(${activeServerLayer(0)} * var(--gap) + var(--lh) * 0.3))` }}
-            />
-            {serverLayers.map((layer, i) => {
-              const litOnLoad = i === activeServerLayer(0);
-              return (
-                <div
-                  key={layer.name}
-                  data-server-layer={i}
-                  className="absolute left-1/2 -translate-x-1/2"
-                  style={{
-                    top: `calc(${i} * var(--gap))`,
-                    width: i === 0 ? `${SERVER_CAP_WIDTH_PERCENT}%` : "100%",
-                    zIndex: serverLayers.length - i + 1,
-                    transform: `translateY(${serverLayerOffset(activeServerLayer(0), i)}px)`,
-                  }}
-                >
-                  <div className="relative">
-                    <div dangerouslySetInnerHTML={{ __html: layer.dark }} />
-                    <div
-                      data-server-lit=""
-                      className="absolute inset-0"
-                      style={{ opacity: litOnLoad ? 1 : 0 }}
-                      dangerouslySetInnerHTML={{ __html: layer.lit }}
-                    />
-                  </div>
+            {machineServer && (
+              <>
+                {/* Bottom part: lit on step 1; drops down when the server opens on step 2. */}
+                <div data-server-part="bottom" className="absolute inset-0">
+                  <div className="absolute inset-0" dangerouslySetInnerHTML={{ __html: machineServer.bottom.dark }} />
+                  <div
+                    data-server-lit=""
+                    className="absolute inset-0"
+                    dangerouslySetInnerHTML={{ __html: machineServer.bottom.lit }}
+                  />
                 </div>
-              );
-            })}
+                {/* Top part: lit on step 2. */}
+                <div data-server-part="top" className="absolute inset-0">
+                  <div className="absolute inset-0" dangerouslySetInnerHTML={{ __html: machineServer.top.dark }} />
+                  <div
+                    data-server-lit=""
+                    className="absolute inset-0"
+                    style={{ opacity: 0 }}
+                    dangerouslySetInnerHTML={{ __html: machineServer.top.lit }}
+                  />
+                </div>
+              </>
+            )}
+
+            {stackLayers && (
+              // Static 4-layer stack — same geometry as the hero (layers 372x256, cap 383 wide),
+              // stacked with a gap of 19% of the stack width. Nothing animates it yet.
+              <div
+                className="relative mx-auto [--w:160px] md:max-[1799px]:[--w:200px] min-[1800px]:[--w:400px]"
+                style={{
+                  ["--gap" as string]: "calc(var(--w) * 0.19)",
+                  width: "var(--w)",
+                  height: "calc(3 * var(--gap) + var(--w) * 256 / 372)",
+                }}
+              >
+                {stackLayers.map((layer, i) => (
+                  <div
+                    key={i}
+                    className="absolute left-1/2 -translate-x-1/2"
+                    style={{
+                      top: `calc(${i} * var(--gap))`,
+                      width: i === 0 ? `${STACK_CAP_WIDTH_PERCENT}%` : "100%",
+                      zIndex: stackLayers.length - i,
+                    }}
+                    dangerouslySetInnerHTML={{ __html: layer }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -147,7 +184,7 @@ export function InfrastructureSectionClient({ steps, className, serverLayers }: 
           pin-spacer is created) — server-rendered so the page is the SAME total height before and
           after client JS runs. Mirrors HeroSectionClient.tsx's identical fix for an identical bug
           (see PROJECT.md). */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: INFRASTRUCTURE_PIN_SCROLL_DISTANCE }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: pinScrollDistance }} />
     </section>
   );
 }
