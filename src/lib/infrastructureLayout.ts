@@ -6,7 +6,7 @@
 // diagnosed issue in heroScrollAnimation.ts/heroLayers.ts).
 //
 // Bumped from 500 (originally just enough for the bar-fill alone) to 2000 now that the same pin
-// also has to hold long enough to read 4 headings/paragraphs — a starting guess (roughly 400px
-// hold per step + 150px per transition, see STEP_HOLD_DURATION/STEP_FADE_DURATION in
-// infrastructureScrollAnimation.ts), not tuned against real user feedback yet.
+// also has to hold long enough to read 4 headings/paragraphs. The range is split into equal
+// segments per step (2000 / 4 = 500px of scroll per step); the mask-reveal swap itself is
+// time-based, not scroll-length based. Starting guess, not tuned against real user feedback yet.
 export const INFRASTRUCTURE_PIN_SCROLL_DISTANCE = 2000;

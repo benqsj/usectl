@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scroll Text Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1a1a1a;--line:#2a2a2a;--text:#e6e6e6;--muted:#9a9a9a;--green:#6fd08c;--blue:#3b82f6}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:"Space Grotesk",system-ui,sans-serif}
+body{background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:86px 86px;background-attachment:fixed}
+.spacer{height:70vh;display:grid;place-items:center;color:var(--muted);font:13px "JetBrains Mono",monospace;letter-spacing:.08em}
+.pin{height:500vh;position:relative}
+.sticky{position:sticky;top:0;height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.frame{position:relative;width:min(1300px,100%);height:min(690px,92vh);border:1px solid #333;border-radius:10px;
+  clip-path:polygon(60px 0,100% 0,100% 100%,0 100%,0 40px);background:rgba(26,26,26,.85);
+  display:grid;grid-template-columns:1.15fr 1fr;align-items:center;padding:0 64px}
+.label{display:flex;align-items:center;gap:10px;font-size:15px;color:#bdbdbd;height:22px;margin-bottom:14px}
+.hatch{width:44px;height:16px;background:repeating-linear-gradient(-60deg,var(--green) 0 3px,transparent 3px 8px);opacity:.7}
+h1{font-weight:400;font-size:clamp(44px,7vw,96px);line-height:.98;letter-spacing:-.02em;min-height:2em}
+p.body{margin-top:34px;max-width:36ch;font-size:clamp(16px,1.6vw,20px);line-height:1.5;color:#cfcfcf;font-weight:300;min-height:6em}
+.w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}
+.wi{display:inline-block;will-change:transform,opacity,filter}
+.counter{position:absolute;left:64px;top:36px;font:12px "JetBrains Mono",monospace;color:var(--muted)}
+.counter b{color:var(--green);font-weight:400}
+.ruler{position:absolute;left:62px;bottom:60px;width:min(620px,50%)}
+.stack{width:100%;max-width:440px;justify-self:center;overflow:visible}
+.slab{transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+.lit{opacity:0;transition:opacity .6s ease}
+.slab.on .lit{opacity:1}
+#glow{transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+#ast{transition:transform .9s cubic-bezier(.2,.8,.2,1);transform-origin:0 0}
+.cross{position:absolute;width:24px;height:24px}
+.cross:before,.cross:after{content:"";position:absolute;background:#555}
+.cross:before{left:11px;top:0;width:1px;height:24px}.cross:after{top:11px;left:0;height:1px;width:24px}
+.dots{position:absolute;right:26px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px}
+.dots i{width:6px;height:6px;border-radius:50%;background:#444;transition:.3s}
+.dots i.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+/* switcher */
+.ui{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:9;display:flex;gap:4px;padding:4px;
+  background:#111;border:1px solid #333;border-radius:10px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 32px)}
+.ui button{all:unset;cursor:pointer;padding:8px 12px;border-radius:7px;font:12px "JetBrains Mono",monospace;color:#aaa}
+.ui button.on{background:#2a2a2a;color:#fff}
+.ui button .rec{color:var(--green)}
+@media (max-width:760px){
+  .frame{grid-template-columns:1fr;padding:70px 20px 40px;align-content:center;gap:10px;height:92vh}
+  .stack{max-width:230px;order:-1}
+  .counter{left:20px;top:24px}.ruler{left:20px;bottom:24px;width:calc(100% - 40px)}
+  p.body{margin-top:18px;min-height:7em}.cross,.dots{display:none}
+}
+@media (prefers-reduced-motion:reduce){.slab,#glow,#ast,.lit{transition:none}}
+</style>
+</head>
+<body>
+<div class="ui" id="ui">
+  <button data-m="mask" class="on">Mask reveal <span class="rec">★</span></button>
+  <button data-m="blur">Blur stagger</button>
+  <button data-m="scramble">Scramble</button>
+  <button data-m="wipe">Clip wipe</button>
+</div>
+
+<div class="spacer">↓ SCROLL ↓</div>
+
+<section class="pin" id="pin">
+ <div class="sticky">
+  <div class="frame">
+   <div class="counter"><b id="cur">01</b> / 04</div>
+   <span class="cross" style="left:59%;top:120px"></span><span class="cross" style="right:40px;top:120px"></span>
+   <span class="cross" style="left:59%;bottom:190px"></span><span class="cross" style="right:40px;bottom:190px"></span>
+   <div>
+     <div class="label"><span class="hatch"></span><span id="lab"></span></div>
+     <h1 id="h"></h1>
+     <p class="body" id="p"></p>
+   </div>
+   <svg class="stack" id="stack" viewBox="0 0 400 440" aria-hidden="true">
+     <defs>
+       <linearGradient id="gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fbf7a"/><stop offset="1" stop-color="#9fe7b4"/></linearGradient>
+       <linearGradient id="gr" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8fdcaa"/><stop offset=".6" stop-color="#9a8fd8"/><stop offset="1" stop-color="#6fd08c"/></linearGradient>
+       <radialGradient id="gg"><stop offset="0" stop-color="#6fd08c" stop-opacity=".45"/><stop offset="1" stop-color="#6fd08c" stop-opacity="0"/></radialGradient>
+     </defs>
+     <ellipse id="glow" cx="0" cy="0" rx="190" ry="60" fill="url(#gg)"/>
+     <g id="layers"></g>
+   </svg>
+   <svg class="ruler" id="ruler" viewBox="0 0 620 24" preserveAspectRatio="none"></svg>
+   <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+  </div>
+ </div>
+</section>
+
+<div class="spacer">END</div>
+
+<script>
+const STEPS=[
+ {l:"Infrastructure Freedom",h:"You came here to build.",p:"Your next feature. Your first customer. The idea you can’t stop thinking about. usectl handles the infrastructure, giving you more time to move your product forward."},
+ {l:"Zero-Config Deploys",h:"Push code. We ship it.",p:"Connect a repo and every commit becomes a live preview. No YAML, no pipelines to babysit, no late-night rollbacks."},
+ {l:"Auto Scaling",h:"Traffic spikes? Relax.",p:"Your app grows with demand and shrinks when it’s quiet. You pay for what runs, not for what might."},
+ {l:"Built-in Observability",h:"See everything. Fix faster.",p:"Logs, metrics and traces in one place, wired up from day one, so the next incident takes minutes instead of hours."}
+];
+const $=id=>document.getElementById(id);
+const H=$("h"),P=$("p"),L=$("lab");
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let mode="mask",step=-1,token=0;
+const ease="cubic-bezier(.2,.8,.2,1)";
+
+/* ---------- SVG stack ---------- */
+const NS="http://www.w3.org/2000/svg",layersG=$("layers");
+const mk=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e};
+const TOP="0,-75 130,0 0,75 -130,0",LS="-130,0 0,75 0,115 -130,40",RS="0,75 130,0 130,40 0,115";
+const slabs=[];
+for(let i=3;i>=0;i--){ // draw bottom first
+  const g=mk("g",{class:"slab"},layersG);
+  const r={stroke:"#262626","stroke-width":1,"stroke-linejoin":"round"};
+  mk("polygon",{points:LS,fill:"#1e1e1e",...r},g);
+  mk("polygon",{points:RS,fill:"#161616",...r},g);
+  const lit=mk("g",{class:"lit"},g);
+  mk("polygon",{points:LS,fill:"url(#gl)"},lit);
+  mk("polygon",{points:RS,fill:"url(#gr)"},lit);
+  // side slots
+  mk("polygon",{points:"-112,18 -30,65 -30,85 -112,38",fill:"#000",opacity:.28},g);
+  mk("polygon",{points:"30,65 112,18 112,38 30,85",fill:"#000",opacity:.28},g);
+  mk("polygon",{points:TOP,fill:"#2b2b2b",stroke:"#3a3a3a","stroke-width":1,"stroke-linejoin":"round"},g);
+  mk("polygon",{points:"0,-58 100,0 0,58 -100,0",fill:"none",stroke:"#1f1f1f","stroke-width":2},g);
+  [[-78,0],[78,0],[0,-45],[0,45]].forEach(([x,y])=>mk("circle",{cx:x,cy:y,r:2.4,fill:"#111"},g));
+  if(i===0){const a=mk("g",{id:"ast"},g);
+    for(let k=0;k<4;k++){mk("line",{x1:0,y1:-30,x2:0,y2:30,stroke:"#8a8a8a","stroke-width":9,"stroke-linecap":"round",transform:`rotate(${k*45})`},a)}}
+  slabs[i]=g;
+}
+function layout(active,t){ // t = continuous progress for subtle float
+  for(let i=0;i<4;i++){
+    let y=110+i*56;
+    if(i===active)y-=14; else if(i>active)y+=10;
+    y+=Math.sin(t*6.28+i)*2;
+    slabs[i].style.transform=`translate(200px,${y}px)`;
+    slabs[i].classList.toggle("on",i===active);
+  }
+  $("glow").style.transform=`translate(200px,${110+active*56+120}px)`;
+}
+/* ---------- ruler ---------- */
+const ruler=$("ruler"),ticks=[];
+for(let i=0;i<=60;i++){const x=1+i*618/60;ticks.push(mk("line",{x1:x,x2:x,y1:i%5?14:(i%10?8:2),y2:24,stroke:"#444","stroke-width":1},ruler))}
+mk("line",{x1:0,x2:620,y1:23.5,y2:23.5,stroke:"#444"},ruler);
+
+/* ---------- text helpers ---------- */
+function split(el,text){
+  el.innerHTML=text.split(" ").map(w=>`<span class="w"><span class="wi">${w}</span></span>`).join(" ");
+  return [...el.querySelectorAll(".wi")];
+}
+const anim=(el,kf,o)=>el.animate(kf,{fill:"both",easing:ease,...o}).finished.catch(()=>{});
+function cancelAll(){[H,P,L].forEach(el=>el.getAnimations({subtree:true}).forEach(a=>a.cancel()))}
+
+const MODES={
+  mask:{
+    out:async(el,d)=>{const ws=[...el.querySelectorAll(".wi")];
+      await Promise.all(ws.map((w,i)=>anim(w,[{transform:"translateY(0)"},{transform:"translateY(-110%)"}],{duration:350,delay:i*d*.4})))},
+    in:async(el,text,d)=>{const ws=split(el,text);
+      await Promise.all(ws.map((w,i)=>anim(w,[{transform:"translateY(110%)"},{transform:"translateY(0)"}],{duration:700,delay:i*d})))}
+  },
+  blur:{
+    out:async(el)=>anim(el,[{opacity:1,filter:"blur(0)"},{opacity:0,filter:"blur(10px)"}],{duration:300}),
+    in:async(el,text,d)=>{el.getAnimations().forEach(a=>a.cancel());const ws=split(el,text);
+      await Promise.all(ws.map((w,i)=>anim(w,[{opacity:0,filter:"blur(12px)",transform:"translateY(8px)"},{opacity:1,filter:"blur(0)",transform:"none"}],{duration:650,delay:i*d})))}
+  },
+  scramble:{
+    out:async()=>{},
+    in:async(el,text,d,my)=>{const C="!<>-_\\/[]{}—=+*^?#01";
+      const dur=Math.min(900,300+text.length*12),t0=performance.now();
+      return new Promise(res=>{const f=now=>{if(my!==token)return res();
+        const k=Math.min(1,(now-t0)/dur);
+        const n=Math.floor(k*text.length);
+        el.textContent=text.slice(0,n)+[...text.slice(n)].map(c=>c===" "?" ":C[Math.random()*C.length|0]).join("").slice(0,Math.max(0,Math.min(12,text.length-n)));
+        k<1?requestAnimationFrame(f):(el.textContent=text,res())};requestAnimationFrame(f)})}
+  },
+  wipe:{
+    out:async(el)=>anim(el,[{clipPath:"inset(0 0 0 0)"},{clipPath:"inset(0 0 0 100%)"}],{duration:350}),
+    in:async(el,text)=>{el.getAnimations().forEach(a=>a.cancel());el.textContent=text;
+      await anim(el,[{clipPath:"inset(0 100% 0 0)",opacity:.3},{clipPath:"inset(0 0 0 0)",opacity:1}],{duration:750})}
+  }
+};
+
+async function show(i,instant){
+  const my=++token,s=STEPS[i],M=MODES[mode];
+  $("cur").textContent="0"+(i+1);
+  [...$("dots").children].forEach((d,k)=>d.classList.toggle("on",k===i));
+  cancelAll();
+  if(instant||reduce){L.textContent=s.l;H.textContent=s.h;P.textContent=s.p;return}
+  await Promise.all([M.out(L,20),M.out(H,40),M.out(P,8)]);
+  if(my!==token)return;
+  M.in(L,s.l,25,my);
+  M.in(H,s.h,70,my);
+  setTimeout(()=>my===token&&M.in(P,s.p,12,my),mode==="scramble"?0:150);
+}
+
+/* ---------- scroll ---------- */
+const pin=$("pin");let ticking=false;
+function onScroll(){
+  const r=pin.getBoundingClientRect(),max=r.height-innerHeight;
+  const p=Math.min(1,Math.max(0,-r.top/max));
+  const s=Math.min(3,Math.floor(p*4));
+  ticks.forEach((t,k)=>t.setAttribute("stroke",k/60<=p?"#6fd08c":"#444"));
+  if(s!==step){step=s;show(s)}
+  layout(step,p);
+  $("ast").style.transform=`scale(1,.58) rotate(${p*180}deg)`;
+  ticking=false;
+}
+addEventListener("scroll",()=>{if(!ticking){ticking=true;requestAnimationFrame(onScroll)}},{passive:true});
+addEventListener("resize",onScroll);
+
+$("ui").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  mode=b.dataset.m;[...$("ui").children].forEach(x=>x.classList.toggle("on",x===b));
+  [H,P,L].forEach(el=>el.style.clipPath="");show(step)};
+
+step=0;show(0,true);onScroll();
+</script>
+</body>
+</html>
