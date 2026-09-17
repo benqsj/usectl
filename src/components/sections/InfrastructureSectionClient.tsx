@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 import { InfrastructureStaticBar } from "./InfrastructureStaticBar";
 import { useInfrastructureScrollAnimation } from "@/animations/infrastructureScrollAnimation";
 import type { InfrastructureStep } from "@/lib/infrastructureSteps";
@@ -23,6 +23,13 @@ interface InfrastructureSectionClientProps {
   // Hero's 4 layer SVGs (steps 3-8) — rendered STATIC, no animation yet.
   stackLayers: string[] | null;
   pinScrollDistance: number;
+  // EMBEDDED mode: the card is rendered on its own (no <section>, no pin, no SSR spacer) because
+  // something else owns the scroll — today that's the machine screen, where steps 3-8 live INSIDE
+  // the machine and are driven by machineScrollAnimation.ts. The markup itself is untouched, so
+  // both modes render the exact same card.
+  embedded?: boolean;
+  cardRef?: RefObject<HTMLDivElement | null>;
+  fillRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function InfrastructureSectionClient({
@@ -31,13 +38,20 @@ export function InfrastructureSectionClient({
   machineServer,
   stackLayers,
   pinScrollDistance,
+  embedded = false,
+  cardRef: externalCardRef,
+  fillRef: externalFillRef,
 }: InfrastructureSectionClientProps) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const fillRef = useRef<HTMLDivElement>(null);
+  const internalCardRef = useRef<HTMLDivElement>(null);
+  const internalFillRef = useRef<HTMLDivElement>(null);
+  const cardRef = externalCardRef ?? internalCardRef;
+  const fillRef = externalFillRef ?? internalFillRef;
   const serverRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
+  // Hooks can't be conditional — the hook itself no-ops when it isn't the one driving.
   useInfrastructureScrollAnimation({
+    enabled: !embedded,
     cardRef,
     fillRef,
     serverRef,
@@ -47,12 +61,14 @@ export function InfrastructureSectionClient({
     serverOpenOffsetPercent: machineServer ? (machineServer.openOffset / machineServer.height) * 100 : 0,
   });
 
-  return (
-    <section className={className}>
-      <div
-        ref={cardRef}
-        className="relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 min-[1800px]:w-[1722px] md:px-16 md:pt-8 md:pb-14"
-      >
+  const card = (
+    <div
+      ref={cardRef}
+      data-infra-card=""
+      className={`relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 min-[1800px]:w-[1722px] md:px-16 md:pt-8 md:pb-14 ${
+        embedded ? "will-change-transform [backface-visibility:hidden]" : ""
+      }`}
+    >
         <div className="flex flex-col items-center gap-16 md:flex-row">
           {/* Blur-stagger step sequence. Every step's eyebrow / heading+paragraph is rendered up
               front and stacked in the same grid cell ([grid-area:1/1]), so each stack auto-sizes to
@@ -177,8 +193,15 @@ export function InfrastructureSectionClient({
         </div>
 
         <InfrastructureStaticBar fillRef={fillRef} />
-      </div>
+    </div>
+  );
 
+  // Embedded: just the card — the machine screen positions and animates it.
+  if (embedded) return card;
+
+  return (
+    <section className={className}>
+      {card}
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
           (see useInfrastructureScrollAnimation, where it's collapsed to 0 right before that real
           pin-spacer is created) — server-rendered so the page is the SAME total height before and

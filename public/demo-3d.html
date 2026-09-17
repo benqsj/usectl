@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>usectl — hero 3D (drop-in for the SVG stack)</title>
+<style>
+  :root { --background:#1e1d1d; --foreground:#ededed; --brand:#11a32a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:var(--background); color:var(--foreground);
+         font-family:"Space Grotesk",system-ui,-apple-system,Segoe UI,sans-serif; overflow-x:hidden; }
+  main { display:flex; flex:1; flex-direction:column; }
+
+  /* ---- hero: same values as HeroSectionClient.tsx (px-6 pt-16 pb-28) ---- */
+  .hero { position:relative; display:flex; flex-direction:column; align-items:center;
+          padding:64px 24px 112px; text-align:center; }
+  .eyebrow-row { display:flex; align-items:center; justify-content:center; gap:12px; }
+  .eyebrow { font-size:22px; line-height:1; font-weight:300; letter-spacing:-.02em; color:rgba(255,255,255,.7); }
+  h1 { margin:4px 0 0; font-size:98px; line-height:1.05; font-weight:700; white-space:nowrap; }
+  h1 .brand { color:var(--brand); }
+  .sub { max-width:1080px; margin:8px auto 0; font-size:28px; color:rgba(255,255,255,.7); }
+  .btns { margin-top:35px; display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:center; }
+  .btn { border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:14px 28px; font-size:18px;
+         color:#fff; text-decoration:none; }
+  .btn.primary { background:var(--brand); border-color:var(--brand); }
+
+  /* ---- the wrapper keeps EXACTLY today's box: w-[400px], --core-height, height tracking --stack-gap ---- */
+  #cubeWrapper { position:relative; margin:35px auto 0; width:400px;
+                 --core-height:275.27px; --stack-gap:45px;
+                 height:calc(3 * var(--stack-gap) + var(--core-height)); }
+  @media (min-width:1800px) { #cubeWrapper { margin-top:84px; width:480px; --core-height:330.32px; } }
+
+  /* today's CSS glow, unchanged */
+  #glow { position:absolute; left:50%; transform:translateX(-50%); width:170%; height:130px;
+          border-radius:50%; filter:blur(24px); pointer-events:none;
+          top:calc(3 * var(--stack-gap) + var(--core-height) - 45px);
+          background:radial-gradient(ellipse at center, rgba(72,144,72,.55) 0%, rgba(72,144,72,0) 70%); }
+
+  /* the WebGL canvas. Anchored to the wrapper's CLOSED centre (a constant, so it does not drift
+     when the wrapper's height grows with --stack-gap), and deliberately larger than the wrapper
+     so the open stack — and the wider silhouette while it spins — never gets clipped. */
+  #stage { position:absolute; left:50%; top:calc((3 * 45px + var(--core-height)) / 2);
+           width:680px; height:1100px; transform:translate(-50%,-50%); pointer-events:none; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* the current SVG stack — kept only so the two can be compared (?svg / ?cmp) */
+  #svgStack { position:absolute; inset:0; }
+  #svgStack > div { position:absolute; left:50%; transform:translateX(-50%); }
+  body:not(.show-svg) #svgStack { display:none; }
+  body.cmp #svgStack { opacity:.45; }
+  body.cmp.show-svg #stage { opacity:.75; }
+
+  .after { height:200vh; }
+  #hud { position:fixed; left:12px; bottom:12px; z-index:50; font:12px/1.5 ui-monospace,monospace;
+         color:rgba(255,255,255,.6); background:rgba(0,0,0,.4); padding:6px 10px; border-radius:6px; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.15.0/index.js",
+    "gsap/ScrollTrigger": "https://cdn.jsdelivr.net/npm/gsap@3.15.0/ScrollTrigger.js"
+} }
+</script>
+</head>
+<body>
+<main>
+  <section class="hero" id="hero">
+    <div id="content">
+      <div class="eyebrow-row">
+        <span class="eyebrow">Managed Kubernetes &amp; AI Agent Infrastructure</span>
+      </div>
+      <h1>One server. <span class="brand">Unlimited</span> machines.</h1>
+      <p class="sub">Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
+        without a DevOps team. Build it. Launch it.</p>
+      <div class="btns"><a class="btn primary" href="#">Create Machine</a><a class="btn" href="#">See how it works</a></div>
+    </div>
+
+    <div id="cubeWrapper" aria-hidden="true">
+      <div id="glow"></div>
+      <div id="svgStack"></div>
+      <div id="stage"></div>
+    </div>
+  </section>
+  <div class="after"></div>
+</main>
+<div id="hud">loading…</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+gsap.registerPlugin(ScrollTrigger);
+
+const Q = new URLSearchParams(location.search);
+const CAPTURE = Q.has('capture');
+if (Q.has('svg') || Q.has('cmp')) document.body.classList.add('show-svg');
+if (Q.has('cmp')) document.body.classList.add('cmp');
+if (Q.has('hide3d')) document.getElementById('stage').style.visibility = 'hidden';
+
+/* ===== today's timeline constants, copied verbatim from heroScrollAnimation.ts ============ */
+const CUBE_SCALE_TARGET = 1.04;
+const TEXT_RISE_PX = 60;
+const PIN_SCROLL_DISTANCE = 980;
+const TEXT_FADE_DURATION = 1;
+const SCALE_START = 0;
+const CUBE_SCALE_DURATION = 2.4;
+const DISASSEMBLE_DURATION = 1.8;
+const STACK_GAP_CLOSED_PX = 45;
+const STACK_GAP_OPEN_PX = 140;
+const CORE_HEIGHT_NARROW_PX = (400 * 256) / 372;
+const CORE_HEIGHT_WIDE_PX = (480 * 256) / 372;
+const WIDE_BREAKPOINT_PX = 1800;
+const EXTRA_RISE_PX = 0;
+
+/* ===== 3D-only tunables ================================================================== */
+const ROTATION_SECONDS  = Number(Q.get('spin') || 24);   // one full 360° turn
+const START_YAW_DEG     = Number(Q.get('yaw')  || 45);
+const CAMERA_ELEVATION  = Number(Q.get('elev') || 37.7); // matches the SVG's isometric angle
+const PX_PER_UNIT_400   = Number(Q.get('ppu')  || 1045);  // world unit -> px at the 400px wrapper
+
+const wrapper = document.getElementById('cubeWrapper');
+const stage   = document.getElementById('stage');
+const content = document.getElementById('content');
+const hero    = document.getElementById('hero');
+const hud     = document.getElementById('hud');
+
+/* ===== the SVG stack, rebuilt exactly as HeroSectionClient renders it (comparison only) === */
+const LAYER_FILES = ['layer-01-cap','layer-02-core','layer-03-core','layer-04-base'];
+const CAP_WIDTH_PERCENT = (383 / 372) * 100;
+Promise.all(LAYER_FILES.map((n) => fetch(`/server-animation/${n}.svg`).then((r) => r.text()))).then((svgs) => {
+  document.getElementById('svgStack').innerHTML = svgs.map((raw, i) => {
+    const responsive = raw.replace(/<svg width="\d+" height="\d+" viewBox="0 0 (\d+) (\d+)"/,
+      '<svg viewBox="0 0 $1 $2" style="width:100%;height:auto;display:block"');
+    const w = LAYER_FILES[i] === 'layer-01-cap' ? CAP_WIDTH_PERCENT + '%' : '100%';
+    return `<div style="top:calc(${i} * var(--stack-gap));width:${w};z-index:${4 - i}">${responsive}</div>`;
+  }).join('');
+});
+
+/* ===== three ============================================================================= */
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.3;
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+const elev = THREE.MathUtils.degToRad(CAMERA_ELEVATION);
+camera.position.set(0, Math.sin(elev), Math.cos(elev)).multiplyScalar(4);
+camera.lookAt(0, 0, 0);
+
+const addLight = (light, x, y, z) => { light.position.set(x, y, z); scene.add(light); return light; };
+addLight(new THREE.DirectionalLight(0xffffff, 1.15), 2, 3.5, 2);      // key
+addLight(new THREE.DirectionalLight(0xbfd8ff, 0.30), -3, 1.5, -1.5);  // cool fill
+addLight(new THREE.DirectionalLight(0x8effb0, 0.45), -1.5, -0.5, -3); // green rim
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+addLight(new THREE.PointLight(0x11ff4a, 1.2, 2, 2), 0, -0.05, 0);     // accent-ring glow
+
+const holder = new THREE.Group();          // keeps the stack vertically centred as it opens
+scene.add(holder);
+
+let turntable = null, mixer = null, explode = null, explodeDur = 4;
+let cap = null, capClosedY = 0.15, closedCenterY = 0.103;
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('/herosection/3D/server.glb', (gltf) => {
+  const root = gltf.scene;
+  holder.add(root);
+  turntable = root.getObjectByName('turntable') || root;
+  turntable.rotation.y = THREE.MathUtils.degToRad(START_YAW_DEG);
+  cap = root.getObjectByName('01_cap');
+
+  // explode_sequence: t=0 is the closed assembly, t=duration the fully exploded one — the
+  // designer's own easing, so scrubbing it beats re-inventing the spacing in code.
+  mixer = new THREE.AnimationMixer(root);
+  const clip = gltf.animations.find((a) => a.name === 'explode_sequence');
+  explode = mixer.clipAction(clip);
+  explode.play(); explode.paused = true; explodeDur = clip.duration;
+  setProgress(0);
+
+  const box = new THREE.Box3().setFromObject(root);
+  closedCenterY = (box.max.y + box.min.y) / 2;
+  capClosedY = cap.position.y;
+  resize();
+  hud.textContent = 'ready';
+  ScrollTrigger.refresh();
+});
+
+/* 0 -> 1 : closed -> open, kept centred on screen (today's CSS stack grows downward and is then
+   shifted up by half that growth — same net result, done here in one place) */
+function setProgress(t) {
+  if (!explode) return;
+  explode.time = explodeDur * t;
+  mixer.update(0);
+  const growth = cap ? cap.position.y - capClosedY : 0;
+  holder.position.y = -closedCenterY - growth / 2;
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  const ppu = PX_PER_UNIT_400 * (wrapper.clientWidth / 400);   // scales with the 1800px breakpoint
+  camera.left = -w / ppu / 2; camera.right = w / ppu / 2;
+  camera.top = h / ppu / 2;   camera.bottom = -h / ppu / 2;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', () => { resize(); });
+resize();
+
+const clock = new THREE.Clock();
+if (!CAPTURE) renderer.setAnimationLoop(() => {
+  if (turntable) turntable.rotation.y += (Math.PI * 2 / ROTATION_SECONDS) * clock.getDelta();
+  renderer.render(scene, camera);
+});
+
+/* ===== the scroll timeline — same shape, same numbers as today ========================== */
+let recenterY = 0;
+const measureRecenterY = () => {
+  const coreHeight = innerWidth >= WIDE_BREAKPOINT_PX ? CORE_HEIGHT_WIDE_PX : CORE_HEIGHT_NARROW_PX;
+  const closedHeight = 3 * STACK_GAP_CLOSED_PX + coreHeight;
+  const naturalCenterY = wrapper.offsetTop + closedHeight / 2;
+  recenterY = innerHeight / 2 - EXTRA_RISE_PX - naturalCenterY;
+};
+measureRecenterY();
+
+const proxy = { t: 0 };
+const tl = gsap.timeline({
+  scrollTrigger: { trigger: hero, start:'top top', end:`+=${PIN_SCROLL_DISTANCE}`,
+                   scrub: CAPTURE ? true : 1, pin:true, pinSpacing:true,
+                   invalidateOnRefresh:true, onRefreshInit: measureRecenterY },
+});
+
+// 1. text rises and fades
+tl.to(content, { autoAlpha:0, y:-TEXT_RISE_PX, duration:TEXT_FADE_DURATION, ease:'power1.out' }, 0)
+  // 2. the stack enlarges and re-centres, starting at the same instant
+  .to(wrapper, { scale:CUBE_SCALE_TARGET, transformOrigin:'50% 50%', y:() => recenterY,
+                 duration:CUBE_SCALE_DURATION, ease:'power2.inOut' }, SCALE_START)
+  // 3. it pulls apart. --stack-gap still runs (so the wrapper's document height behaves exactly
+  //    as today); the visible separation is the GLB's own explode_sequence, scrubbed by `proxy.t`.
+  .fromTo(wrapper, { '--stack-gap': `${STACK_GAP_CLOSED_PX}px` },
+          { '--stack-gap': `${STACK_GAP_OPEN_PX}px`, duration:DISASSEMBLE_DURATION, ease:'power1.inOut' },
+          SCALE_START + CUBE_SCALE_DURATION)
+  .fromTo(proxy, { t:0 }, { t:1, duration:DISASSEMBLE_DURATION, ease:'power1.inOut',
+                            onUpdate:() => setProgress(proxy.t) },
+          SCALE_START + CUBE_SCALE_DURATION);
+
+window.__dbg = { holder, camera, get turntable(){return turntable;} };
+
+// deterministic stepper for the offline recorder
+window.__cap = (progress, seconds) => {
+  scrollTo(0, Math.round(PIN_SCROLL_DISTANCE * progress));
+  ScrollTrigger.update();
+  if (turntable) turntable.rotation.y = THREE.MathUtils.degToRad(START_YAW_DEG)
+                                      + (Math.PI * 2 / ROTATION_SECONDS) * seconds;
+  renderer.render(scene, camera);
+};
+</script>
+</body>
+</html>

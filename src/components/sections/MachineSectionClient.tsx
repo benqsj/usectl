@@ -2,6 +2,9 @@
 
 import Image from "next/image";
 import { useRef } from "react";
+import { InfrastructureSectionClient } from "./InfrastructureSectionClient";
+import { useRasterizedSvg } from "@/hooks/useRasterizedSvg";
+import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
 import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
@@ -40,14 +43,29 @@ const CROSS_POSITIONS = ["top-left", "top-right", "bottom-left", "bottom-right"]
 // machineScrollAnimation.ts) while the wordmark fades out — all centered on the SAME point.
 const TOPSIDE_WIDTH_PX = 460;
 
-export function MachineSectionClient() {
+interface MachineSectionClientProps {
+  // Steps 3-8 — they live INSIDE the machine now: the same InfrastructureSection card, rendered
+  // embedded (no pin of its own) and driven by this screen's single pin.
+  steps: InfrastructureStep[];
+  // The hero's 4 layer SVGs for that card's right column (static, as before).
+  stackLayers: string[];
+}
+
+const TOPSIDE_RASTER_WIDTH = 1376; // 2x topside.svg's own 688 — see useRasterizedSvg
+
+export function MachineSectionClient({ steps, stackLayers }: MachineSectionClientProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLDivElement>(null);
   const hatchRef = useRef<HTMLDivElement>(null);
   const crossRefs = useRef<(HTMLImageElement | null)[]>([]);
   const topsideRef = useRef<HTMLDivElement>(null);
+  const tintRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
+
+  const topsideRaster = useRasterizedSvg("/infrastructur/topside.svg", TOPSIDE_RASTER_WIDTH);
 
   useMachineScrollAnimation({
     sectionRef,
@@ -55,6 +73,10 @@ export function MachineSectionClient() {
     hatchRef,
     crossRefs,
     topsideRef,
+    tintRef,
+    cardRef,
+    fillRef,
+    stepCount: steps.length,
     ssrScrollReserveRef,
   });
 
@@ -68,7 +90,9 @@ export function MachineSectionClient() {
     // lives in ONE stage, one pin — the wordmark fades away and topside.svg grows in the SAME
     // centered spot, rather than topside living in a separate section further down the page.
     <section ref={sectionRef} className="relative">
-      <div ref={stageRef} className="relative flex min-h-screen items-center justify-center">
+      {/* overflow-hidden: topside grows far past the viewport on its way "through" us, and this
+          keeps that from painting outside the pinned screen. */}
+      <div ref={stageRef} className="relative flex min-h-screen items-center justify-center overflow-hidden">
         <div ref={wordmarkRef} className="relative inline-flex items-center" style={{ gap: vw(WORDMARK_GAP_PX) }}>
           {/* Hatch mark — SSR-hidden (matches BlurText's BLUR_HIDDEN_* so nothing flashes
               visible before hydration), unblurred/faded in first by
@@ -132,15 +156,57 @@ export function MachineSectionClient() {
           ref={topsideRef}
           aria-hidden="true"
           className="absolute top-1/2 left-1/2"
-          style={{ opacity: 0, transform: `translate(-50%, -50%) scale(${TOPSIDE_HIDDEN_SCALE})` }}
+          style={{
+            opacity: 0,
+            transform: `translate(-50%, -50%) scale(${TOPSIDE_HIDDEN_SCALE})`,
+            // The hatch opening is a two-layer CSS mask: a full-cover layer plus the rounded-square
+            // hole shape, combined with mask-composite so the shape is SUBTRACTED (without this the
+            // two layers are added together and no hole ever appears). Only the hole's size is
+            // animated, by machineScrollAnimation.ts — everything static lives here.
+            WebkitMaskRepeat: "no-repeat",
+            maskRepeat: "no-repeat",
+            WebkitMaskPosition: "center, center",
+            maskPosition: "center, center",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+          }}
         >
           <Image
-            src="/infrastructur/topside.svg"
+            src={topsideRaster ?? "/infrastructur/topside.svg"}
             alt=""
             width={688}
             height={688}
             aria-hidden="true"
-            style={{ width: vw(TOPSIDE_WIDTH_PX), height: "auto" }}
+            unoptimized
+            style={{ width: vw(TOPSIDE_WIDTH_PX), height: "auto", backfaceVisibility: "hidden" }}
+          />
+        </div>
+
+        {/* A light green wash right after we're through the hatch — machineScrollAnimation.ts
+            fades it out well before the content has finished arriving. */}
+        <div
+          ref={tintRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-0"
+          style={{
+            background:
+              "radial-gradient(110% 80% at 50% 55%, rgba(0,255,135,0.14), rgba(0,0,0,0) 65%), radial-gradient(80% 50% at 50% 115%, rgba(0,255,135,0.16), rgba(0,0,0,0) 70%)",
+          }}
+        />
+
+        {/* Steps 3-8, INSIDE the machine: the very same InfrastructureSection card (unchanged
+            markup, no background of its own), starting small and deep and flown towards by this
+            screen's pin — not a separate section scrolling up from below. */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <InfrastructureSectionClient
+            embedded
+            cardRef={cardRef}
+            fillRef={fillRef}
+            steps={steps}
+            className=""
+            machineServer={null}
+            stackLayers={stackLayers}
+            pinScrollDistance={0}
           />
         </div>
       </div>

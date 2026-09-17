@@ -3,7 +3,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HEADER_HEIGHT_PX } from "@/lib/grid";
-import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX, BLUR_VISIBLE_FILTER } from "@/components/ui/BlurText";
+import { createStepSwap } from "@/animations/stepSwap";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -13,20 +13,8 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 // layer switch) that play out on their own, even if scrolling stops mid-way. The bar fill is the
 // only thing scrubbed 1:1 with scroll. (A fully scrubbed version was tried 2026-09-17; the user
 // preferred this one: scrubbed text froze half-blurred when scrolling stopped, and felt too fast.)
-const FIELDS = ["eyebrow", "heading", "paragraph"] as const;
-type Field = (typeof FIELDS)[number];
-
-const HIDDEN = { opacity: 0, filter: BLUR_HIDDEN_FILTER, y: BLUR_HIDDEN_Y_PX };
-const VISIBLE = { opacity: 1, filter: BLUR_VISIBLE_FILTER, y: 0 };
-
-// Text timings — exactly the demo's values (seconds).
-const TEXT_OUT = { duration: 0.3, stagger: 0.004, blur: "blur(10px)" };
-const TEXT_IN_DURATION = 0.65;
-const FIELD_IN: Record<Field, { stagger: number; delay: number }> = {
-  eyebrow: { stagger: 0.03, delay: 0.1 },
-  heading: { stagger: 0.06, delay: 0.15 },
-  paragraph: { stagger: 0.012, delay: 0.3 },
-};
+// The text half of the swap lives in stepSwap.ts, shared with the machine screen's own pin
+// (steps 3-8), so the two sequences can't drift apart.
 
 // Server timings — exactly the demo's values (seconds).
 const SERVER_LIT_IN = { duration: 0.7, delay: 0.1 };
@@ -43,6 +31,9 @@ const SERVER_OPEN_DURATION = 0.8;
 const SERVER_PART_ORDER = ["bottom", "top"] as const;
 
 interface InfrastructureScrollRefs {
+  // false when something else drives this card (the machine screen owns steps 3-8) — the hook then
+  // does nothing, since React hooks can't be called conditionally.
+  enabled: boolean;
   // Pin trigger AND pin target — the card div, not the outer <section>, so the section's own
   // bottom padding isn't included in what gets centered/pinned (see the "center center+=" start
   // below).
@@ -73,6 +64,7 @@ interface InfrastructureScrollRefs {
 // (text + lit server part) whenever progress crosses into a new step. Then releases and lets the
 // page continue scrolling normally.
 export function useInfrastructureScrollAnimation({
+  enabled,
   cardRef,
   fillRef,
   serverRef,
@@ -88,6 +80,11 @@ export function useInfrastructureScrollAnimation({
 
   useGSAP(
     (_context, contextSafe) => {
+      // Embedded card (steps 3-8 inside the machine screen): something else owns the scroll, so
+      // this hook must not create a pin of its own. Checked FIRST — before the SSR spacer is
+      // collapsed or any ScrollTrigger is built.
+      if (!enabled) return;
+
       if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
 
       // Collapse the SSR placeholder before doing anything else, on every code path (including
@@ -100,18 +97,7 @@ export function useInfrastructureScrollAnimation({
       const fill = fillRef.current;
       if (!card || !fill || stepCount === 0) return;
 
-      // --- text helpers ---
-      const fieldEl = (step: number, field: Field) =>
-        card.querySelector<HTMLElement>(`[data-step="${step}"][data-field="${field}"]`);
-      const wordsOf = (step: number, field: Field) =>
-        Array.from(fieldEl(step, field)?.querySelectorAll<HTMLElement>("[data-blur-word]") ?? []);
-      const allWords = card.querySelectorAll<HTMLElement>("[data-blur-word]");
-
-      const setAriaActive = (active: number) => {
-        card.querySelectorAll<HTMLElement>("[data-step]").forEach((el) => {
-          el.setAttribute("aria-hidden", String(Number(el.dataset.step) !== active));
-        });
-      };
+      const text = createStepSwap(card);
 
       // --- server helpers (no-ops when the section has no server) ---
       const hasServer = serverOpenOffsetPercent > 0;
@@ -133,11 +119,8 @@ export function useInfrastructureScrollAnimation({
 
       // Lands on `step` with no motion (initial mount, refresh/resize, reduced motion).
       const jumpToStep = (step: number) => {
-        gsap.killTweensOf([...allWords, ...partEls, ...litEls]);
-
-        gsap.set(allWords, HIDDEN);
-        for (const field of FIELDS) gsap.set(wordsOf(step, field), VISIBLE);
-        setAriaActive(step);
+        gsap.killTweensOf([...partEls, ...litEls]);
+        text.jumpToStep(step);
 
         parts.forEach((p, i) => {
           if (p.lit) gsap.set(p.lit, { opacity: i === activePart(step) ? 1 : 0, filter: "none" });
@@ -197,34 +180,7 @@ export function useInfrastructureScrollAnimation({
       };
 
       const animateToStep = (to: number, from: number) => {
-        for (const field of FIELDS) {
-          const outWords = wordsOf(from, field);
-          const inWords = wordsOf(to, field);
-          gsap.killTweensOf([...outWords, ...inWords]);
-
-          // Same text in both steps (shared eyebrow, steps 3+4 / 7+8): they render identically in
-          // the same spot, so swap without motion — re-animating identical copy reads as a glitch.
-          if (fieldEl(from, field)?.textContent === fieldEl(to, field)?.textContent) {
-            gsap.set(outWords, HIDDEN);
-            gsap.set(inWords, VISIBLE);
-            continue;
-          }
-
-          gsap.to(outWords, {
-            opacity: 0,
-            filter: TEXT_OUT.blur,
-            duration: TEXT_OUT.duration,
-            stagger: TEXT_OUT.stagger,
-          });
-          gsap.fromTo(inWords, HIDDEN, {
-            ...VISIBLE,
-            duration: TEXT_IN_DURATION,
-            ease: "power3.out",
-            stagger: FIELD_IN[field].stagger,
-            delay: FIELD_IN[field].delay,
-          });
-        }
-        setAriaActive(to);
+        text.animateToStep(to, from);
         animateServer(to); // server switches together with the text
       };
 
@@ -279,6 +235,6 @@ export function useInfrastructureScrollAnimation({
         }, 100);
       }
     },
-    { scope: cardRef, dependencies: [stepCount, pinScrollDistance, serverOpenOffsetPercent] },
+    { scope: cardRef, dependencies: [enabled, stepCount, pinScrollDistance, serverOpenOffsetPercent] },
   );
 }

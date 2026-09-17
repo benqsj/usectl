@@ -2,11 +2,8 @@ import { HeroSection } from "@/components/sections/HeroSection";
 import { InfrastructureSection } from "@/components/sections/InfrastructureSection";
 import { MachineSection } from "@/components/sections/MachineSection";
 import { PricingCalculatorSection } from "@/components/sections/PricingCalculatorSection";
-import {
-  INFRASTRUCTURE_AFTER_MACHINE_PIN_SCROLL_DISTANCE,
-  INFRASTRUCTURE_INTRO_PIN_SCROLL_DISTANCE,
-} from "@/lib/infrastructureLayout";
-import { INFRASTRUCTURE_STEPS_AFTER_MACHINE, INFRASTRUCTURE_STEPS_INTRO } from "@/lib/infrastructureSteps";
+import { INFRASTRUCTURE_INTRO_PIN_SCROLL_DISTANCE } from "@/lib/infrastructureLayout";
+import { INFRASTRUCTURE_STEPS_INTRO } from "@/lib/infrastructureSteps";
 
 export default function Home() {
   return (
@@ -19,15 +16,8 @@ export default function Home() {
         server="machine"
         instanceId="infra-intro"
       />
+      {/* The machine screen — and, inside it, steps 3-8 */}
       <MachineSection />
-      {/* Steps 3-8 — the 4-layer server sits on the right, static for now */}
-      <InfrastructureSection
-        steps={INFRASTRUCTURE_STEPS_AFTER_MACHINE}
-        pinScrollDistance={INFRASTRUCTURE_AFTER_MACHINE_PIN_SCROLL_DISTANCE}
-        server="stack"
-        instanceId="infra-after"
-        className="pt-20 pb-20 md:pt-28 md:pb-28"
-      />
       <PricingCalculatorSection />
     </main>
   );
