@@ -14,6 +14,13 @@ const CORE_WIDTH = 372;
 const CAP_WIDTH = 383;
 const CAP_WIDTH_PERCENT = (CAP_WIDTH / CORE_WIDTH) * 100;
 
+// Each layer's own rendered height, derived from the same width-based scale factor as above —
+// needed (as the literal --core-height values below) so the wrapper's total height can track
+// --stack-gap live. Computed here for documentation; must stay a literal string in the className
+// itself (Tailwind's build-time scanner can't see class names built via template interpolation —
+// see the identical caveat already noted elsewhere in this project for min-[Npx]: breakpoints).
+// 400 * 256 / CORE_WIDTH = 275.27, 480 * 256 / CORE_WIDTH = 330.32
+
 export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, string> }) {
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -57,13 +64,34 @@ export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, 
           25px, which read as too tightly mashed together) and the scroll timeline
           (useHeroScrollAnimation) animates it up to 140px (open) — a real disassembly driven by
           one CSS custom property, no per-layer GSAP targeting needed. z-index keeps the cap on top
-          regardless of DOM order. */}
+          regardless of DOM order.
+
+          The wrapper's own height ALSO tracks --stack-gap (via --core-height + calc()), instead of
+          staying fixed at the closed size — without this, the layers (rendered with the default
+          `overflow: visible`) grew visibly past the wrapper's box as they separated, bleeding
+          into InfrastructureSection below once the pin released. Growing the wrapper's real
+          document-flow height in lockstep is safe here specifically because it only changes while
+          the section is pinned (position: fixed, so it can't affect surrounding layout) and has
+          already reached its final (open) size by the moment the pin releases — see PROJECT.md. */}
       <div
         ref={cubeWrapperRef}
         aria-hidden="true"
-        className="relative mx-auto mt-[35px] h-[410px] w-[400px] min-[1800px]:mt-[84px] min-[1800px]:h-[465px] min-[1800px]:w-[480px]"
+        className="relative mx-auto mt-[35px] w-[400px] [--core-height:275.27px] h-[calc(3*var(--stack-gap)_+_var(--core-height))] min-[1800px]:mt-[84px] min-[1800px]:w-[480px] min-[1800px]:[--core-height:330.32px]"
         style={{ "--stack-gap": "45px" } as CSSProperties}
       >
+        {/* Soft ambient glow beneath the base layer, matching server-cube.png's reference look —
+            these 4 layer SVGs have no equivalent "shadow/glow" asset of their own, so it's a plain
+            CSS radial gradient instead. Positioned off the same formula as the wrapper's own
+            height, so it tracks the base layer down as the stack opens. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 h-[130px] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
+          style={{
+            top: `calc(3 * var(--stack-gap) + var(--core-height) - 45px)`,
+            background: "radial-gradient(ellipse at center, rgba(72,144,72,0.55) 0%, rgba(72,144,72,0) 70%)",
+          }}
+        />
+
         {LAYER_FILES.map((name, index) => (
           <div
             key={name}
