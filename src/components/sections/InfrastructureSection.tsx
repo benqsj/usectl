@@ -1,9 +1,10 @@
 import Image from "next/image";
+import { InfrastructureStaticBar } from "./InfrastructureStaticBar";
 
 export function InfrastructureSection() {
   return (
-    <section className="mt-[-51px] pb-20 min-[1800px]:mt-0 md:pb-28">
-      <div className="relative mx-auto w-[85%] border border-white/10 px-8 pt-8 pb-14 min-[1800px]:w-[1722px] md:px-16 md:pt-10 md:pb-20">
+    <section className="mt-[-11px] pb-20 min-[1800px]:mt-8 md:pb-28">
+      <div className="relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 min-[1800px]:w-[1722px] md:px-16 md:pt-8 md:pb-14">
         <div className="flex flex-col items-center gap-16 md:flex-row">
           <div className="text-left md:flex-1">
             <div className="mb-6 flex items-center gap-3">
@@ -35,14 +36,7 @@ export function InfrastructureSection() {
           </div>
         </div>
 
-        <Image
-          src="/infrastructur/static.svg"
-          alt=""
-          width={821}
-          height={35}
-          aria-hidden="true"
-          className="mt-16 h-auto w-full max-w-[821px] md:mt-20"
-        />
+        <InfrastructureStaticBar />
       </div>
     </section>
   );
