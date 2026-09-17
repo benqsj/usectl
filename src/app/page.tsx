@@ -1,6 +1,7 @@
 import { HeroSection } from "@/components/sections/HeroSection";
 import { InfrastructureSection } from "@/components/sections/InfrastructureSection";
 import { MachineSection } from "@/components/sections/MachineSection";
+import { PricingCalculatorSection } from "@/components/sections/PricingCalculatorSection";
 import {
   INFRASTRUCTURE_AFTER_MACHINE_PIN_SCROLL_DISTANCE,
   INFRASTRUCTURE_INTRO_PIN_SCROLL_DISTANCE,
@@ -27,6 +28,7 @@ export default function Home() {
         instanceId="infra-after"
         className="pt-20 pb-20 md:pt-28 md:pb-28"
       />
+      <PricingCalculatorSection />
     </main>
   );
 }

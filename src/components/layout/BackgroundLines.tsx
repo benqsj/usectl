@@ -71,8 +71,19 @@ function ColumnLines({
 export function BackgroundLines() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {/* Grain texture (Figma's own `feTurbulence` noise filter, exported as-is in the SVG) —
+          user reported "a lot of white dots," visible in a real browser even though this project's
+          own Playwright/Chromium screenshots never showed it (see PROJECT.md: same category of
+          browser-rendering difference already suspected for the earlier "background looks lighter"
+          report). The filter thresholds continuous turbulence noise into a binary on/off mask
+          (`feFuncA type="discrete"`, ~51% of cells fully opaque) — a stippled dot pattern by
+          construction, not a smooth grain — and some browsers rasterize a filter this complex at a
+          capped internal resolution before scaling it to the page's actual size, exaggerating the
+          dots into visible blocky speckles. Cut opacity here (CSS, not touching the Figma-exported
+          SVG itself) rather than editing the filter's own values, so it's a one-line, easily
+          reversible knob. */}
       <div
-        className="absolute inset-0 mix-blend-multiply"
+        className="absolute inset-0 opacity-30 mix-blend-multiply"
         style={{
           backgroundImage: "url(/background/background-lines.svg)",
           backgroundRepeat: "repeat-y",
