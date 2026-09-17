@@ -1,33 +1,26 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, type CSSProperties } from "react";
+import { useCallback, useRef, type CSSProperties } from "react";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Button } from "@/components/ui/Button";
+import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
-import { HERO_PIN_SCROLL_DISTANCE, LAYER_FILES, type LayerFile } from "@/lib/heroLayers";
+import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
 
-// layer-01-cap.svg is 383 wide; the other three are 372 — both share height 256. Sizing every
-// layer off the same "372 units == 100% of the wrapper" baseline (rather than each filling 100%
-// independently) preserves the cap's slightly-wider-than-the-body proportions instead of
-// distorting it to match the others.
-const CORE_WIDTH = 372;
-const CAP_WIDTH = 383;
-const CAP_WIDTH_PERCENT = (CAP_WIDTH / CORE_WIDTH) * 100;
-
-// Each layer's own rendered height, derived from the same width-based scale factor as above —
-// needed (as the literal --core-height values below) so the wrapper's total height can track
-// --stack-gap live. Computed here for documentation; must stay a literal string in the className
-// itself (Tailwind's build-time scanner can't see class names built via template interpolation —
-// see the identical caveat already noted elsewhere in this project for min-[Npx]: breakpoints).
-// 400 * 256 / CORE_WIDTH = 275.27, 480 * 256 / CORE_WIDTH = 330.32
-
-export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, string> }) {
+export function HeroSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
+  const modelRef = useRef<HeroServerModelHandle | null>(null);
 
-  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, ssrScrollReserveRef });
+  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, ssrScrollReserveRef });
+
+  // The GLB arrives well after the timeline is built. Refreshing re-applies the current scrub
+  // position to the model, so a reload deep inside the pinned range shows the server at the pose
+  // that scroll position calls for instead of closed.
+  const handleModelReady = useCallback(() => ScrollTrigger.refresh(), []);
 
   return (
     <section
@@ -59,31 +52,29 @@ export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, 
         </div>
       </div>
 
-      {/* Four independent layers (cap / core / core / base), each absolutely positioned and
-          horizontally centered, stacked via `top: calc(index * var(--stack-gap))`. --stack-gap
-          starts at 45px (closed — tuned by eye against server-cube.png; bumped up from an initial
-          25px, which read as too tightly mashed together) and the scroll timeline
-          (useHeroScrollAnimation) animates it up to 140px (open) — a real disassembly driven by
-          one CSS custom property, no per-layer GSAP targeting needed. z-index keeps the cap on top
-          regardless of DOM order.
+      {/* The server, now a real 3D model (HeroServerModel) instead of four stacked layer SVGs.
+          This wrapper's BOX is unchanged from the SVG version on purpose — same w-[400px], same
+          --core-height, same height tracking --stack-gap — because it is what the rest of the
+          hero is measured against: the scroll timeline scales and re-centres THIS element, and
+          the model was scaled (see HERO_MODEL_PX_PER_UNIT) so the closed server lands in exactly
+          the same 400x409px the SVG stack occupied. The <canvas> itself is larger than this box
+          and overflows it, since the exploded stack is about twice as tall and the silhouette
+          widens as it turns.
 
-          The wrapper's own height ALSO tracks --stack-gap (via --core-height + calc()), instead of
-          staying fixed at the closed size — without this, the layers (rendered with the default
-          `overflow: visible`) grew visibly past the wrapper's box as they separated, bleeding
-          into InfrastructureSection below once the pin released. Growing the wrapper's real
-          document-flow height in lockstep is safe here specifically because it only changes while
-          the section is pinned (position: fixed, so it can't affect surrounding layout) and has
-          already reached its final (open) size by the moment the pin releases — see PROJECT.md. */}
+          --stack-gap is still animated 45px -> 140px by the timeline even though no layer reads
+          it for positioning any more: the wrapper's own height is derived from it, and keeping
+          that growth identical is what keeps the page's total height (and the SSR reservation
+          below) behaving exactly as it did before. */}
       <div
         ref={cubeWrapperRef}
         aria-hidden="true"
         className="relative mx-auto mt-[35px] w-[400px] [--core-height:275.27px] h-[calc(3*var(--stack-gap)_+_var(--core-height))] min-[1800px]:mt-[84px] min-[1800px]:w-[480px] min-[1800px]:[--core-height:330.32px]"
-        style={{ "--stack-gap": "45px" } as CSSProperties}
+        style={{ "--stack-gap": `${HERO_STACK_GAP_CLOSED_PX}px` } as CSSProperties}
       >
-        {/* Soft ambient glow beneath the base layer, matching server-cube.png's reference look —
-            these 4 layer SVGs have no equivalent "shadow/glow" asset of their own, so it's a plain
-            CSS radial gradient instead. Positioned off the same formula as the wrapper's own
-            height, so it tracks the base layer down as the stack opens. */}
+        {/* Soft ambient glow beneath the server, matching server-cube.png's reference look — the
+            model has no equivalent "shadow/glow" of its own, so it's a plain CSS radial gradient.
+            Positioned off the same formula as the wrapper's own height, so it tracks the base
+            layer down as the stack opens. */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 h-[130px] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
@@ -93,26 +84,15 @@ export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, 
           }}
         />
 
-        {LAYER_FILES.map((name, index) => (
-          <div
-            key={name}
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{
-              top: `calc(${index} * var(--stack-gap))`,
-              width: name === "layer-01-cap" ? `${CAP_WIDTH_PERCENT}%` : "100%",
-              zIndex: LAYER_FILES.length - index,
-            }}
-            dangerouslySetInnerHTML={{ __html: layerSvgs[name] }}
-          />
-        ))}
+        <HeroServerModel apiRef={modelRef} wrapperRef={cubeWrapperRef} onReady={handleModelReady} />
       </div>
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
-          (see useHeroScrollAnimation.ts, where it's collapsed to 0 right before that real
-          pin-spacer is created) — server-rendered so the page is the SAME total height before and
-          after client JS runs. Without this, a hard refresh while scrolled deep would restore
-          scrollY against the shorter pre-hydration document, then destabilize once hydration grew
-          the page underneath it — a real, diagnosed bug (see PROJECT.md for the exact repro). */}
+          (see heroScrollAnimation.ts, where it's collapsed to 0 right before that real pin-spacer
+          is created) — server-rendered so the page is the SAME total height before and after
+          client JS runs. Without this, a hard refresh while scrolled deep would restore scrollY
+          against the shorter pre-hydration document, then destabilize once hydration grew the page
+          underneath it — a real, diagnosed bug (see PROJECT.md for the exact repro). */}
       <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: HERO_PIN_SCROLL_DISTANCE }} />
     </section>
   );

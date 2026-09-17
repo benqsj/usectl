@@ -2,7 +2,13 @@ import { useRef, type RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
-import { HERO_PIN_SCROLL_DISTANCE } from "@/lib/heroLayers";
+import {
+  HERO_PIN_SCROLL_DISTANCE,
+  HERO_STACK_GAP_CLOSED_PX,
+  HERO_STACK_GAP_OPEN_PX,
+} from "@/lib/heroLayers";
+import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
+import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -11,11 +17,7 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 const CUBE_SCALE_TARGET = 1.04;
 // How far the text rises as it fades, instead of dissolving in place.
 const TEXT_RISE_PX = 60;
-// Extra scroll distance (px) the pin holds the section for while the timeline scrubs. Was 700;
-// bumped to 980 alongside doubling CUBE_SCALE_DURATION below (700 * 4.2/3.0 = 980) so that the
-// rise+scale phase alone needs 2x the scroll it used to, while the text-fade and disassemble
-// phases keep needing EXACTLY the same scroll distance as before (233px and 420px respectively —
-// unchanged) — see the ratio math in that constant's comment.
+// Extra scroll distance (px) the pin holds the section for while the timeline scrubs.
 //
 // Imported from src/lib/heroLayers.ts (not a local constant) because HeroSectionClient.tsx needs
 // this SAME number to server-render a matching placeholder spacer — see the long comment on
@@ -23,50 +25,49 @@ const TEXT_RISE_PX = 60;
 const PIN_SCROLL_DISTANCE = HERO_PIN_SCROLL_DISTANCE;
 
 const TEXT_FADE_DURATION = 1;
-// The scale-up/rise now starts the INSTANT the text starts fading (fully overlapping the text
-// fade), not partway through it — user feedback: "raise it up right when the text starts
-// disappearing." (Previously started at TEXT_FADE_DURATION * 0.5, itself already an earlier
-// change from an initial "wait for text to fully finish" version.)
+// The scale-up/rise starts the INSTANT the text starts fading (fully overlapping the text fade),
+// not partway through it — user feedback: "raise it up right when the text starts disappearing."
 const SCALE_START = 0;
 // Doubled from 1.2 — user asked specifically for the rise+scale moment (only that moment) to need
-// more scroll. Doubling this alone would've also made the OTHER phases need less scroll (same
-// PIN_SCROLL_DISTANCE spread over a longer total timeline) — PIN_SCROLL_DISTANCE above was scaled
-// up by the same ratio the total timeline grew by, specifically to cancel that out.
+// more scroll. PIN_SCROLL_DISTANCE was scaled by the same ratio the total timeline grew by, so
+// the OTHER phases kept needing exactly the scroll they did before.
 const CUBE_SCALE_DURATION = 2.4;
-// The rest of the scroll: the layer stack pulls apart. Shortened from an initial 2.8 alongside an
-// earlier PIN_SCROLL_DISTANCE cut — unrelated to the CUBE_SCALE_DURATION doubling above.
+// The layer stack pulls apart. Shortened from an initial 2.8 alongside an earlier
+// PIN_SCROLL_DISTANCE cut — unrelated to the CUBE_SCALE_DURATION doubling above.
 const DISASSEMBLE_DURATION = 1.8;
+// Dead time at the END of the timeline, with the server sitting fully open: the pin keeps holding
+// for this much more scroll before it releases and InfrastructureSection starts coming up, so the
+// finished exploded view gets a beat of its own instead of being pushed off the moment it lands.
+// 1.2 units == 280px at the timeline's 233.33px-per-unit. PIN_SCROLL_DISTANCE already includes it
+// (4.2 units -> 5.4), which is why every earlier phase still needs the same scroll it always did.
+const HOLD_OPEN_DURATION = 1.2;
 
-// Starting point for the closed/open vertical gap between stacked layers — tune live against a
-// server-cube.png screenshot (see PROJECT.md), not meant to be exact on the first try.
-const STACK_GAP_CLOSED_PX = 45;
-const STACK_GAP_OPEN_PX = 140;
+// Starting point for the closed/open vertical gap between stacked layers. The 3D model does its
+// own separation (the GLB's explode_sequence, scrubbed below); --stack-gap is still animated
+// because the wrapper's document-flow HEIGHT is derived from it, and keeping that identical is
+// what keeps the page's total height — and the SSR reservation above — behaving exactly as before.
+const STACK_GAP_CLOSED_PX = HERO_STACK_GAP_CLOSED_PX;
+const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 
-// Mirrors HeroSectionClient.tsx's own CORE_WIDTH-derived --core-height values (400*256/372 and
-// 480*256/372) and its min-[1800px] breakpoint — needed here so the wrapper's CLOSED height can be
-// computed analytically (see measureRecenterY below) instead of read live via offsetHeight, which
-// reflects whatever --stack-gap CURRENTLY is, not necessarily the closed one.
-const CORE_HEIGHT_NARROW_PX = (400 * 256) / 372;
-const CORE_HEIGHT_WIDE_PX = (480 * 256) / 372;
+// Mirrors HeroSectionClient.tsx's own --core-height values (400*256/372 and 480*256/372) and its
+// min-[1800px] breakpoint — needed here so the wrapper's CLOSED height can be computed
+// analytically (see measureRecenterY below) instead of read live via offsetHeight, which reflects
+// whatever --stack-gap CURRENTLY is, not necessarily the closed one.
+const CORE_HEIGHT_NARROW_PX = 400 * HERO_CORE_HEIGHT_RATIO;
+const CORE_HEIGHT_WIDE_PX = 480 * HERO_CORE_HEIGHT_RATIO;
 const WIDE_BREAKPOINT_PX = 1800;
 
-// Each layer's `top` grows from a fixed top edge (top: calc(index * var(--stack-gap)), see
-// HeroSectionClient.tsx), so as --stack-gap grows the wrapper only gets taller by extending
-// DOWNWARD — its visual vertical center drifts down as it opens, even though the closed pose was
-// centered. Total height growth across the 3 gaps = 3 * (open - closed); half of that is how far
-// the center drifts, so shifting the wrapper up by that same amount during the disassemble tween
-// keeps the FULLY OPEN stack centered too, not just the closed one.
-const CENTER_SHIFT_ON_OPEN_PX = 1.5 * (STACK_GAP_OPEN_PX - STACK_GAP_CLOSED_PX);
-
 // Extra nudge above true viewport-center — user asked to raise it further after the initial
-// centering fix. Applies to both the closed and open positions (baked into recenterY below), so
-// the whole rise/scale/disassemble sequence sits this much higher throughout.
+// centering fix. Applies to both the closed and open positions (baked into recenterY below).
 const EXTRA_RISE_PX = 0;
 
 interface HeroScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   cubeWrapperRef: RefObject<HTMLDivElement | null>;
+  // The 3D server. Null until the GLB has parsed; the timeline simply skips it until then, and
+  // HeroSectionClient calls ScrollTrigger.refresh() once it's ready so the scrub re-applies.
+  modelRef: RefObject<HeroServerModelHandle | null>;
   // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
   // before any client JS runs — see the long comment where this is collapsed, below.
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
@@ -76,6 +77,7 @@ export function useHeroScrollAnimation({
   sectionRef,
   contentRef,
   cubeWrapperRef,
+  modelRef,
   ssrScrollReserveRef,
 }: HeroScrollRefs) {
   // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle (a plain `let` inside
@@ -94,40 +96,33 @@ export function useHeroScrollAnimation({
       // Real bug, diagnosed with hard numbers: the server-rendered page (before any client JS
       // runs) is SHORTER than the final, hydrated page by exactly PIN_SCROLL_DISTANCE — because
       // GSAP's pin-spacer (which reserves that scroll room) only gets created below, client-side,
-      // well after Next.js's initial HTML paints. Measured directly: document height went from
-      // 2245px (pre-hydration) to 3225px (post-hydration) — a 980px jump, matching
-      // PIN_SCROLL_DISTANCE exactly. On a hard refresh while already scrolled deep, the BROWSER
-      // restores scrollY against the SHORT pre-hydration document; once hydration then grows the
-      // document underneath that restored scroll position, the effective scroll/animation state
-      // destabilizes — reproduced directly: refreshing at scrollY=1077 (fully open) settled at
-      // scrollY=700 with the stack back to nearly closed (46.99px). Reported by the user as
-      // "loses its position," "shows closed after refreshing while open," and "refreshing from
-      // InfrastructureSection jumps me back up." Fix: HeroSectionClient.tsx server-renders a
-      // dedicated `ssrScrollReserveRef` spacer div (height: PIN_SCROLL_DISTANCE) as the LAST child
-      // of the section, so the INITIAL (pre-JS) page is ALREADY the same total height the
-      // pin-spacer will later reserve — no height jump, so browser scroll-restoration has nothing
-      // to destabilize. That spacer is only a placeholder for the SSR/pre-hydration window, though
-      // — GSAP's real pin-spacer (created below, when a ScrollTrigger pin exists) does the actual
-      // job once it exists, so the placeholder must collapse right here, synchronously, on EVERY
-      // path through this effect (including prefers-reduced-motion, checked next, which never
-      // creates a pin at all and so never needs this reservation either) — otherwise either the
-      // placeholder lingers forever (reduced-motion case) or both it and the real pin-spacer would
-      // apply at once, double-reserving 1960px instead of 980px.
+      // well after Next.js's initial HTML paints. On a hard refresh while already scrolled deep,
+      // the BROWSER restores scrollY against the SHORT pre-hydration document; once hydration then
+      // grows the document underneath that restored scroll position, the effective
+      // scroll/animation state destabilizes. Reported by the user as "loses its position," "shows
+      // closed after refreshing while open," and "refreshing from InfrastructureSection jumps me
+      // back up." Fix: HeroSectionClient.tsx server-renders a dedicated `ssrScrollReserveRef`
+      // spacer div (height: PIN_SCROLL_DISTANCE) as the LAST child of the section, so the INITIAL
+      // (pre-JS) page is ALREADY the same total height the pin-spacer will later reserve — no
+      // height jump, so browser scroll-restoration has nothing to destabilize. That spacer is only
+      // a placeholder for the SSR/pre-hydration window, though — GSAP's real pin-spacer (created
+      // below, when a ScrollTrigger pin exists) does the actual job once it exists, so the
+      // placeholder must collapse right here, synchronously, on EVERY path through this effect
+      // (including prefers-reduced-motion, checked next, which never creates a pin at all and so
+      // never needs this reservation either) — otherwise either the placeholder lingers forever
+      // (reduced-motion case) or both it and the real pin-spacer would apply at once,
+      // double-reserving twice the distance instead of once.
       //
       // That SSR-height fix turned out not to be the whole story, though — a SECOND, separate
       // mechanism was still stranding scrollY after a refresh, but only in `next dev` (never
-      // reproduced in a production build). Root-caused by instrumenting scrollY/document height on
-      // every animation frame around a reload: React 19 StrictMode's dev-only double-invoke does
+      // reproduced in a production build). React 19 StrictMode's dev-only double-invoke does
       // mount -> effect -> CLEANUP -> effect again for every effect, and the CLEANUP step (which
       // calls `gsap.context().revert()` internally, via useGSAP) temporarily REMOVES the pin-spacer
-      // between the two invocations. That's a genuine, if momentary, document-height collapse
-      // (measured: 3225px -> 1780px, back to 3225px roughly 15ms later) — and browsers respond to a
-      // scrollable-area collapse below the current scroll position by CLAMPING scrollY to fit the
-      // new (shorter) max. The collapse recovers a frame later, but the browser does NOT
-      // automatically scroll back down to where it clamped FROM — so scrollY stays stuck at the
-      // clamped value permanently. This is orthogonal to (and was actually MASKED by, until now)
-      // the SSR-height fix above: that fix stops the reload's OWN initial restore from being
-      // wrong, but StrictMode's cleanup/remount churn happens AFTER that, independently.
+      // between the two invocations. That's a genuine, if momentary, document-height collapse —
+      // and browsers respond to a scrollable-area collapse below the current scroll position by
+      // CLAMPING scrollY to fit the new (shorter) max. The collapse recovers a frame later, but
+      // the browser does NOT automatically scroll back down to where it clamped FROM — so scrollY
+      // stays stuck at the clamped value permanently.
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       if (!sectionRef.current || !contentRef.current || !cubeWrapperRef.current) return;
@@ -140,21 +135,14 @@ export function useHeroScrollAnimation({
       // pure layout measurement, unaffected by scroll position OR whether the section is currently
       // pinned (position:fixed). getBoundingClientRect() is viewport-relative, so it's only
       // trustworthy when measured at a moment with a KNOWN scroll/pin state — which broke in
-      // practice on a hard page refresh while already scrolled deep into the pinned range (the
-      // browser restores scroll position before/during mount) — reported as "everything shows up
-      // messed up" after refreshing mid-disassembly.
+      // practice on a hard page refresh while already scrolled deep into the pinned range.
       //
       // The wrapper's HEIGHT half of this calculation is deliberately NOT read from
-      // `cubeWrapper.offsetHeight` either, even though that's also scroll-independent — offsetHeight
-      // reflects whatever `--stack-gap` is CURRENTLY set to, which is itself controlled by this same
-      // ScrollTrigger. Refreshing while scrolled deep (fully open) left `--stack-gap` at its OPEN
-      // value at the moment of a later refresh, so offsetHeight measured the OPEN (tall) height
-      // instead of the CLOSED one recenterY is meant to center — producing a "way too high" result
-      // once the user scrolled back up (reported as "loses its position, then I find it raised way
-      // too far up" after refresh-while-open). Fixed by computing the CLOSED height analytically
-      // (CORE_HEIGHT_NARROW_PX/WIDE_PX + STACK_GAP_CLOSED_PX, mirroring HeroSectionClient.tsx's own
-      // formula) instead of measuring it live, so it's correct regardless of --stack-gap's current
-      // (possibly mid-scroll) value.
+      // `cubeWrapper.offsetHeight` either, even though that's also scroll-independent —
+      // offsetHeight reflects whatever `--stack-gap` is CURRENTLY set to, which is itself
+      // controlled by this same ScrollTrigger. Refreshing while scrolled deep left --stack-gap at
+      // its OPEN value, so offsetHeight measured the OPEN (tall) height instead of the CLOSED one
+      // recenterY is meant to center. Fixed by computing the CLOSED height analytically.
       let recenterY = 0;
       const measureRecenterY = () => {
         const coreHeight = window.innerWidth >= WIDE_BREAKPOINT_PX ? CORE_HEIGHT_WIDE_PX : CORE_HEIGHT_NARROW_PX;
@@ -180,14 +168,19 @@ export function useHeroScrollAnimation({
         },
       });
 
+      // Proxies whose only job is to carry a scrubbed number: `disassemble.t` drives the model,
+      // `hold.t` exists purely to give the timeline its trailing dead time.
+      const disassemble = { t: 0 };
+      const hold = { t: 0 };
+
       // 1. Text rises and fades out (not a plain in-place dissolve).
       tl.to(
         contentRef.current,
         { autoAlpha: 0, y: -TEXT_RISE_PX, duration: TEXT_FADE_DURATION, ease: "power1.out" },
         0,
       )
-        // 2. The layer stack starts enlarging and re-centering (rising into view) at the same
-        // instant the text starts fading, fully overlapping it rather than waiting.
+        // 2. The server starts enlarging and re-centring (rising into view) at the same instant
+        // the text starts fading, fully overlapping it rather than waiting.
         .to(
           cubeWrapper,
           {
@@ -200,23 +193,35 @@ export function useHeroScrollAnimation({
           },
           SCALE_START,
         )
-        // 3. The instant that finishes, the stack pulls apart — a single CSS custom property
-        // (--stack-gap) animates from tight/closed to wide/open; each layer's own `top:
-        // calc(index * var(--stack-gap))` (set in HeroSectionClient.tsx) does the rest, so this is
-        // a real per-layer disassembly with no per-layer GSAP targeting needed. Rises further
-        // (CENTER_SHIFT_ON_OPEN_PX, see above) in the same tween, so the fully-open stack ends up
-        // vertically centered too, not just the closed one.
+        // 3. The instant that finishes, the server pulls apart. Two tweens run together here:
+        //    --stack-gap (so the wrapper's document height grows exactly as it did with the SVG
+        //    stack) and `disassemble.t`, which scrubs the GLB's explode_sequence clip. No
+        //    re-centring tween is needed any more: the model keeps itself centred as it opens
+        //    (see HeroServerModel.setProgress), which is what the old CENTER_SHIFT_ON_OPEN_PX
+        //    offset on this tween used to do by hand.
         .fromTo(
           cubeWrapper,
           { "--stack-gap": `${STACK_GAP_CLOSED_PX}px` },
           {
             "--stack-gap": `${STACK_GAP_OPEN_PX}px`,
-            y: () => recenterY - CENTER_SHIFT_ON_OPEN_PX,
             duration: DISASSEMBLE_DURATION,
             ease: "power1.inOut",
           },
           SCALE_START + CUBE_SCALE_DURATION,
-        );
+        )
+        .fromTo(
+          disassemble,
+          { t: 0 },
+          {
+            t: 1,
+            duration: DISASSEMBLE_DURATION,
+            ease: "power1.inOut",
+            onUpdate: () => modelRef.current?.setProgress(disassemble.t),
+          },
+          SCALE_START + CUBE_SCALE_DURATION,
+        )
+        // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
+        .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
 
       // Restores whatever scrollY was BEFORE StrictMode's dev-only churn (see the long comment
       // above `ssrScrollReserveRef.current.style.height = "0px"`) clamped it away. 100ms is
