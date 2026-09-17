@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRef, type CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
-import { LAYER_FILES, type LayerFile } from "@/lib/heroLayers";
+import { HERO_PIN_SCROLL_DISTANCE, LAYER_FILES, type LayerFile } from "@/lib/heroLayers";
 
 // layer-01-cap.svg is 383 wide; the other three are 372 — both share height 256. Sizing every
 // layer off the same "372 units == 100% of the wrapper" baseline (rather than each filling 100%
@@ -25,8 +25,9 @@ export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, 
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
+  const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
-  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef });
+  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, ssrScrollReserveRef });
 
   return (
     <section
@@ -105,6 +106,14 @@ export function HeroSectionClient({ layerSvgs }: { layerSvgs: Record<LayerFile, 
           />
         ))}
       </div>
+
+      {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
+          (see useHeroScrollAnimation.ts, where it's collapsed to 0 right before that real
+          pin-spacer is created) — server-rendered so the page is the SAME total height before and
+          after client JS runs. Without this, a hard refresh while scrolled deep would restore
+          scrollY against the shorter pre-hydration document, then destabilize once hydration grew
+          the page underneath it — a real, diagnosed bug (see PROJECT.md for the exact repro). */}
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: HERO_PIN_SCROLL_DISTANCE }} />
     </section>
   );
 }
