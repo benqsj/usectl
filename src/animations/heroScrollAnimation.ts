@@ -61,7 +61,7 @@ const CENTER_SHIFT_ON_OPEN_PX = 1.5 * (STACK_GAP_OPEN_PX - STACK_GAP_CLOSED_PX);
 // Extra nudge above true viewport-center — user asked to raise it further after the initial
 // centering fix. Applies to both the closed and open positions (baked into recenterY below), so
 // the whole rise/scale/disassemble sequence sits this much higher throughout.
-const EXTRA_RISE_PX = 180;
+const EXTRA_RISE_PX = 0;
 
 interface HeroScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
