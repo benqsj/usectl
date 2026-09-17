@@ -24,22 +24,47 @@ const CROSS_STAGGER = 0.05;
 // and runs in the opposite order (crosses -> letters -> hatch) — an "unwind" of the entrance, not
 // just the same tweens played backwards.
 const REVERSE_DURATION = 0.3;
-// onEnter firing within this window after setup (initial load, a hard refresh restoring scrollY
-// already inside the pin's range, StrictMode's scroll restore) jumps straight to the finished
-// state instead of playing the entrance — same convention as
-// infrastructureScrollAnimation.ts's INSTANT_WINDOW_MS. Needed because GSAP can fire onEnter as
-// part of a ScrollTrigger's very first refresh when the current scroll position is already past
-// `start` at creation time, not only on a later real forward-scroll crossing — confirmed via a
-// reload-while-scrolled-deep test (scrollY landed mid-pin, and without this guard onEnter replayed
-// the full ~1.8s entrance from scratch instead of landing on the already-final state).
+// onEnter/onLeaveBack firing within this window after setup (initial load, a hard refresh
+// restoring scrollY already inside the pin's range, StrictMode's scroll restore) jump straight to
+// the finished/hidden state instead of playing a triggered tween. Needed because GSAP can fire
+// these as part of a ScrollTrigger's very first refresh when the current scroll position is
+// already past the relevant boundary at creation time, not only on a later real scroll crossing —
+// confirmed via a reload-while-scrolled-deep test (see PROJECT.md).
 const INSTANT_WINDOW_MS = 250;
+
+// --- Whole sequence, one pin: wordmark entrance -> topside entrance -> (scrubbed) wordmark exit
+// + topside grow, all sharing the SAME pinned stage/centered point --------------------------
+// The first two are TRIGGERED (one-shot, time-based) — a partially-blurred word or a
+// partially-faded-in topside both read fine as "still arriving", so there's no strong reason to
+// scrub them, and the project's own prior experience with InfrastructureSection's text swap found
+// triggered entrances feel better than scrubbed ones. The LAST phase (wordmark fading out while
+// topside grows) is explicitly SCRUBBED, per instruction: growth must track scroll exactly and
+// freeze the instant scrolling stops — unlike a half-blurred word, a partially-grown/partially-
+// faded image never reads as "broken", so scrubbing here doesn't have the problem that got the
+// text swap's own scrub reverted elsewhere.
+//
+// Phase boundaries are fractions of the pin's overall scroll progress (0-1), not px — tune live.
+const TOPSIDE_ENTER_AT = 0.45; // progress at which topside's fade-in-at-base-scale triggers
+const EXIT_GROW_START = 0.6; // progress at which the scrubbed wordmark-fade-out/topside-grow begins
+
+const TOPSIDE_ENTER_DURATION = 0.7;
+
+// Hidden (not yet entered) -> base (just faded in) -> end (fully grown, wordmark long gone).
+export const TOPSIDE_HIDDEN_SCALE = 0.5;
+const TOPSIDE_BASE_SCALE = 0.75;
+const TOPSIDE_END_SCALE = 1.3;
 
 interface MachineScrollRefs {
   // Pin trigger AND pin target — the whole full-viewport section.
   sectionRef: RefObject<HTMLElement | null>;
+  // Wrapper around hatch+wordmark+crosses as a group — faded/blurred out as a whole during the
+  // exit phase (the individual hatch/crosses refs below are only needed for the entrance, which
+  // animates them with their own distinct stagger/timing).
+  wordmarkRef: RefObject<HTMLElement | null>;
   hatchRef: RefObject<HTMLElement | null>;
   // 4 cross marks, in any order (all animated together, not individually sequenced).
   crossRefs: RefObject<(HTMLElement | null)[]>;
+  topsideRef: RefObject<HTMLElement | null>;
   // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
   // before any client JS runs — collapsed to 0 synchronously below, right before the real
   // pin-spacer is created. Same fix as heroScrollAnimation.ts / infrastructureScrollAnimation.ts
@@ -50,16 +75,20 @@ interface MachineScrollRefs {
 }
 
 // Pins the machine screen once it reaches the viewport center, holds it for PIN_SCROLL_DISTANCE
-// worth of scroll (a plain hold — no scrub, nothing tied to scroll progress beyond "has the pin
-// started"), and plays a one-shot triggered entrance the first time it's scrolled INTO: the hatch
-// mark fades/unblurs, then "machine"'s letters blur-stagger in, then the 4 corner crosses fade in
-// with a slight scale-up. Scrolling back up past the pin's start reverses the whole thing (blur
-// back out); scrolling back down into it from below (i.e. from GROUP_2's direction) just shows the
-// finished state directly, no replay.
+// worth of scroll, and plays through one continuous sequence: the hatch mark fades/unblurs, then
+// "machine"'s letters blur-stagger in, then the 4 corner crosses fade in with a slight scale-up
+// (all triggered, together "the wordmark entrance") — then, once scroll crosses TOPSIDE_ENTER_AT,
+// topside.svg fades in at its own base scale in the SAME centered spot (also triggered) — then,
+// from EXIT_GROW_START to the end of the pin, the wordmark fades/blurs away while topside.svg
+// grows further, both tied directly to scroll progress (freezes if scrolling stops, reverses
+// smoothly on scrolling back). Scrolling back up out of the pin entirely unwinds everything;
+// re-entering from below (GROUP_2's direction) snaps straight to the fully-finished state.
 export function useMachineScrollAnimation({
   sectionRef,
+  wordmarkRef,
   hatchRef,
   crossRefs,
+  topsideRef,
   ssrScrollReserveRef,
 }: MachineScrollRefs) {
   // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle — see the matching
@@ -77,19 +106,23 @@ export function useMachineScrollAnimation({
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
 
       const section = sectionRef.current;
+      const wordmark = wordmarkRef.current;
       const hatch = hatchRef.current;
+      const topside = topsideRef.current;
       const chars = section?.querySelectorAll<HTMLElement>("[data-blur-char]") ?? null;
       const crosses = crossRefs.current.filter((el): el is HTMLElement => el !== null);
-      if (!section || !hatch || !chars || chars.length === 0 || crosses.length === 0) return;
+      if (!section || !wordmark || !hatch || !topside || !chars || chars.length === 0 || crosses.length === 0) {
+        return;
+      }
 
-      const jumpToFinal = () => {
+      const jumpWordmarkToFinal = () => {
         gsap.killTweensOf([hatch, ...chars, ...crosses]);
         gsap.set(hatch, { opacity: 1, filter: BLUR_VISIBLE_FILTER, y: 0 });
         gsap.set(chars, { opacity: 1, filter: BLUR_VISIBLE_FILTER, y: 0 });
         gsap.set(crosses, { opacity: 1, scale: 1 });
       };
 
-      const jumpToHidden = () => {
+      const jumpWordmarkToHidden = () => {
         gsap.killTweensOf([hatch, ...chars, ...crosses]);
         gsap.set(hatch, { opacity: 0, filter: BLUR_HIDDEN_FILTER, y: BLUR_HIDDEN_Y_PX });
         gsap.set(chars, { opacity: 0, filter: BLUR_HIDDEN_FILTER, y: BLUR_HIDDEN_Y_PX });
@@ -97,16 +130,24 @@ export function useMachineScrollAnimation({
       };
 
       // Baseline before any ScrollTrigger exists — matches the SSR-hidden inline styles exactly
-      // (see BlurText.tsx's BLUR_HIDDEN_* and MachineSectionClient.tsx's hatch/cross styles).
-      jumpToHidden();
+      // (see BlurText.tsx's BLUR_HIDDEN_* and MachineSectionClient.tsx's hatch/cross/topside
+      // styles).
+      jumpWordmarkToHidden();
+      gsap.set(wordmark, { opacity: 1, filter: BLUR_VISIBLE_FILTER });
+      gsap.set(topside, { opacity: 0, scale: TOPSIDE_HIDDEN_SCALE });
 
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        // No pin, no motion — static, fully visible.
-        jumpToFinal();
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      if (prefersReducedMotion) {
+        // No pin, no motion — land directly on the SEQUENCE'S END state: wordmark long gone,
+        // topside fully grown (matches where continued scrolling would have ended up).
+        jumpWordmarkToFinal();
+        gsap.set(wordmark, { opacity: 0, filter: BLUR_HIDDEN_FILTER });
+        gsap.set(topside, { opacity: 1, scale: TOPSIDE_END_SCALE });
         return;
       }
 
-      const playEntrance = contextSafe!(() => {
+      const playWordmarkEntrance = contextSafe!(() => {
         gsap.killTweensOf([hatch, ...chars, ...crosses]);
         gsap
           .timeline()
@@ -131,7 +172,7 @@ export function useMachineScrollAnimation({
           );
       });
 
-      const playReverse = contextSafe!(() => {
+      const playWordmarkReverse = contextSafe!(() => {
         gsap.killTweensOf([hatch, ...chars, ...crosses]);
         gsap
           .timeline()
@@ -155,7 +196,64 @@ export function useMachineScrollAnimation({
           );
       });
 
+      const playTopsideEnter = contextSafe!(() => {
+        gsap.killTweensOf(topside);
+        gsap.to(topside, { opacity: 1, scale: TOPSIDE_BASE_SCALE, duration: TOPSIDE_ENTER_DURATION, ease: "power2.out" });
+      });
+
+      const playTopsideLeave = contextSafe!(() => {
+        gsap.killTweensOf(topside);
+        gsap.to(topside, {
+          opacity: 0,
+          scale: TOPSIDE_HIDDEN_SCALE,
+          duration: TOPSIDE_ENTER_DURATION * 0.6,
+          ease: "power2.in",
+        });
+      });
+
       const instantUntil = performance.now() + INSTANT_WINDOW_MS;
+      let topsideEntered = false;
+
+      // The exit+grow phase is a pure function of progress — no tween, just gsap.set every
+      // frame — so it's automatically frame-accurate (freezes exactly where scroll stops) and
+      // correct at any progress value with no separate "instant" handling needed (unlike the two
+      // triggered entrances above, this can't get caught "mid-flight" by a refresh).
+      const applyExitGrow = (progress: number) => {
+        if (progress < EXIT_GROW_START) {
+          gsap.set(wordmark, { opacity: 1, filter: BLUR_VISIBLE_FILTER });
+          if (topsideEntered) gsap.set(topside, { scale: TOPSIDE_BASE_SCALE });
+          return;
+        }
+        const t = gsap.utils.clamp(0, 1, (progress - EXIT_GROW_START) / (1 - EXIT_GROW_START));
+        // Real bug, caught while verifying: if scroll reaches EXIT_GROW_START while
+        // playTopsideEnter's 0.7s tween is still ticking, GSAP's own ticker re-applies that
+        // tween's interpolated scale on every subsequent frame, silently overwriting this
+        // gsap.set() call — topside would visibly freeze at TOPSIDE_BASE_SCALE regardless of
+        // further scroll. Killing any in-flight tween on `topside` before setting it here (only
+        // once we're actually past EXIT_GROW_START, so a legitimately-still-playing entrance
+        // isn't cut short before that point) hands control to the scrub cleanly. That kill also
+        // cancels the entrance tween's OWN opacity animation (killTweensOf stops every property
+        // it was driving, not just scale) — a second bug this surfaced: if killed mid-fade,
+        // opacity would freeze part-way instead of landing on 1. Setting it explicitly below
+        // fixes that; topside is always meant to be fully opaque by this point regardless of
+        // whether its entrance tween had actually finished on its own.
+        gsap.killTweensOf(topside);
+        gsap.set(wordmark, { opacity: 1 - t, filter: `blur(${t * 12}px)` });
+        gsap.set(topside, { opacity: 1, scale: TOPSIDE_BASE_SCALE + t * (TOPSIDE_END_SCALE - TOPSIDE_BASE_SCALE) });
+      };
+
+      const handleUpdate = (progress: number, instant: boolean) => {
+        if (progress >= TOPSIDE_ENTER_AT && !topsideEntered) {
+          topsideEntered = true;
+          if (instant) gsap.set(topside, { opacity: 1, scale: TOPSIDE_BASE_SCALE });
+          else playTopsideEnter();
+        } else if (progress < TOPSIDE_ENTER_AT && topsideEntered) {
+          topsideEntered = false;
+          if (instant) gsap.set(topside, { opacity: 0, scale: TOPSIDE_HIDDEN_SCALE });
+          else playTopsideLeave();
+        }
+        applyExitGrow(progress);
+      };
 
       ScrollTrigger.create({
         trigger: section,
@@ -170,21 +268,33 @@ export function useMachineScrollAnimation({
         invalidateOnRefresh: true,
         // Guarded by INSTANT_WINDOW_MS — see its comment for why onEnter can fire during initial
         // setup (not just a later real scroll-crossing) when already positioned inside the pin.
-        onEnter: () => (performance.now() < instantUntil ? jumpToFinal() : playEntrance()),
-        // Scrolled up into this section from GROUP_2's direction (i.e. re-entering from below,
-        // past the pin's end) — the "chapter title" was already seen going forward, so just show
-        // it, no replay.
-        onEnterBack: () => jumpToFinal(),
-        // Scrolled back up out of the pin (past its start, back toward GROUP_1) — unwind the
-        // entrance instead of just snapping away. Same instant-window guard: a churn/refresh that
-        // lands us above the start shouldn't play a ~0.9s reverse for a state the user never saw.
-        onLeaveBack: () => (performance.now() < instantUntil ? jumpToHidden() : playReverse()),
-        // Initial load/resize: if we're already scrolled past the start (e.g. a hard refresh deep
-        // in the page, or a resize recalculating positions after the pin already fired once), land
-        // directly on the finished state instead of replaying the entrance from scratch. Redundant
-        // with the onEnter guard above in most cases, but also covers loading already scrolled
-        // PAST the whole pin range (progress at/near 1 without necessarily crossing onEnter).
-        onRefresh: (self) => (self.progress > 0 ? jumpToFinal() : jumpToHidden()),
+        onEnter: () => (performance.now() < instantUntil ? jumpWordmarkToFinal() : playWordmarkEntrance()),
+        // Re-entering from below (GROUP_2's direction, past the pin's end) — the whole sequence
+        // was already seen going forward, so just show its true end state, no replay.
+        onEnterBack: () => {
+          topsideEntered = true;
+          jumpWordmarkToFinal();
+          gsap.set(wordmark, { opacity: 0, filter: BLUR_HIDDEN_FILTER });
+          gsap.set(topside, { opacity: 1, scale: TOPSIDE_END_SCALE });
+        },
+        // Scrolled back up out of the pin (past its start, back toward GROUP_1) — unwind
+        // everything, not just the wordmark entrance.
+        onLeaveBack: () => {
+          topsideEntered = false;
+          if (performance.now() < instantUntil) {
+            jumpWordmarkToHidden();
+            gsap.set(wordmark, { opacity: 1, filter: BLUR_VISIBLE_FILTER });
+            gsap.set(topside, { opacity: 0, scale: TOPSIDE_HIDDEN_SCALE });
+          } else {
+            playWordmarkReverse();
+            gsap.set(wordmark, { opacity: 1, filter: BLUR_VISIBLE_FILTER });
+            playTopsideLeave();
+          }
+        },
+        onUpdate: (self) => handleUpdate(self.progress, false),
+        // Initial load/resize: land on the exact right frame for the current progress without
+        // replaying triggered entrances from scratch.
+        onRefresh: (self) => handleUpdate(self.progress, true),
       });
 
       // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — see the

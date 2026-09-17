@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRef } from "react";
 import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
-import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
+import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
 import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
 import { vw } from "@/lib/grid";
 
@@ -33,26 +33,46 @@ const CROSS_V_OFFSET_PX = 70;
 
 const CROSS_POSITIONS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
 
+// topside.svg is 688x688 (a top-down view of the server, same lid as servertitanium.svg's top
+// face, with an ambient glow baked in) — sized here at the 1920 reference, vw-scaled like
+// everything else on this screen. Starts hidden (small + transparent), fades in at its own base
+// scale once the wordmark has been visible a while, then grows further (scrubbed, see
+// machineScrollAnimation.ts) while the wordmark fades out — all centered on the SAME point.
+const TOPSIDE_WIDTH_PX = 460;
+
 export function MachineSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const wordmarkRef = useRef<HTMLDivElement>(null);
   const hatchRef = useRef<HTMLDivElement>(null);
   const crossRefs = useRef<(HTMLImageElement | null)[]>([]);
+  const topsideRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
-  useMachineScrollAnimation({ sectionRef, hatchRef, crossRefs, ssrScrollReserveRef });
+  useMachineScrollAnimation({
+    sectionRef,
+    wordmarkRef,
+    hatchRef,
+    crossRefs,
+    topsideRef,
+    ssrScrollReserveRef,
+  });
 
   return (
     // Outer <section> is a plain block (no height of its own beyond its children) — deliberately
     // NOT `min-h-screen` itself, so the trailing ssrScrollReserveRef spacer below adds real EXTRA
     // document height on top of the inner min-h-screen div instead of being absorbed by it. GSAP
     // pins THIS section: at the moment it captures the pin snapshot, the spacer has already
-    // collapsed to 0px (see useMachineScrollAnimation), so what actually gets pinned is exactly the
-    // inner div's box — a true full-viewport screen, not viewport+700px.
+    // collapsed to 0px (see useMachineScrollAnimation), so what actually gets pinned is exactly
+    // the inner div's box — a true full-viewport screen. Everything (wordmark AND topside.svg)
+    // lives in ONE stage, one pin — the wordmark fades away and topside.svg grows in the SAME
+    // centered spot, rather than topside living in a separate section further down the page.
     <section ref={sectionRef} className="relative">
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="relative inline-flex items-center" style={{ gap: vw(WORDMARK_GAP_PX) }}>
-          {/* Hatch mark — SSR-hidden (matches BlurText's BLUR_HIDDEN_* so nothing flashes visible
-              before hydration), unblurred/faded in first by useMachineScrollAnimation's entrance. */}
+      <div ref={stageRef} className="relative flex min-h-screen items-center justify-center">
+        <div ref={wordmarkRef} className="relative inline-flex items-center" style={{ gap: vw(WORDMARK_GAP_PX) }}>
+          {/* Hatch mark — SSR-hidden (matches BlurText's BLUR_HIDDEN_* so nothing flashes
+              visible before hydration), unblurred/faded in first by
+              useMachineScrollAnimation's entrance. */}
           <div
             ref={hatchRef}
             style={{ opacity: 0, filter: BLUR_HIDDEN_FILTER, transform: `translateY(${BLUR_HIDDEN_Y_PX}px)` }}
@@ -101,14 +121,36 @@ export function MachineSectionClient() {
             />
           ))}
         </div>
+
+        {/* topside.svg — absolutely centered on the SAME point as the wordmark above (the
+            `stageRef` parent is `relative`, this is `absolute` + centered via left/top 50% and
+            GSAP-owned xPercent/yPercent, not a plain CSS translate string, so GSAP's later scale
+            tweens compose cleanly with the centering instead of fighting over `transform`).
+            Starts hidden (opacity 0, TOPSIDE_HIDDEN_SCALE) — fades in at its own base scale once
+            the wordmark's been visible a while, then grows further while the wordmark fades out. */}
+        <div
+          ref={topsideRef}
+          aria-hidden="true"
+          className="absolute top-1/2 left-1/2"
+          style={{ opacity: 0, transform: `translate(-50%, -50%) scale(${TOPSIDE_HIDDEN_SCALE})` }}
+        >
+          <Image
+            src="/infrastructur/topside.svg"
+            alt=""
+            width={688}
+            height={688}
+            aria-hidden="true"
+            style={{ width: vw(TOPSIDE_WIDTH_PX), height: "auto" }}
+          />
+        </div>
       </div>
 
-      {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
-          (see useMachineScrollAnimation, where it's collapsed to 0 right before that real
-          pin-spacer is created) — server-rendered so the page is the SAME total height before and
-          after client JS runs, and so the collapse-before-pin-capture sequencing described above
-          works out to exactly a full-viewport pin snapshot. Mirrors Hero/Infrastructure's identical
-          fix for an identical bug (see PROJECT.md). */}
+      {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later
+          add (see useMachineScrollAnimation, where it's collapsed to 0 right before that real
+          pin-spacer is created) — server-rendered so the page is the SAME total height before
+          and after client JS runs, and so the collapse-before-pin-capture sequencing described
+          above works out to exactly a full-viewport pin snapshot. Mirrors Hero/Infrastructure's
+          identical fix for an identical bug (see PROJECT.md). */}
       <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: MACHINE_PIN_SCROLL_DISTANCE }} />
     </section>
   );
