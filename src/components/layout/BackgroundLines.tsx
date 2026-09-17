@@ -70,7 +70,11 @@ function ColumnLines({
 
 export function BackgroundLines() {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    // FIXED to the viewport, not to the page: several sections are pinned (hero, infrastructure,
+    // the machine screen), so the content deliberately stands still while the page scrolls — with a
+    // page-absolute grid you'd see the lines sliding behind static content, which read as a glitch.
+    // Fixed also means the header-band column lines always line up with the sticky header.
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* Grain texture (Figma's own `feTurbulence` noise filter, exported as-is in the SVG) —
           user reported "a lot of white dots," visible in a real browser even though this project's
           own Playwright/Chromium screenshots never showed it (see PROJECT.md: same category of
