@@ -19,7 +19,7 @@ const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
 });
 
-const siteName = "TODO: Product Name";
+const siteName = "UseCTL";
 const siteDescription = "TODO: Product description";
 const siteUrl = "https://example.com";
 
