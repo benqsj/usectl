@@ -130,7 +130,7 @@ export function InfrastructureSectionClient({
                     aria-hidden={i !== 0}
                     data-step={i}
                     data-field="heading"
-                    className="max-w-[calc(var(--s)*950)] font-heading text-[calc(var(--s)*136)] leading-[1.05] font-bold text-foreground"
+                    className="max-w-[calc(var(--s)*950)] font-heading text-[calc(var(--s)*120)] leading-[1.05] font-bold text-foreground"
                   />
                   <BlurText
                     as="p"
@@ -139,7 +139,7 @@ export function InfrastructureSectionClient({
                     aria-hidden={i !== 0}
                     data-step={i}
                     data-field="paragraph"
-                    className="mt-6 max-w-[calc(var(--s)*860)] font-heading text-[calc(var(--s)*32)] text-white/70"
+                    className="mt-6 max-w-[calc(var(--s)*860)] font-heading text-[calc(var(--s)*30)] text-white/70"
                   />
                 </div>
               ))}

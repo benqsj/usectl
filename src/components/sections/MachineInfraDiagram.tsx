@@ -73,10 +73,11 @@ const HIDDEN = { opacity: 0, transform: "scale(0.92)" } as const;
 
 export function MachineInfraDiagram() {
   return (
-    // Deliberately narrower than the column it sits in (was w-full, which ran the frame right up
-    // to the edge) — the diagram is centred in whatever room is left.
+    // Wider than the column it sits in: at 90% (and before that at w-full) the whole diagram, icons
+    // included, read as too small next to the copy on the left. The overflow goes leftwards into the
+    // row's own gap, since the layer that holds this is right-aligned.
     <div
-      className="relative w-[90%]"
+      className="relative w-[105%]"
       style={{ aspectRatio: `${FRAME_W} / ${FRAME_H}`, containerType: "inline-size" }}
     >
       {/* 1) the outer frame + its title */}

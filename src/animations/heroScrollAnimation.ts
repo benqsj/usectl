@@ -157,6 +157,11 @@ export function useHeroScrollAnimation({
       };
       measureRecenterY();
 
+      // Assigned further down (it needs `tl` and `disassemble`), but referenced by the
+      // ScrollTrigger's own onRefresh below — which fires on creation too, hence the nullable
+      // holder rather than a direct reference.
+      let syncModelOnRefresh: (() => void) | null = null;
+
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: sectionRef.current,
@@ -170,6 +175,22 @@ export function useHeroScrollAnimation({
           pinSpacing: true,
           invalidateOnRefresh: true,
           onRefreshInit: measureRecenterY,
+          // THE FIX for "the hero's server is closed after the build section closed its own".
+          //
+          // Nothing is shared between the two 3D servers — each HeroServerModel instance builds its
+          // own scene, mixer and action, and each section drives its own apiRef. What IS shared is
+          // ScrollTrigger: BuildSection calls the page-wide, static `ScrollTrigger.refresh()` (from
+          // its onLeave, once its server has finished closing, and from its own model's onReady).
+          // A refresh reverts every trigger's animated properties to re-measure them, and because
+          // this timeline has `invalidateOnRefresh: true`, Hero's disassemble proxy gets reset with
+          // them — leaving the model at whatever pose that reset produced until something drives it
+          // again. Hero had no such re-assertion (its sync only ran when its own GLB reported
+          // ready), while BuildSection has always re-applied its own state in `onRefresh` — which is
+          // exactly why the bug only ever went one way, Build breaking Hero and never the reverse.
+          //
+          // So: Hero now re-asserts too. `syncModelToTimeline` is a pure function of the trigger's
+          // current progress, so this is idempotent and correct no matter who fired the refresh.
+          onRefresh: () => syncModelOnRefresh?.(),
         },
       });
 
@@ -282,6 +303,7 @@ export function useHeroScrollAnimation({
         if (st) tl.progress(st.progress);
         modelRef.current?.setProgress(disassemble.t);
       };
+      syncModelOnRefresh = syncModelToTimeline;
       modelSyncRef.current = () => {
         syncModelToTimeline();
         requestAnimationFrame(syncModelToTimeline);
