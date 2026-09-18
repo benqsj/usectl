@@ -332,9 +332,179 @@ User reported the page background looking noticeably lighter/grayer than before,
 - `page.tsx`: Hero → InfrastructureSection (steps 1-2) → MachineSection (steps 3-8 inside) → PricingCalculatorSection. The separate after-machine InfrastructureSection is gone; `INFRASTRUCTURE_AFTER_MACHINE_PIN_SCROLL_DISTANCE` is now unused.
 - Performance (the zoom stuttered full-screen): `useRasterizedSvg` draws topside.svg into a canvas once and the animation scales that bitmap — browsers re-rasterise an SVG at every new scale, which was the main cost. Max scale capped at 9, the card is blurred only while it is still small, and the stage is `overflow-hidden`.
 
+## New `BuildSection` (CTA closer), 2026-09-18
+
+Built from a user-supplied screenshot — a new, final section after `PricingCalculatorSection`
+(`page.tsx` order is now Hero → InfrastructureSection intro → MachineSection → PricingCalculatorSection
+→ BuildSection). Files: `src/components/sections/BuildSection.tsx` (thin server wrapper) →
+`BuildSectionClient.tsx` ("use client") + `src/animations/buildScrollAnimation.ts` + `src/lib/buildLayout.ts`.
+
+**Important discovery made while building this, not previously reflected anywhere in this file**:
+the hero's cube is no longer the four-layer-SVG disassembly this file's own "Implemented so far"
+section describes at length — it's a real three.js GLB model now (`public/herosection/3D/server.glb`,
+`HeroServerModel.tsx`, `src/lib/heroModel.ts`), with an authored `explode_sequence` animation clip
+scrubbed by scroll (`HeroServerModel.setProgress(0..1)`), plus idle auto-rotation and
+pointer-drag-to-spin/tilt. This must have happened in a session this file's log never caught up
+with. **Every earlier PROJECT.md paragraph describing the hero's "per-layer SVG disassembly,"
+`servers-layers.svg`, the 6-file `public/herosection/layers/*.svg` set, `--stack-gap` driving
+per-layer `top` offsets, etc. is now historical** — `HeroSectionClient.tsx` still exposes a
+`cubeWrapperRef` div with the same box/sizing (`w-[400px]`, `--core-height`, `h-[calc(3*var(--stack-gap)+var(--core-height))]`,
+`min-[1800px]:w-[480px]`) purely so the rest of the hero's timeline (text fade, scale-up, document
+height) behaves identically to before, but no layer SVGs are rendered inside it any more — only the
+GLB canvas. `InfrastructureSection`'s static server stack (`serverStackLayers.ts`) still uses the
+original 4 layer SVGs directly and is unaffected.
+
+- **Content**: heading "What will you build next?" (`text-[98px] font-medium leading-none tracking-[-0.02em]`,
+  `text-foreground`), paragraph (`text-[28px] font-normal leading-none tracking-[-0.02em] text-center`,
+  `text-white/70`, `max-w-[900px]` hand-tuned against the screenshot's 2-line wrap — no exact width
+  was given), and two pill buttons at the EXACT px sizes/padding/radius given: "Create Machine"
+  (166×48, solid `bg-brand`, `text-[14px] font-bold`) and "From $15/month" (192×48, `border-white/20`
+  outline only, `text-[14px] font-medium`), `gap-[28px]` between them, built bespoke (not the shared
+  `Button.tsx`, whose own padding/sizing convention doesn't hit these exact numbers).
+- **The cube**: reuses `HeroServerModel` verbatim (same component, same `HeroServerModelHandle.setProgress`
+  API) — same `HERO_STACK_GAP_CLOSED_PX`/`HERO_STACK_GAP_OPEN_PX` constants from `heroLayers.ts` too
+  (not redefined), since `HeroServerModel.tsx`'s own canvas-positioning math hardcodes
+  `HERO_STACK_GAP_CLOSED_PX` internally rather than taking it as a prop.
+
+- **Rewritten same day, 2nd pass — "the opposite of what I asked for the first time"**: the FIRST
+  version (an unpinned scrub as the wrapper scrolled through the viewport, same size as the hero's
+  own cube) put the model below the buttons in normal document flow, meaning the user had to keep
+  scrolling DOWN to see the whole thing. The user then asked for the reverse: the server shouldn't
+  travel down the page at all — it should sit close to the text, shrink enough that it's actually
+  small, and the heading/paragraph/buttons AND the fully-open server should all fit in ONE screen
+  together, closing while the page holds still. That's a pin, not a scrub-while-scrolling-past.
+  - `buildScrollAnimation.ts` now pins the whole `<section>` (`start: "top top", end: "+=900px", pin: true, pinSpacing: true`,
+    mirroring `heroScrollAnimation.ts`'s own pin exactly) instead of a plain unpinned `ScrollTrigger`.
+    Same `applyCloseProgress` mapping as before (`--stack-gap` OPEN→CLOSED, `modelRef.setProgress(1-progress)`)
+    but now driven by the pin's scrub progress. Because this creates a REAL pin-spacer, it now also
+    needs — and has — the same refresh-safety pair every other pinned section in this project
+    carries: a server-rendered `ssrScrollReserveRef` placeholder (collapsed to 0px first thing in the
+    effect) and a `scrollYBeforeChurnRef`-restored scroll position for React 19 StrictMode's dev-only
+    effect churn. Neither was needed in the unpinned first version.
+  - **Layout structure**: the outer `<section ref={sectionRef}>` is a plain block, with an INNER
+    `flex min-h-screen items-center justify-center` div holding all the content, and the SSR spacer
+    as a sibling of that inner div rather than nested inside it — the exact same structure
+    `MachineSectionClient.tsx` already established (see that entry above) for the identical reason: a
+    `min-h-screen` flex container with a height-only spacer child either gets the spacer's height
+    absorbed into satisfying the minimum, or throws off centering by counting it as a third flex
+    child. Copied the fix rather than rediscovering it.
+  - **The server shrank a LOT**: wrapper width `400px → 180px` (`210px` at the `min-[1800px]` wide
+    bucket) — see `buildLayout.ts`. `--core-height` recomputed for the new widths using the same
+    `256/372` ratio the hero's own values use (`180×0.688172≈123.87px`, `210×0.688172≈144.52px`). The
+    `--stack-gap` PX VALUES themselves were deliberately NOT shrunk alongside the width (see above,
+    `HeroServerModel.tsx` hardcodes them internally) — only WIDTH varies, which is fine because
+    `HeroServerModel`'s own scale math (`pxPerUnit = HERO_MODEL_PX_PER_UNIT * wrapperWidth/HERO_MODEL_BASE_WIDTH_PX`)
+    already derives the model's visual size from `wrapper.clientWidth` at runtime.
+  - **Two real bugs found and fixed while verifying in the browser, both about running out of scroll
+    room specifically because this is the LAST section on the page** (the same general failure class
+    as `PricingCalculatorSectionClient.tsx`'s own `min-h-[60vh]` fix, but two different concrete
+    mechanisms):
+    1. At the model's fully-OPEN entry state, before the pin rewrite, `HeroServerModel`'s canvas
+       "stage" (centered on the wrapper's fixed CLOSED-state center regardless of current openness)
+       overlapped the "From $15/month" button — confirmed via screenshot, fixed first with a large
+       static margin, then made moot by the width shrink above (which shrinks the stage
+       proportionally too); the final version uses a much smaller `mt-[80px]`, re-verified via
+       screenshot with a clean gap.
+    2. After pinning: a full scroll-scan (Playwright, reading `scrollY` and the pinned section's
+       `getComputedStyle().position`) showed the pin NEVER released even scrolled far past its own
+       900px distance — `position: fixed` forever, `scrollY` stuck exactly at the document's max
+       scroll. Root cause, worked out algebraically: with `start: "top top"` and a pinned inner div
+       exactly one viewport tall, as the LAST thing on the page, the pin-spacer's reserved distance
+       and the viewport-height the trigger itself occupies cancel out with **zero margin** — the
+       pin's true end lands exactly ON the document's max scroll, and rounding alone was enough to
+       strand it there permanently. Fixed with a small **permanent** (never-collapsing, unlike
+       `ssrScrollReserveRef`) trailing `<div className="h-24" />` after the SSR spacer — re-verified:
+       the pin now correctly releases to `position: relative` once scrolled past its end, the closed
+       model renders cleanly at the true bottom of the page, and scrolling back up re-opens it.
+  - `prefers-reduced-motion` still lands directly on `closeProgress: 1` (closed, matching where
+    continued scrolling would have ended up) with no `ScrollTrigger`/pin created at all.
+- Verified end-to-end via Playwright at 1920×1080 (and spot-checked 1440×900 for the "fits one
+  screen" requirement): entry state shows heading/paragraph/buttons/fully-open model together with no
+  overlap and no scrolling needed to see all of it; scrolling while pinned shows the model
+  progressively closing (mid-transition screenshot confirmed); scrolling past the pin's end releases
+  it and shows the fully-closed model at the true bottom of the page; scrolling back up re-opens it;
+  `prefers-reduced-motion` shows the closed model directly with no pin; zero console/page errors
+  across every check. `tsc --noEmit` and `eslint` both clean.
+- **Not built**: the 4 corner "+" crosses visible around the cube in the reference screenshot — no
+  exact spec was given for them, and Hero's own identical corner crosses went through a whole
+  multi-round positioning saga (grid-snap → cube-relative rewrite → removed entirely, see this file's
+  own Hero history above) before being removed for being too fiddly to get right without live
+  iteration. Flagged rather than guessed at; ask if they should be added.
+
+- **3rd pass, same day**: user said the shrunk (180/210px) server read as "too small" and asked for
+  the hero's exact original size back (400/480px, same `--core-height`) — reverted the width shrink
+  entirely (`buildLayout.ts`'s `BUILD_MODEL_WIDTH_PX`/`WIDE_PX` constants are now unused/reference-only
+  again), keeping everything else from the pin rewrite above (pinned, closes-on-scroll, refresh-safety
+  fixes). `mt-[80px]` → back to `mt-[360px]` (the exact value from the very first pass's overlap fix)
+  since the overlap math is width-dependent and the width is back to the hero's own number.
+  - **Real bug found and fixed, only visible once genuinely testing the PINNED state (not the
+    pre-pin scroll-in state)**: a Playwright check that only screenshotted the section as it first
+    scrolled into view (still `position: relative`, not yet pinned) showed no problems — but once
+    truly pinned (`position: fixed`, confirmed via `getComputedStyle`), `getBoundingClientRect()` on
+    the `<h2>` read `top: 64px`, meaning roughly the top third of the heading rendered BEHIND the
+    96px-tall sticky header (which sits at a higher z-index, always covering the true top of the
+    viewport). Root cause: the pin's `start: "top top"` puts the section flush with the viewport's
+    true top edge, and centering content with `flex min-h-screen items-center justify-center`
+    centers within the FULL viewport height — ignoring that the header visually covers the top 96px
+    of that space regardless of scroll or pin state. Fixed by centering within the space actually
+    below the header instead: `marginTop: HEADER_HEIGHT_PX` (from `@/lib/grid`, not re-hardcoded) +
+    `minHeight: calc(100vh - HEADER_HEIGHT_PX)` (inline style, since Tailwind can't take an
+    imported-constant arbitrary value). Re-verified with the same precise-position script, stepping
+    scroll a few px at a time across the moment pinning engages: `h2Top` jumped straight to `256px`
+    the instant `position` became `fixed`, staying constant for the whole pin — clear of the header,
+    matches the (now-understood-to-be-misleading) pre-pin screenshot's appearance. **Lesson for any
+    future pin verification in this project**: a screenshot taken before `getComputedStyle().position`
+    is confirmed `"fixed"` is checking the WRONG state — pinned layout can differ from the
+    normal-flow layout the same element had a moment earlier, especially near page-fixed chrome like
+    the header.
+  - Re-verified end-to-end after this fix: entry state (pinned, heading clear of header, no
+    button/cube overlap), mid-close, fully-closed at the pin's end, release to `position: relative` at
+    the true bottom of the page (last section, same `h-24` trailing-spacer fix from the pin rewrite
+    still required and still working), and reverse-scroll re-opening — all confirmed via Playwright at
+    1920×1080, zero console/page errors. `tsc --noEmit` and `eslint` both clean.
+
+- **4th pass, same day — real bug: a 92px "jump" right at the moment pinning engaged**: user reported
+  scrolling down makes the text rise (normal), then it visibly "jumps back down," and only THEN does
+  the server start closing — and separately asked for the server to come up closer to the text rather
+  than sitting so far below it. Diagnosed the jump with a fine-grained scroll trace (stepping
+  `scrollY` by 20px at a time across the pin-engage threshold, reading `h2.getBoundingClientRect().top`
+  and `getComputedStyle(section).position` at each step) rather than guessing: `h2Top` decreased
+  smoothly and linearly right up to the last `position: relative` frame (164px), then SNAPPED to
+  256px the instant `position` became `fixed` — a real, measured 92px discontinuity, not a
+  misperception.
+  - **Root cause**: the previous fix (marginTop-based header clearance) put `marginTop: HEADER_HEIGHT_PX`
+    on the inner content div, whose parent (`<section>`) had no border/padding of its own. In normal
+    document flow, that margin CSS-collapses through the parent — a well-defined but easy-to-forget
+    CSS behavior. The instant the section becomes `position: fixed` (pinned), it establishes its own
+    block-formatting context, in which margins **never** collapse with children — so the exact same
+    markup renders at a measurably different position depending on pin state. Fixed by moving the
+    96px offset to `paddingTop` on the `<section>` itself instead of `marginTop` on the child —
+    padding never collapses, so it's identical in both states. Re-verified with the same fine-grained
+    trace: `h2Top` now changes by exactly the scroll delta on every single step, including the exact
+    frame pinning engages — zero discontinuity.
+  - **Lesson for this project generally**: any pinned section that also applies a margin-based offset
+    near the top of its own pinned box is at risk of this same class of bug — prefer padding (or an
+    absolutely-positioned inset) for any "clearance from the header" offset on a pin target, since
+    padding is provably collapse-safe in both normal-flow and `position: fixed` contexts.
+  - **Server brought closer to the text**, per the explicit second half of the request: `mt-[360px]` →
+    `mt-[220px]` (still the full 400/480px hero-sized wrapper, not shrunk). Re-verified via screenshot
+    at both 1920×1080 and 1440×900 — clean small gap, no overlap at either size.
+
+- **5th pass, same day**: `mt-[220px]` read as touching the buttons at the very start (open state);
+  bumped to `mt-[280px]` for a small resting gap. Separately, the user wanted the server to rise
+  UP as it closes rather than just shrinking in place — `HeroServerModel.setProgress` deliberately
+  keeps the model's own visual center FIXED regardless of open/closed progress (documented in its own
+  code as "kept centred on screen"), so closing alone never moved it. Added a new, purely cosmetic
+  layer on top: `buildScrollAnimation.ts`'s `applyCloseProgress` now also sets `y: -LIFT_ON_CLOSE_PX * closeProgress`
+  on the wrapper (`LIFT_ON_CLOSE_PX = 120`, a starting value like every other tuned constant in this
+  file) — the model's own internal centering is untouched, this is a separate translateY riding on
+  top of it. Verified via screenshot: open/entry state now has a small clean gap from the buttons,
+  and by the time it's closed the whole wrapper has visibly risen ~120px closer to the text.
+
 ## Open items / TODO
 
-- `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper are done (see "Card typography finished + stepper made live" above); still open: exact card spacing/chamfer size (eyeballed, not measured) and whether the +/- buttons should ever become genuinely user-clickable (currently scroll-only, by explicit request).
+- `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
+- `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot weren't added (no spec given, and Hero's own identical crosses were a whole saga before being removed — see that entry above).
 - Verify `HeroSection.tsx` against real Figma data once the MCP rate limit resets — see the "Implemented so far" note above for exactly what's unconfirmed (font sizes, spacing, button styling).
 - `public/herosection/cross.svg` exists but isn't used anywhere in the code right now — **temporarily removed 2026-09-17** from both `HeroSection.tsx` (4 `GridCross` corner marks around the cube, wide/FullHD only) and `InfrastructureSection.tsx` (4 `CardCross` corner marks on the card). User asked to remove them "temporarily," implying they'll likely come back — exact removed code + restoration instructions are preserved in both files' entries above under "Implemented so far." Restore from there when asked, rather than re-deriving the positioning math from scratch.
 - Footer — Figma content exists (`26:3243` area) but not requested/built yet.

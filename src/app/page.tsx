@@ -1,3 +1,4 @@
+import { BuildSection } from "@/components/sections/BuildSection";
 import { HeroSection } from "@/components/sections/HeroSection";
 import { InfrastructureSection } from "@/components/sections/InfrastructureSection";
 import { MachineSection } from "@/components/sections/MachineSection";
@@ -19,6 +20,7 @@ export default function Home() {
       {/* The machine screen — and, inside it, steps 3-8 */}
       <MachineSection />
       <PricingCalculatorSection />
+      <BuildSection />
     </main>
   );
 }
