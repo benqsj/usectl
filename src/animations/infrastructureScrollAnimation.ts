@@ -3,6 +3,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HEADER_HEIGHT_PX } from "@/lib/grid";
+import { readScale } from "@/lib/grid";
 import { createStepSwap } from "@/animations/stepSwap";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -202,7 +203,7 @@ export function useInfrastructureScrollAnimation({
             // Header is a fixed HEADER_HEIGHT_PX tall, so "centered in the space below it" sits
             // HEADER_HEIGHT_PX/2 below the viewport's true geometric center.
             start: `center center+=${HEADER_HEIGHT_PX / 2}`,
-            end: `+=${pinScrollDistance}`,
+            end: () => `+=${pinScrollDistance * readScale()}`,
             scrub: true,
             pin: true,
             // GSAP disables automatic pin-spacing by default when the pinned element's parent is

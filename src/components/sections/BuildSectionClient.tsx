@@ -6,7 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useBuildScrollAnimation } from "@/animations/buildScrollAnimation";
 import { HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
-import { HEADER_HEIGHT_PX } from "@/lib/grid";
+import { HEADER_HEIGHT_PX, s } from "@/lib/grid";
 import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
 
 // Built from a user-supplied screenshot (see PROJECT.md), 2026-09-18. Heading/paragraph/button
@@ -71,26 +71,26 @@ export function BuildSectionClient() {
         className="flex flex-col items-center justify-center px-6 pt-16 pb-4 text-center"
         style={{ minHeight: `calc(100vh - ${HEADER_HEIGHT_PX}px)` }}
       >
-        <h2 className="font-heading text-[98px] leading-none font-medium tracking-[-0.02em] text-foreground">
+        <h2 className="font-heading text-[calc(var(--s)*98)] leading-none font-medium tracking-[-0.02em] text-foreground">
           What will you build next?
         </h2>
 
-        <p className="mx-auto mt-6 max-w-[900px] text-center font-heading text-[28px] leading-none font-normal tracking-[-0.02em] text-white/70">
+        <p className="mx-auto mt-6 max-w-[calc(var(--s)*900)] text-center font-heading text-[calc(var(--s)*28)] leading-none font-normal tracking-[-0.02em] text-white/70">
           Give your next product a place to run. Keep building what matters — we&rsquo;ll handle the
           infrastructure behind
         </p>
 
-        <div className="mt-10 flex items-center justify-center gap-[28px]">
+        <div className="mt-10 flex items-center justify-center gap-[calc(var(--s)*28)]">
           <Link
             href="#"
-            className="inline-flex items-center justify-center rounded-[40px] bg-brand font-heading text-[14px] leading-none font-bold text-white"
+            className="inline-flex items-center justify-center rounded-[calc(var(--s)*40)] bg-brand font-heading text-[calc(var(--s)*14)] leading-none font-bold text-white"
             style={{ width: 166, height: 48, paddingTop: 15, paddingRight: 22, paddingBottom: 15, paddingLeft: 22 }}
           >
             Create Machine
           </Link>
           <Link
             href="#"
-            className="inline-flex items-center justify-center rounded-[40px] border border-white/20 font-heading text-[14px] leading-none font-medium text-white"
+            className="inline-flex items-center justify-center rounded-[calc(var(--s)*40)] border border-white/20 font-heading text-[calc(var(--s)*14)] leading-none font-medium text-white"
             style={{ width: 192, height: 48, paddingTop: 15, paddingRight: 22, paddingBottom: 15, paddingLeft: 22 }}
           >
             From $15/month
@@ -99,8 +99,8 @@ export function BuildSectionClient() {
 
         {/* The server, reusing HeroServerModel verbatim at the EXACT same wrapper size as the hero's
             own cube (400px / 480px, same --core-height) — per explicit request, reverted from a
-            shrunk-down 180/210px version that read as "too small." `mt-[360px]` (vs. the hero's own
-            `mt-[35px]`) is not arbitrary: HeroServerModel's canvas "stage" is centered on the
+            shrunk-down 180/210px version that read as "too small." `mt-[calc(var(--s)*360)]` (vs. the hero's own
+            `mt-[calc(var(--s)*35)]`) is not arbitrary: HeroServerModel's canvas "stage" is centered on the
             wrapper's fixed CLOSED-state center regardless of current openness (see
             HeroServerModel.tsx's `resize()`), so at this width the stage's top edge sits
             `stageHeight/2 - closedCenterY` ≈ 345px ABOVE the wrapper's own top edge even at rest —
@@ -110,13 +110,13 @@ export function BuildSectionClient() {
         <div
           ref={wrapperRef}
           aria-hidden="true"
-          className="relative mx-auto mt-[280px] w-[400px] [--core-height:275.27px] h-[calc(3*var(--stack-gap)_+_var(--core-height))] min-[1800px]:w-[480px] min-[1800px]:[--core-height:330.32px]"
+          className="relative mx-auto mt-[calc(var(--s)*280)] w-[calc(var(--s)*480)] [--core-height:calc(var(--s)*330.32)] h-[calc(3*var(--stack-gap)_+_var(--core-height))]"
           style={{ "--stack-gap": `${HERO_STACK_GAP_OPEN_PX}px` } as CSSProperties}
         >
           {/* Same ambient glow as the hero's cube wrapper. */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 h-[130px] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
+            className="pointer-events-none absolute left-1/2 h-[calc(var(--s)*130)] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
             style={{
               top: `calc(3 * var(--stack-gap) + var(--core-height) - 45px)`,
               background: "radial-gradient(ellipse at center, rgba(72,144,72,0.55) 0%, rgba(72,144,72,0) 70%)",
@@ -133,7 +133,7 @@ export function BuildSectionClient() {
           (same fix every other pinned section in this project uses — see PROJECT.md). Sits as a
           SIBLING of the inner min-h-screen div, not nested inside it — see the comment on the outer
           <section> above for why. */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: BUILD_PIN_SCROLL_DISTANCE }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(BUILD_PIN_SCROLL_DISTANCE) }} />
 
       {/* This used to be a permanent `h-24` (96px) trailing spacer: this section's pin uses
           `start: "top top"`, and with nothing following it in the document the pin-spacer's reserved

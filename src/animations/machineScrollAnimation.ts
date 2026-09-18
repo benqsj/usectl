@@ -1,8 +1,9 @@
-import type { RefObject } from "react";
+import { useRef, type RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
+import { readScale } from "@/lib/grid";
 import { createStepSwap } from "@/animations/stepSwap";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -284,8 +285,14 @@ export function useMachineScrollAnimation({
   stepCount,
   ssrScrollReserveRef,
 }: MachineScrollRefs) {
+  // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle — see the matching
+  // comment in heroScrollAnimation.ts.
+  const scrollYBeforeChurnRef = useRef<number | null>(null);
+
   useGSAP(
     (_context, contextSafe) => {
+      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
+
       // Collapse the SSR placeholder before anything else, on every code path (including
       // prefers-reduced-motion, which never creates a real pin-spacer).
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
@@ -632,7 +639,7 @@ export function useMachineScrollAnimation({
       ScrollTrigger.create({
         trigger: section,
         start: "top top",
-        end: `+=${PIN_SCROLL_DISTANCE}`,
+        end: () => `+=${PIN_SCROLL_DISTANCE * readScale()}`,
         scrub: true,
         pin: true,
         pinSpacing: true,
@@ -645,6 +652,15 @@ export function useMachineScrollAnimation({
         onLeave: () => applyProgress(1, true),
         onLeaveBack: () => applyProgress(0, true),
       });
+
+      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
+      // mechanism as heroScrollAnimation.ts.
+      const targetScrollY = scrollYBeforeChurnRef.current;
+      if (targetScrollY !== null) {
+        setTimeout(() => {
+          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
+        }, 100);
+      }
     },
     { scope: sectionRef, dependencies: [stepCount] },
   );

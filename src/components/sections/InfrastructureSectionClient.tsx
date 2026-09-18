@@ -8,6 +8,7 @@ import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import { BlurText } from "@/components/ui/BlurText";
 import type { MachineServerParts } from "@/lib/machineServerParts";
 import { chamferClipPath, chamferDiagonalStyle } from "@/lib/chamfer";
+import { s } from "@/lib/grid";
 import { MachineInfraDiagram } from "./MachineInfraDiagram";
 import { MachineDeployDiagram } from "./MachineDeployDiagram";
 import { MachineAgentDiagram } from "./MachineAgentDiagram";
@@ -69,7 +70,7 @@ export function InfrastructureSectionClient({
     <div
       ref={cardRef}
       data-infra-card=""
-      className={`relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 min-[1800px]:w-[1722px] md:px-16 md:pt-8 md:pb-14 ${
+      className={`relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 md:w-[calc(var(--s)*1722)] md:px-[calc(var(--s)*64)] md:pt-[calc(var(--s)*32)] md:pb-[calc(var(--s)*56)] ${
         embedded ? "will-change-transform [backface-visibility:hidden]" : ""
       }`}
       style={{ clipPath: chamferClipPath() }}
@@ -90,7 +91,7 @@ export function InfrastructureSectionClient({
           className="pointer-events-none absolute bg-white/10"
           style={chamferDiagonalStyle()}
         />
-        <div className="flex flex-col items-center gap-16 md:flex-row">
+        <div className="flex flex-col items-center gap-16 md:flex-row md:gap-[calc(var(--s)*64)]">
           {/* Blur-stagger step sequence. Every step's eyebrow / heading+paragraph is rendered up
               front and stacked in the same grid cell ([grid-area:1/1]), so each stack auto-sizes to
               its tallest step and nothing shifts while swapping. Only the active step's words sit
@@ -110,7 +111,7 @@ export function InfrastructureSectionClient({
                     aria-hidden={i !== 0}
                     data-step={i}
                     data-field="eyebrow"
-                    className="[grid-area:1/1] font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/70"
+                    className="[grid-area:1/1] font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/70"
                   />
                 ))}
               </span>
@@ -129,7 +130,7 @@ export function InfrastructureSectionClient({
                     aria-hidden={i !== 0}
                     data-step={i}
                     data-field="heading"
-                    className="max-w-[950px] font-heading text-[136px] leading-[1.05] font-bold text-foreground"
+                    className="max-w-[calc(var(--s)*950)] font-heading text-[calc(var(--s)*136)] leading-[1.05] font-bold text-foreground"
                   />
                   <BlurText
                     as="p"
@@ -138,7 +139,7 @@ export function InfrastructureSectionClient({
                     aria-hidden={i !== 0}
                     data-step={i}
                     data-field="paragraph"
-                    className="mt-6 max-w-[860px] font-heading text-[32px] text-white/70"
+                    className="mt-6 max-w-[calc(var(--s)*860)] font-heading text-[calc(var(--s)*32)] text-white/70"
                   />
                 </div>
               ))}
@@ -153,7 +154,7 @@ export function InfrastructureSectionClient({
           <div
             ref={serverRef}
             aria-hidden="true"
-            className={`relative w-[260px] shrink-0 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] ${
+            className={`relative w-[calc(var(--s)*260)] shrink-0 md:w-[calc(var(--s)*650)] ${
               // The machine server is pushed DOWN by a top margin, sitting it on the card's optical
               // centre (the static bar below the row pulls that centre down); the static stack is
               // centred by the row itself.
@@ -164,7 +165,7 @@ export function InfrastructureSectionClient({
               // variants are worth not repeating: a bigger top margin (220/255) made this card
               // taller than the intro's, and splitting it evenly (my-60/70) kept the height right
               // but sat the server too high.
-              machineServer ? "mt-[120px] min-[1800px]:mt-[140px]" : ""
+              machineServer ? "mt-[calc(var(--s)*140)]" : ""
             } ${
               // Embedded only: the server SITS lower without the column getting any taller. It has
               // to be a transform rather than more margin — margin would grow the card's border box
@@ -172,7 +173,7 @@ export function InfrastructureSectionClient({
               // above. Nothing else transforms this element in the embedded card (the scroll
               // animation moves the two server halves inside it, not the column), and the icon
               // cluster measures its position live, so it follows along on its own.
-              machineServer && embedded ? "translate-y-[100px] min-[1800px]:translate-y-[115px]" : ""
+              machineServer && embedded ? "translate-y-[calc(var(--s)*115)]" : ""
             }`}
             style={machineServer ? { aspectRatio: `${machineServer.width} / ${machineServer.height}` } : undefined}
           >
@@ -264,7 +265,7 @@ export function InfrastructureSectionClient({
               // Static 4-layer stack — same geometry as the hero (layers 372x256, cap 383 wide),
               // stacked with a gap of 19% of the stack width. Nothing animates it yet.
               <div
-                className="relative mx-auto [--w:160px] md:max-[1799px]:[--w:200px] min-[1800px]:[--w:400px]"
+                className="relative mx-auto [--w:160px] md:[--w:calc(var(--s)*400)]"
                 style={{
                   ["--gap" as string]: "calc(var(--w) * 0.19)",
                   width: "var(--w)",
@@ -311,7 +312,7 @@ export function InfrastructureSectionClient({
               data-machine-diagram=""
               data-diagram-step="2"
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] translate-x-[24px] items-center justify-end opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] min-[1800px]:translate-x-[40px]"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[calc(var(--s)*260)] translate-x-[calc(var(--s)*24)] items-center justify-end opacity-0 md:right-[calc(var(--s)*64)] md:w-[calc(var(--s)*650)] md:translate-x-[calc(var(--s)*40)]"
             >
               <MachineInfraDiagram />
             </div>
@@ -319,7 +320,7 @@ export function InfrastructureSectionClient({
               data-machine-diagram=""
               data-diagram-step="3"
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] items-center justify-center opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px]"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[calc(var(--s)*260)] items-center justify-center opacity-0 md:right-[calc(var(--s)*64)] md:w-[calc(var(--s)*650)]"
             >
               <MachineDeployDiagram />
             </div>
@@ -333,7 +334,7 @@ export function InfrastructureSectionClient({
               data-diagram-step="4"
               data-diagram-until="5"
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] items-center justify-center opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px]"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[calc(var(--s)*260)] items-center justify-center opacity-0 md:right-[calc(var(--s)*64)] md:w-[calc(var(--s)*650)]"
             >
               <MachineAgentDiagram />
             </div>
@@ -355,7 +356,7 @@ export function InfrastructureSectionClient({
           pin-spacer is created) — server-rendered so the page is the SAME total height before and
           after client JS runs. Mirrors HeroSectionClient.tsx's identical fix for an identical bug
           (see PROJECT.md). */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: pinScrollDistance }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(pinScrollDistance) }} />
     </section>
   );
 }

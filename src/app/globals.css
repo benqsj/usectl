@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
+/* --s is THE page's scale factor, and it is a LENGTH rather than a ratio, so any design number can
+   be written as `calc(var(--s) * 136)`. The design is drawn at 1920 (CANVAS_WIDTH_REF in
+   lib/grid.ts): at 1920 --s is exactly 1px, so every scaled value equals its design px and the
+   reference width is left untouched. Below that it shrinks with the viewport (1600 -> 0.833,
+   1440 -> 0.75) and stops at 1280/1920 = 0.66667, the narrowest width this pass designs for. Above
+   1920 it keeps growing — which is what the background grid already did on its own, so content and
+   grid now scale by an identical factor and can no longer drift apart the way they used to.
+
+   Registered with @property so getComputedStyle returns a resolved length: an unregistered custom
+   property hands JS back the raw `max(...)` token string instead, and the GSAP side needs the real
+   number (see readScale() in lib/grid.ts). */
+@property --s {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
 :root {
+  --s: max(0.66667px, calc(100vw / 1920));
+
   --background: #1e1d1d;
   --foreground: #ededed;
   --brand: #11a32a;

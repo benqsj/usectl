@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ColumnLines, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/components/layout/BackgroundLines";
-import { INSET_VW } from "@/lib/grid";
+import { INSET_VW, s } from "@/lib/grid";
 
 const NAV_LINKS = [
   { label: "The Machine", href: "#the-machine" },
@@ -26,7 +26,12 @@ export function Header() {
       />
       <div
         className="relative flex h-24 w-full items-center"
-        style={{ paddingLeft: "6.770833vw", paddingRight: "5.15625vw" }}
+        style={
+          /* Was hardcoded "6.770833vw" / "5.15625vw" — the same 130px / 99px at the 1920 reference,
+             but in raw vw they kept shrinking past the 1280 floor while the grid they line up with
+             stopped. Both go through the shared scale now. */
+          { paddingLeft: s(130), paddingRight: INSET_VW }
+        }
       >
         <Link href="/" aria-label="usectl home" className="shrink-0">
           <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority />

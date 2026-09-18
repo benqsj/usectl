@@ -1,9 +1,10 @@
-import type { RefObject } from "react";
+import { useRef, type RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HERO_STACK_GAP_CLOSED_PX, HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
 import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
+import { readScale } from "@/lib/grid";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -17,11 +18,11 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 // that — the server shouldn't travel down the page at all, it should come up close to the text and
 // the whole section (heading, paragraph, buttons, AND the open server) should fit in ONE screen,
 // closing while the page holds still. That's exactly what a pin is for. Because this now creates a
-// real pin-spacer, it needs the same refresh-safety fix every other pinned section in this project
-// carries (see heroScrollAnimation.ts for the original, fully-diagnosed bug this guards against):
-// `ssrScrollReserveRef`, a server-rendered placeholder so the pre-hydration and hydrated page
-// heights match. (The StrictMode-churn scrollY *restore* that used to also live in this file was
-// moved to a single shared `<ScrollChurnGuard />` — see that component for why.)
+// real pin-spacer, it needs the same refresh-safety pair every other pinned section in this project
+// carries (see heroScrollAnimation.ts for the original, fully-diagnosed bug both of these guard
+// against): `ssrScrollReserveRef` (server-rendered placeholder so the pre-hydration and hydrated page
+// heights match) and `scrollYBeforeChurnRef` (restores scrollY if React 19 StrictMode's dev-only
+// effect churn clamps it away).
 const STACK_GAP_CLOSED_PX = HERO_STACK_GAP_CLOSED_PX;
 const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 
@@ -47,8 +48,12 @@ interface BuildScrollRefs {
 }
 
 export function useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrScrollReserveRef }: BuildScrollRefs) {
+  const scrollYBeforeChurnRef = useRef<number | null>(null);
+
   useGSAP(
     () => {
+      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
+
       // Collapse the SSR placeholder before anything else — see the matching comment in
       // heroScrollAnimation.ts / infrastructureScrollAnimation.ts for why this has to run on every
       // code path, including prefers-reduced-motion below (which never creates a real pin-spacer).
@@ -82,7 +87,7 @@ export function useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrS
       ScrollTrigger.create({
         trigger: section,
         start: "top top",
-        end: `+=${BUILD_PIN_SCROLL_DISTANCE}`,
+        end: () => `+=${BUILD_PIN_SCROLL_DISTANCE * readScale()}`,
         scrub: true,
         pin: true,
         // GSAP disables automatic pin-spacing by default when the pinned element's parent is
@@ -108,6 +113,15 @@ export function useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrS
         },
         onLeaveBack: () => applyCloseProgress(0),
       });
+
+      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
+      // mechanism as heroScrollAnimation.ts / infrastructureScrollAnimation.ts.
+      const targetScrollY = scrollYBeforeChurnRef.current;
+      if (targetScrollY !== null) {
+        setTimeout(() => {
+          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
+        }, 100);
+      }
     },
     { scope: sectionRef },
   );

@@ -5,6 +5,7 @@ import { useEffect, useRef, type RefObject } from "react";
 // isn't available in type position. These are erased at build time and add nothing to the bundle.
 import type { AnimationAction, AnimationMixer, Light, Mesh, Object3D } from "three";
 import { HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
+import { readScale } from "@/lib/grid";
 import {
   HERO_CORE_HEIGHT_RATIO,
   HERO_MODEL_BASE_WIDTH_PX,
@@ -156,7 +157,10 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
         stage.style.height = `${height}px`;
         // Anchored to the wrapper's CLOSED centre, which is a constant — the wrapper's own height
         // grows with --stack-gap, so a plain `top: 50%` would drift downward as the stack opens.
-        stage.style.top = `${(3 * HERO_STACK_GAP_CLOSED_PX + wrapperWidth * HERO_CORE_HEIGHT_RATIO) / 2}px`;
+        // The gap is a design px like any other and the wrapper around it is now fluid, so it has
+        // to be scaled here too — otherwise the anchor drifts as the viewport narrows. resize()
+        // re-runs on every window resize, so readScale() is always current.
+        stage.style.top = `${(3 * HERO_STACK_GAP_CLOSED_PX * readScale() + wrapperWidth * HERO_CORE_HEIGHT_RATIO) / 2}px`;
 
         renderer.setSize(width, height, false);
         const pxPerUnit = HERO_MODEL_PX_PER_UNIT * (wrapperWidth / HERO_MODEL_BASE_WIDTH_PX);

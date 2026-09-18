@@ -12,7 +12,7 @@ export function InfrastructureStaticBar({ fillRef }: { fillRef: RefObject<HTMLDi
   return (
     <div
       aria-hidden="true"
-      className="relative mt-16 w-full max-w-[821px] md:mt-20"
+      className="relative mt-16 w-full max-w-[calc(var(--s)*821)] md:mt-20"
       style={{ aspectRatio: "821 / 35" }}
     >
       <Image src="/infrastructur/static-base.svg" alt="" fill className="object-contain" />

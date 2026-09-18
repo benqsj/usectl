@@ -7,11 +7,18 @@
 // accent element bridging the two clipped ends, or the "cut" is genuinely invisible (an empty gap,
 // not a line) — see PROJECT.md for the full diagnosis (found first on a since-reverted BuildSection
 // attempt, then again on Pricing's own older, pre-existing chamfer).
+import { s } from "@/lib/grid";
 export const CHAMFER_PX = 64;
+
+// The cut is a design measurement like any other, so it goes through the page's scale (see
+// globals.css / lib/grid.ts) rather than staying a hard 64px — at 1280 an unscaled 64px corner
+// reads as an oversized bite out of a card that is itself two-thirds the size.
+const chamfer = (px: number) => s(px);
 
 // The 5-point polygon that clips a box's top-left corner at `px` (defaults to the shared size).
 export function chamferClipPath(px: number = CHAMFER_PX): string {
-  return `polygon(${px}px 0, 100% 0, 100% 100%, 0 100%, 0 ${px}px)`;
+  const c = chamfer(px);
+  return `polygon(${c} 0, 100% 0, 100% 100%, 0 100%, 0 ${c})`;
 }
 
 // Inline style for the diagonal accent div that makes the clip-path cut actually visible — render
@@ -19,10 +26,10 @@ export function chamferClipPath(px: number = CHAMFER_PX): string {
 // as the first child of the chamfered element (so it's positioned relative to it).
 export function chamferDiagonalStyle(px: number = CHAMFER_PX) {
   return {
-    width: px * Math.SQRT2,
+    width: chamfer(px * Math.SQRT2),
     height: 1,
-    top: px / 2,
-    left: px / 2,
+    top: chamfer(px / 2),
+    left: chamfer(px / 2),
     transform: "translate(-50%, -50%) rotate(-45deg)",
   } as const;
 }

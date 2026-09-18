@@ -23,7 +23,7 @@ export function InfrastructureSection({
   steps,
   pinScrollDistance,
   server,
-  className = "mt-[-11px] pb-20 min-[1800px]:mt-8 md:pb-28",
+  className = "mt-[calc(var(--s)*32)] pb-20 md:pb-[calc(var(--s)*112)]",
   instanceId = "infra",
 }: InfrastructureSectionProps) {
   return (

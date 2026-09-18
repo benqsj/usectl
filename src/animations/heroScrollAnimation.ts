@@ -8,6 +8,7 @@ import {
   HERO_STACK_GAP_OPEN_PX,
 } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
+import { readScale } from "@/lib/grid";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -53,9 +54,11 @@ const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 // min-[1800px] breakpoint — needed here so the wrapper's CLOSED height can be computed
 // analytically (see measureRecenterY below) instead of read live via offsetHeight, which reflects
 // whatever --stack-gap CURRENTLY is, not necessarily the closed one.
-const CORE_HEIGHT_NARROW_PX = 400 * HERO_CORE_HEIGHT_RATIO;
-const CORE_HEIGHT_WIDE_PX = 480 * HERO_CORE_HEIGHT_RATIO;
-const WIDE_BREAKPOINT_PX = 1800;
+// The wrapper is 480px wide at the 1920 reference and scales from there (see globals.css's --s), so
+// its closed height is one formula times the live scale — the old pair of fixed heights either side
+// of a 1800px breakpoint is gone with the breakpoint itself.
+const MODEL_WIDTH_PX = 480;
+const coreHeightPx = () => MODEL_WIDTH_PX * HERO_CORE_HEIGHT_RATIO * readScale();
 
 // Extra nudge above true viewport-center — user asked to raise it further after the initial
 // centering fix. Applies to both the closed and open positions (baked into recenterY below).
@@ -146,8 +149,9 @@ export function useHeroScrollAnimation({
       // recenterY is meant to center. Fixed by computing the CLOSED height analytically.
       let recenterY = 0;
       const measureRecenterY = () => {
-        const coreHeight = window.innerWidth >= WIDE_BREAKPOINT_PX ? CORE_HEIGHT_WIDE_PX : CORE_HEIGHT_NARROW_PX;
-        const closedHeight = 3 * STACK_GAP_CLOSED_PX + coreHeight;
+        // Both terms scale: the gap because --stack-gap is written scaled below, the core height
+        // because the wrapper itself is.
+        const closedHeight = 3 * STACK_GAP_CLOSED_PX * readScale() + coreHeightPx();
         const naturalCenterY = cubeWrapper.offsetTop + closedHeight / 2;
         recenterY = window.innerHeight / 2 - EXTRA_RISE_PX - naturalCenterY;
       };
@@ -157,7 +161,7 @@ export function useHeroScrollAnimation({
         scrollTrigger: {
           trigger: sectionRef.current,
           start: "top top",
-          end: `+=${PIN_SCROLL_DISTANCE}`,
+          end: () => `+=${PIN_SCROLL_DISTANCE * readScale()}`,
           scrub: 1,
           pin: true,
           // GSAP disables automatic pin-spacing by default when the pinned element's parent is
@@ -202,9 +206,9 @@ export function useHeroScrollAnimation({
         //    offset on this tween used to do by hand.
         .fromTo(
           cubeWrapper,
-          { "--stack-gap": `${STACK_GAP_CLOSED_PX}px` },
+          { "--stack-gap": () => `${STACK_GAP_CLOSED_PX * readScale()}px` },
           {
-            "--stack-gap": `${STACK_GAP_OPEN_PX}px`,
+            "--stack-gap": () => `${STACK_GAP_OPEN_PX * readScale()}px`,
             duration: DISASSEMBLE_DURATION,
             ease: "power1.inOut",
           },

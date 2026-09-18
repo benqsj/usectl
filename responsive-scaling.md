@@ -1,6 +1,21 @@
 # Responsive scaling — 1280px to 1920px+ (plan)
 
-Status: **agreed, not started.** No code has been written for this yet.
+Status: **stages 1-4 implemented (2026-09-18), stage 5 (visual QA) outstanding.**
+
+Decisions taken: (1) keep scaling above 1920, no upper clamp; (2) pin scroll distances scale too;
+(3) hard floor at 1280, tablet/mobile is a separate job.
+
+Done: `--s` + `@property` in globals.css; `s()` / `vw()` / `readScale()` in lib/grid.ts; every
+`min-[1800px]` / `max-[1799px]` SIZE pair collapsed to one scaled value (BackgroundLines keeps its
+hidden-column breakpoints — those are a content rule); ~70 `text-[Npx]` / `max-w-[Npx]` / spacing
+values scaled across Hero, Build, Infrastructure, Pricing, the static bar and the Footer; the
+chamfer; the 3D model wrapper (480px design width) plus the JS that mirrored it — heroScrollAnimation's
+core height and HeroServerModel's canvas anchor; the pricing machine diagram's pod geometry; and all
+five pin distances, both the ScrollTrigger `end` (function form, re-read on refresh) and the SSR
+spacer (CSS `calc`, so it resolves server-side too).
+
+Left: the screenshot matrix and the vertical-fit pass at 1280x800 (stage 5/6 below), and anything
+those turn up.
 
 ## The prompt to start this work
 

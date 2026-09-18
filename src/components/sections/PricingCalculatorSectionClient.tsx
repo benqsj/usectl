@@ -12,6 +12,7 @@ import {
   computeTotal,
 } from "@/lib/pricingLayout";
 import { chamferClipPath, chamferDiagonalStyle } from "@/lib/chamfer";
+import { s } from "@/lib/grid";
 
 // Built from a user-supplied screenshot (see PROJECT.md) — heading/paragraph typography below is
 // exact, per explicit spec. The calculator card's exact spacing/assets are NOT spec'd yet
@@ -61,17 +62,23 @@ function DiagramPod({
   alt: string;
   label: string;
   labelWeight: "font-light" | "font-normal";
-  labelSize: "text-[12px]" | "text-[14px]";
+  labelSize: "text-[calc(var(--s)*12)]" | "text-[calc(var(--s)*14)]";
   badge?: string;
 }) {
   return (
-    <div className="relative" style={{ width: borderWidth, height: borderHeight }}>
-      <Image src={border} alt="" width={borderWidth} height={borderHeight} aria-hidden="true" />
+    <div className="relative" style={{ width: s(borderWidth), height: s(borderHeight) }}>
+      <Image src={border} alt="" width={borderWidth} height={borderHeight} aria-hidden="true" className="h-full w-full" />
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
         <div className="relative">
-          <Image src={icon} alt={alt} width={iconWidth} height={iconHeight} />
+          <Image
+            src={icon}
+            alt={alt}
+            width={iconWidth}
+            height={iconHeight}
+            style={{ width: s(iconWidth), height: s(iconHeight) }}
+          />
           {badge ? (
-            <span className="absolute -top-3 left-full ml-1 whitespace-nowrap font-heading text-[12px] leading-none font-medium tracking-[-0.02em] text-white/50">
+            <span className="absolute -top-3 left-full ml-1 whitespace-nowrap font-heading text-[calc(var(--s)*12)] leading-none font-medium tracking-[-0.02em] text-white/50">
               {badge}
             </span>
           ) : null}
@@ -107,10 +114,10 @@ function StepperRow({ row, qtyRef, detailRef, priceRef, plusRef, minusRef, onPlu
   return (
     <div className="flex items-center justify-between gap-4 py-8">
       <div>
-        <p className="font-heading text-[16px] leading-none font-medium tracking-[-0.02em] text-foreground">
+        <p className="font-heading text-[calc(var(--s)*16)] leading-none font-medium tracking-[-0.02em] text-foreground">
           {row.label}
         </p>
-        <p ref={detailRef} className="mt-1 font-heading text-[12px] leading-none font-normal text-white/40">
+        <p ref={detailRef} className="mt-1 font-heading text-[calc(var(--s)*12)] leading-none font-normal text-white/40">
           {formatDetail(row.start, row)}
         </p>
       </div>
@@ -124,7 +131,7 @@ function StepperRow({ row, qtyRef, detailRef, priceRef, plusRef, minusRef, onPlu
         >
           <Image src="/pricesection/minus.svg" alt="" width={28} height={28} />
         </button>
-        <span ref={qtyRef} className="inline-block w-4 text-center font-heading text-[18px] text-foreground">
+        <span ref={qtyRef} className="inline-block w-4 text-center font-heading text-[calc(var(--s)*18)] text-foreground">
           {row.start}
         </span>
         <button
@@ -138,7 +145,7 @@ function StepperRow({ row, qtyRef, detailRef, priceRef, plusRef, minusRef, onPlu
         </button>
         <span
           ref={priceRef}
-          className="inline-block w-16 text-right font-heading text-[12px] leading-none font-normal text-white/60"
+          className="inline-block w-16 text-right font-heading text-[calc(var(--s)*12)] leading-none font-normal text-white/60"
         >
           {formatRowPrice(row.start, row.rate)}
         </span>
@@ -174,11 +181,11 @@ export function PricingCalculatorSectionClient() {
 
   return (
     <section id="pricing" className="relative px-6 py-24 md:py-32">
-      <h2 className="mx-auto max-w-[1220px] text-center font-heading text-[96px] leading-none font-medium tracking-[-0.02em] text-brand">
+      <h2 className="mx-auto max-w-[calc(var(--s)*1220)] text-center font-heading text-[calc(var(--s)*96)] leading-none font-medium tracking-[-0.02em] text-brand">
         Know your hosting bill before you launch.
       </h2>
 
-      <p className="mx-auto mt-8 max-w-[1300px] text-center font-heading text-[26px] leading-none font-light tracking-[-0.02em] text-white/70">
+      <p className="mx-auto mt-8 max-w-[calc(var(--s)*1300)] text-center font-heading text-[calc(var(--s)*26)] leading-none font-light tracking-[-0.02em] text-white/70">
         Choose the CPU, memory, and storage your project needs and see the monthly price before you
         deploy. Need more capacity later? You&rsquo;ll see the new price before making the change.
       </p>
@@ -191,7 +198,7 @@ export function PricingCalculatorSectionClient() {
           eyeballed from the original screenshot too. */}
       <div
         ref={cardRef}
-        className="relative mx-auto mt-16 w-[75%] border border-white/10 min-[1800px]:w-[1500px]"
+        className="relative mx-auto mt-16 w-[75%] border border-white/10 md:w-[calc(var(--s)*1500)]"
         style={{ clipPath: chamferClipPath() }}
       >
         <div aria-hidden="true" className="pointer-events-none absolute bg-white/10" style={chamferDiagonalStyle()} />
@@ -199,12 +206,12 @@ export function PricingCalculatorSectionClient() {
           {/* Column 1 — machine diagram, built from the real supplied assets (see DiagramPod /
               layout constants above). */}
           <div className="flex flex-col justify-between gap-12 p-8 md:p-10">
-            <p className="font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/50">
+            <p className="font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/50">
               Machine: my-project
             </p>
 
             <div className="flex justify-center">
-              <div className="relative" style={{ width: DIAGRAM_WIDTH, height: STACK_HEIGHT }}>
+              <div className="relative" style={{ width: s(DIAGRAM_WIDTH), height: s(STACK_HEIGHT) }}>
                 <div className="absolute top-0 left-0">
                   <DiagramPod
                     border="/pricesection/websiteborder.svg"
@@ -216,12 +223,12 @@ export function PricingCalculatorSectionClient() {
                     alt="Website"
                     label="Website"
                     labelWeight="font-light"
-                    labelSize="text-[14px]"
+                    labelSize="text-[calc(var(--s)*14)]"
                     badge="POD"
                   />
                 </div>
 
-                <div className="absolute left-0" style={{ top: WEBSITE_API_HEIGHT + POD_GAP }}>
+                <div className="absolute left-0" style={{ top: s(WEBSITE_API_HEIGHT + POD_GAP) }}>
                   <DiagramPod
                     border="/pricesection/api-broder.svg"
                     borderWidth={POD_WIDTH}
@@ -232,7 +239,7 @@ export function PricingCalculatorSectionClient() {
                     alt="API"
                     label="API"
                     labelWeight="font-light"
-                    labelSize="text-[14px]"
+                    labelSize="text-[calc(var(--s)*14)]"
                     badge="POD"
                   />
                 </div>
@@ -243,7 +250,7 @@ export function PricingCalculatorSectionClient() {
                     the line gradually colorizing green as you scroll, rather than switching. */}
                 <div
                   className="absolute"
-                  style={{ left: POD_WIDTH, top: WEBSITE_API_HEIGHT / 2, width: LINE_WIDTH, height: LINE_HEIGHT }}
+                  style={{ left: s(POD_WIDTH), top: s(WEBSITE_API_HEIGHT / 2), width: s(LINE_WIDTH), height: s(LINE_HEIGHT) }}
                 >
                   <Image
                     src="/pricesection/line-gray.svg"
@@ -251,7 +258,7 @@ export function PricingCalculatorSectionClient() {
                     width={LINE_WIDTH}
                     height={LINE_HEIGHT}
                     aria-hidden="true"
-                    className="absolute inset-0"
+                    className="absolute inset-0 h-full w-full"
                   />
                   <Image
                     ref={(el) => {
@@ -262,12 +269,12 @@ export function PricingCalculatorSectionClient() {
                     width={LINE_WIDTH}
                     height={LINE_HEIGHT}
                     aria-hidden="true"
-                    className="absolute inset-0"
+                    className="absolute inset-0 h-full w-full"
                     style={{ opacity: 0 }}
                   />
                 </div>
 
-                <div className="absolute" style={{ left: AGENT_LEFT, top: AGENT_TOP }}>
+                <div className="absolute" style={{ left: s(AGENT_LEFT), top: s(AGENT_TOP) }}>
                   <DiagramPod
                     border="/pricesection/agentborder.svg"
                     borderWidth={POD_WIDTH}
@@ -278,13 +285,13 @@ export function PricingCalculatorSectionClient() {
                     alt="DEVO Agent"
                     label="DEVO Agent"
                     labelWeight="font-normal"
-                    labelSize="text-[12px]"
+                    labelSize="text-[calc(var(--s)*12)]"
                   />
                 </div>
               </div>
             </div>
 
-            <p className="font-heading text-[18px] leading-none font-normal tracking-[-0.02em] text-white/50">
+            <p className="font-heading text-[calc(var(--s)*18)] leading-none font-normal tracking-[-0.02em] text-white/50">
               Your machine is here.
             </p>
           </div>
@@ -294,7 +301,7 @@ export function PricingCalculatorSectionClient() {
               state. */}
           <div className="flex flex-col justify-between gap-8 p-8 md:p-10">
             <div>
-              <p className="font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/50">
+              <p className="font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/50">
                 Pricing
               </p>
               <div>
@@ -327,14 +334,14 @@ export function PricingCalculatorSectionClient() {
             {/* No border-t here either, per the same "let the page's own ambient background grid
                 show through instead of drawing a card-local line" request as StepperRow above. */}
             <div className="flex items-baseline justify-between">
-              <span className="font-heading text-[18px] leading-none font-normal tracking-[-0.02em] text-white/50">
+              <span className="font-heading text-[calc(var(--s)*18)] leading-none font-normal tracking-[-0.02em] text-white/50">
                 Your monthly price
               </span>
               <span
                 ref={(el) => {
                   totalRef.current = el;
                 }}
-                className="inline-block font-heading text-[24px] leading-none font-bold tracking-[-0.02em] text-[#11A32ACC]"
+                className="inline-block font-heading text-[calc(var(--s)*24)] leading-none font-bold tracking-[-0.02em] text-[#11A32ACC]"
               >
                 {formatTotal(computeTotal(startQty, PRICING_ROWS))}
               </span>
@@ -345,19 +352,19 @@ export function PricingCalculatorSectionClient() {
               distribution) per explicit spec: 106px between the eyebrow and "Not a surprise.", 49px
               between that and the price box. */}
           <div className="flex flex-col p-8 md:p-10">
-            <p className="font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/50">
+            <p className="font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/50">
               predictability, not cheapness
             </p>
 
-            <p className="mt-[106px] text-center font-heading text-[24px] leading-none font-normal text-foreground">
+            <p className="mt-[calc(var(--s)*106)] text-center font-heading text-[calc(var(--s)*24)] leading-none font-normal text-foreground">
               Not a surprise.
             </p>
 
             <div
-              className="mx-auto mt-[49px] flex w-[344px] items-center justify-center rounded-[4px] border border-[#FFFFFF26]"
+              className="mx-auto mt-[calc(var(--s)*49)] flex w-[calc(var(--s)*344)] items-center justify-center rounded-[4px] border border-[#FFFFFF26]"
               style={{ height: 64 }}
             >
-              <p className="font-heading text-[18px] leading-none font-normal tracking-[-0.02em] text-white/70">
+              <p className="font-heading text-[calc(var(--s)*18)] leading-none font-normal tracking-[-0.02em] text-white/70">
                 From $15 / month
               </p>
             </div>
@@ -365,7 +372,7 @@ export function PricingCalculatorSectionClient() {
         </div>
       </div>
 
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: PRICING_PIN_SCROLL_DISTANCE }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(PRICING_PIN_SCROLL_DISTANCE) }} />
 
       {/* This used to be `min-h-[60vh]`: when PricingCalculatorSection was the LAST section on the
           page, the "center center" pin needed roughly another half-viewport of trailing height below

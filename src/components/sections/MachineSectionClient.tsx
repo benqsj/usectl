@@ -10,7 +10,7 @@ import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
 import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
 import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
-import { vw, HEADER_HEIGHT_PX } from "@/lib/grid";
+import { vw, s, HEADER_HEIGHT_PX } from "@/lib/grid";
 
 // Hatch mark ("Subtract.svg", the same green diagonal-hatch icon HeroSection/InfrastructureSection
 // use for their eyebrow rows) sized to roughly match the wordmark's cap height at the 1920
@@ -230,7 +230,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
           and after client JS runs, and so the collapse-before-pin-capture sequencing described
           above works out to exactly a full-viewport pin snapshot. Mirrors Hero/Infrastructure's
           identical fix for an identical bug (see PROJECT.md). */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: MACHINE_PIN_SCROLL_DISTANCE }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(MACHINE_PIN_SCROLL_DISTANCE) }} />
     </section>
   );
 }

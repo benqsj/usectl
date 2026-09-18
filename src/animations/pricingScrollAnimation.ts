@@ -2,6 +2,7 @@ import { useRef, type RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { readScale } from "@/lib/grid";
 import {
   PRICING_ROWS,
   PRICING_PIN_SCROLL_DISTANCE,
@@ -190,7 +191,7 @@ export function usePricingScrollAnimation({
       ScrollTrigger.create({
         trigger: card,
         start: "center center",
-        end: `+=${PRICING_PIN_SCROLL_DISTANCE}`,
+        end: () => `+=${PRICING_PIN_SCROLL_DISTANCE * readScale()}`,
         pin: true,
         // GSAP disables automatic pin-spacing when the pinned element's parent is display:flex —
         // not the case here, but set explicitly anyway (see heroScrollAnimation.ts for the bug this

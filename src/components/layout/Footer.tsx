@@ -26,12 +26,12 @@ const NAV_LINKS = [
   { label: "Doc", href: "#documentation" },
 ] as const;
 
-const COLUMN_LABEL = "font-heading text-[14px] leading-none font-medium text-foreground";
-const ITEM_TEXT = "font-heading text-[14px] leading-none font-light text-white/60";
+const COLUMN_LABEL = "font-heading text-[calc(var(--s)*14)] leading-none font-medium text-foreground";
+const ITEM_TEXT = "font-heading text-[calc(var(--s)*14)] leading-none font-light text-white/60";
 
 export function Footer() {
   return (
-    <footer className="relative pt-[101px] pb-0">
+    <footer className="relative pt-[calc(var(--s)*101)] pb-0">
       {/* The chamfer + background both live on THIS element (not a separate outer wrapper) — per
           explicit correction: the cut belongs to the footer's own panel, not traced by a border
           around a same-colored area (which read as "a cut drawn on the border" rather than a real
@@ -44,7 +44,7 @@ export function Footer() {
           <footer> lost its own `px-6` too, so this really does reach the true viewport edges rather
           than just filling a still-padded container.
 
-          `pt-[101px]` (grew the footer's own top gap, not shrunk it) is a grid-snap, per explicit
+          `pt-[calc(var(--s)*101)]` (grew the footer's own top gap, not shrunk it) is a grid-snap, per explicit
           request: the panel's own top edge should coincide with one of BackgroundLines.tsx's
           horizontal row lines (`rowY()`/`ROW_PITCH` in `src/lib/grid.ts`, 114px pitch from the
           header's bottom edge at the 1920 reference width). Measured `<footer>`'s own natural top
@@ -71,12 +71,12 @@ export function Footer() {
         >
           <div>
             <Image src="/footer/logo.svg" alt="usectl" width={173} height={28} />
-            <p className={`mt-[24px] ${ITEM_TEXT}`}>37 Zhiuli Shartava st., Tbilisi 2209 Georgia</p>
+            <p className={`mt-[calc(var(--s)*24)] ${ITEM_TEXT}`}>37 Zhiuli Shartava st., Tbilisi 2209 Georgia</p>
           </div>
 
           <div>
             <p className={COLUMN_LABEL}>Navigation</p>
-            <ul className="mt-[19px] flex flex-col gap-[12px]">
+            <ul className="mt-[calc(var(--s)*19)] flex flex-col gap-[calc(var(--s)*12)]">
               {NAV_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link href={link.href} className={`${ITEM_TEXT} transition-colors hover:text-white`}>
@@ -89,7 +89,7 @@ export function Footer() {
 
           <div>
             <p className={COLUMN_LABEL}>Contact</p>
-            <ul className="mt-[19px] flex flex-col gap-[12px]">
+            <ul className="mt-[calc(var(--s)*19)] flex flex-col gap-[calc(var(--s)*12)]">
               <li>
                 <a href="mailto:hello@usectl.com" className={`${ITEM_TEXT} transition-colors hover:text-white`}>
                   hello@usectl.com
@@ -113,10 +113,10 @@ export function Footer() {
             <input
               type="email"
               placeholder="email"
-              className={`mt-[12px] block rounded-[8px] border border-white/20 bg-transparent px-4 ${ITEM_TEXT} text-foreground placeholder:text-white/40 focus:border-white/40 focus:outline-none`}
+              className={`mt-[calc(var(--s)*12)] block rounded-[calc(var(--s)*8)] border border-white/20 bg-transparent px-4 ${ITEM_TEXT} text-foreground placeholder:text-white/40 focus:border-white/40 focus:outline-none`}
               style={{ width: 234, height: 44 }}
             />
-            <label className="mt-[12px] flex cursor-pointer items-center gap-[8px]">
+            <label className="mt-[calc(var(--s)*12)] flex cursor-pointer items-center gap-[calc(var(--s)*8)]">
               <input
                 type="checkbox"
                 className="shrink-0 appearance-none rounded-[4px] border-[0.5px] border-white/40 bg-transparent checked:bg-transparent"
@@ -128,7 +128,7 @@ export function Footer() {
         </div>
 
         <div className="border-t border-white/10 py-6 text-center">
-          <p className="font-heading text-[13px] leading-none text-white/40">
+          <p className="font-heading text-[calc(var(--s)*13)] leading-none text-white/40">
             © 2026 <span className="text-brand">SYSTEMCTL</span>
           </p>
         </div>

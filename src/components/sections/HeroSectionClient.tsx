@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
 import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
+import { s } from "@/lib/grid";
 
 export function HeroSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -32,21 +33,21 @@ export function HeroSectionClient() {
       <div ref={contentRef}>
         <div className="flex items-center justify-center gap-3">
           <Image src="/herosection/Subtract.svg" alt="" width={58} height={26} aria-hidden="true" />
-          <span className="font-heading text-[22px] leading-none font-light tracking-[-0.02em] text-white/70">
+          <span className="font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/70">
             Managed Kubernetes &amp; AI Agent Infrastructure
           </span>
         </div>
 
-        <h1 className="mt-[4px] font-heading text-[98px] leading-[1.05] font-bold sm:text-nowrap">
+        <h1 className="mt-[4px] font-heading text-[calc(var(--s)*98)] leading-[1.05] font-bold sm:text-nowrap">
           One server. <span className="text-brand">Unlimited</span> machines.
         </h1>
 
-        <p className="mx-auto mt-2 max-w-[1080px] text-[28px] text-white/70">
+        <p className="mx-auto mt-2 max-w-[calc(var(--s)*1080)] text-[calc(var(--s)*28)] text-white/70">
           Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
           without a DevOps team. Build it. Launch it.
         </p>
 
-        <div className="mt-[35px] flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-[calc(var(--s)*35)] flex flex-wrap items-center justify-center gap-4">
           <Button href="#">Create Machine</Button>
           <Button href="#" withArrow>
             See how it works
@@ -70,7 +71,7 @@ export function HeroSectionClient() {
       <div
         ref={cubeWrapperRef}
         aria-hidden="true"
-        className="relative mx-auto mt-[35px] w-[400px] [--core-height:275.27px] h-[calc(3*var(--stack-gap)_+_var(--core-height))] min-[1800px]:mt-[84px] min-[1800px]:w-[480px] min-[1800px]:[--core-height:330.32px]"
+        className="relative mx-auto mt-[calc(var(--s)*84)] w-[calc(var(--s)*480)] [--core-height:calc(var(--s)*330.32)] h-[calc(3*var(--stack-gap)_+_var(--core-height))]"
         style={{ "--stack-gap": `${HERO_STACK_GAP_CLOSED_PX}px` } as CSSProperties}
       >
         {/* Soft ambient glow beneath the server, matching server-cube.png's reference look — the
@@ -79,7 +80,7 @@ export function HeroSectionClient() {
             layer down as the stack opens. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 h-[130px] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
+          className="pointer-events-none absolute left-1/2 h-[calc(var(--s)*130)] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
           style={{
             top: `calc(3 * var(--stack-gap) + var(--core-height) - 45px)`,
             background: "radial-gradient(ellipse at center, rgba(72,144,72,0.55) 0%, rgba(72,144,72,0) 70%)",
@@ -95,7 +96,7 @@ export function HeroSectionClient() {
           client JS runs. Without this, a hard refresh while scrolled deep would restore scrollY
           against the shorter pre-hydration document, then destabilize once hydration grew the page
           underneath it — a real, diagnosed bug (see PROJECT.md for the exact repro). */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: HERO_PIN_SCROLL_DISTANCE }} />
+      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(HERO_PIN_SCROLL_DISTANCE) }} />
     </section>
   );
 }
