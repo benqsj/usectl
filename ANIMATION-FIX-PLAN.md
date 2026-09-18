@@ -1,7 +1,29 @@
 # Machine-section scroll animation fix — agreed plan (2026-09-18)
 
-Status: **implemented 2026-09-18.** All seven steps are in the code; what is left is the user's own
-pass through the sequence in a browser (step 7 below).
+Status: **implemented and verified in the browser, 2026-09-18.**
+
+Two bugs were found by measuring the live page (driving it from the browser pane, reading computed
+styles at fixed scroll positions) rather than by eye. Both are worth remembering:
+
+1. **`scrub: <number>` silently kills a callback-only ScrollTrigger.** The plan said `scrub: 0.8`;
+   with it, the machine section still pinned but `onUpdate` was never called again — every value in
+   the scene sat frozen at its initial state the whole way down the pin, which is why the sequence
+   looked identical scrolling up and down (it wasn't animating at all). A numeric scrub only means
+   something for a trigger that drives an ANIMATION; this one drives callbacks. The catch-up is now
+   done by hand with the same mechanism GSAP's scrub uses — a tween on a proxy number (`smoothed.p`,
+   `SCRUB_SECONDS`), re-aimed on every scroll event — and the trigger keeps `scrub: true`.
+2. **Skipping work for an invisible diagram froze its pieces.** The reveal had an early `return`
+   when the wrapper's opacity reached 0. That left every piece parked wherever it happened to be —
+   measured: all pieces at 1.00 with the wrapper at 0.00 — so scrolling back into a diagram faded in
+   one that was already fully built and never came apart. Pieces are now parked at the end state for
+   whichever side of the range the scroll is on (hidden before, built after), and only when that
+   changes, so an off-screen diagram still costs nothing per frame.
+
+Verified afterwards, at 1440x900, by reading computed styles:
+- the same scroll position reached from BELOW and from ABOVE yields byte-identical state
+  (`identical: true`), with the pieces mid-gradient — i.e. scrolling up genuinely dis-assembles;
+- step 4's exit completes before the text swaps: at 99% of step 4 the wordmark and the server's
+  bottom half are both at opacity 0, having drifted 40px down, and stay there into step 5.
 
 What landed, in the plan's own order:
 - `scrub: true` -> `scrub: 0.8` on the machine pin (`SCRUB_SECONDS`).

@@ -142,11 +142,18 @@ const STEP4_EXIT_START = 0.7;
 const STEP4_EXIT_DRIFT_PX = 40;
 // How much of the PIN's progress the card's outline cross-fades over at the step 5 -> 6 boundary.
 const CARD_OUTLINE_FADE = 0.012;
-// ScrollTrigger's own catch-up. `true` tracked scroll 1:1, so one flick of the wheel could cross
-// three step boundaries inside a single frame; easing the progress toward the scroll position turns
-// that into a glide through the steps instead of a teleport, which is most of what made fast
-// scrolling — in either direction — look broken.
-const SCRUB_SECONDS = 0.8;
+// Catch-up smoothing. Raw scroll tracks 1:1, so one flick of the wheel can cross three step
+// boundaries inside a single frame; easing the progress we RENDER toward the progress the scroll
+// asks for turns that into a glide through the steps instead of a teleport, which is most of what
+// made fast scrolling — in either direction — look broken.
+//
+// Why it isn't just `scrub: 0.8` on the ScrollTrigger: that was tried, and it silently killed the
+// whole sequence. A numeric `scrub` only means something for a trigger that drives an ANIMATION;
+// this one drives nothing but callbacks (`onUpdate` -> applyProgress), and with a number there the
+// trigger still pinned but never called them again — measured in the browser, every value frozen at
+// its initial state the whole way down the pin. So the catch-up is done here instead, with exactly
+// the mechanism GSAP's own scrub uses: a tween on a proxy number, re-aimed on every scroll event.
+const SCRUB_SECONDS = 0.6;
 
 interface DiagramPiece {
   border: HTMLElement | null;
@@ -165,6 +172,9 @@ interface DiagramEntry {
   end: number;
   revealSpan: number;
   stagger: number;
+  // What its pieces were last parked at while the diagram was invisible: 0 (before its range) or 1
+  // (after it). Null while it is on screen and being written every frame. See the reveal block.
+  restState: number | null;
 }
 
 interface EdgeRect {
@@ -392,6 +402,7 @@ export function useMachineScrollAnimation({
           // assembly would stretch across a step and a half and crawl.
           revealSpan: firstStepEnd - from,
           stagger: pieces.length > 1 ? usable / (pieces.length - 1) : 0,
+          restState: null,
         };
       });
 
@@ -590,7 +601,29 @@ export function useMachineScrollAnimation({
             Math.min(p / DIAGRAM_WRAPPER_FADE, (1 - p) / DIAGRAM_WRAPPER_FADE, 1),
           );
           gsap.set(d.el, { opacity: wrapper });
-          if (wrapper <= 0) return; // nothing to see: skip the per-piece work entirely
+
+          // Invisible: park the pieces at the end state that matches WHICH side of the range we are
+          // on — hidden before it, fully built after it — and only when that changes, so an
+          // off-screen diagram costs nothing per frame.
+          //
+          // This used to be a bare `return`, which was the bug behind "it doesn't take itself apart
+          // when I scroll back up": once a diagram faded out its pieces were never written again, so
+          // they stayed frozen fully-revealed, and scrolling back into it faded in a diagram that
+          // was already finished. Measured in the browser — every piece read 1.00 with the wrapper
+          // at 0.00.
+          if (wrapper <= 0) {
+            const rest = p < 0 ? 0 : 1;
+            if (d.restState !== rest) {
+              d.pieces.forEach(({ border, content }) => {
+                const v = { opacity: rest, scale: lerp(DIAGRAM_HIDDEN_SCALE, 1, rest), y: lerp(DIAGRAM_HIDDEN_Y, 0, rest) };
+                if (border) gsap.set(border, v);
+                if (content) gsap.set(content, v);
+              });
+              d.restState = rest;
+            }
+            return;
+          }
+          d.restState = null;
 
           d.pieces.forEach(({ border, content }, i) => {
             const from = DIAGRAM_ENTRY_DELAY + i * d.stagger;
@@ -615,21 +648,42 @@ export function useMachineScrollAnimation({
         });
       });
 
+      // The catch-up itself (see SCRUB_SECONDS): a tween on a proxy number, re-aimed at the scroll's
+      // own progress on every scroll event, rendering the eased value as it goes. `overwrite` means
+      // a new aim replaces the old one rather than queueing behind it, so it always converges on
+      // where the scroll actually is, and lands exactly there when the reader stops.
+      const smoothed = { p: 0 };
+      const applySmoothed = contextSafe!((target: number, forceInstant: boolean) => {
+        if (forceInstant) {
+          gsap.killTweensOf(smoothed);
+          smoothed.p = target;
+          applyProgress(target, true);
+          return;
+        }
+        gsap.to(smoothed, {
+          p: target,
+          duration: SCRUB_SECONDS,
+          ease: "power2.out",
+          overwrite: true,
+          onUpdate: () => applyProgress(smoothed.p, false),
+        });
+      });
+
       ScrollTrigger.create({
         trigger: section,
         start: "top top",
         end: () => `+=${PIN_SCROLL_DISTANCE * readScale()}`,
-        scrub: SCRUB_SECONDS,
+        scrub: true,
         pin: true,
         pinSpacing: true,
         invalidateOnRefresh: true,
-        onUpdate: (self) => applyProgress(self.progress, false),
-        onRefresh: (self) => applyProgress(self.progress, true),
+        onUpdate: (self) => applySmoothed(self.progress, false),
+        onRefresh: (self) => applySmoothed(self.progress, true),
         // onUpdate only fires INSIDE the pinned range, so the scene has to be put straight when
         // scroll leaves it either way — otherwise a refresh that happened while scrolled past
         // leaves a stale step showing once you come back.
-        onLeave: () => applyProgress(1, true),
-        onLeaveBack: () => applyProgress(0, true),
+        onLeave: () => applySmoothed(1, true),
+        onLeaveBack: () => applySmoothed(0, true),
       });
 
       // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
