@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { InfrastructureSectionClient } from "./InfrastructureSectionClient";
 import { useRasterizedSvg } from "@/hooks/useRasterizedSvg";
 import type { InfrastructureStep } from "@/lib/infrastructureSteps";
+import type { MachineServerParts } from "@/lib/machineServerParts";
 import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
 import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
@@ -47,13 +48,15 @@ interface MachineSectionClientProps {
   // Steps 3-8 — they live INSIDE the machine now: the same InfrastructureSection card, rendered
   // embedded (no pin of its own) and driven by this screen's single pin.
   steps: InfrastructureStep[];
-  // The hero's 4 layer SVGs for that card's right column (static, as before).
-  stackLayers: string[];
+  // The 2-part titanium server for that card's right column — step 3 separates it (revealing the
+  // server-icons in the gap), step 4 fades it into the "machine" wordmark. Same asset/component the
+  // intro (steps 1-2) uses; see machineScrollAnimation.ts's "step 3 -> step 4" block.
+  machineServer: MachineServerParts;
 }
 
 const TOPSIDE_RASTER_WIDTH = 1376; // 2x topside.svg's own 688 — see useRasterizedSvg
 
-export function MachineSectionClient({ steps, stackLayers }: MachineSectionClientProps) {
+export function MachineSectionClient({ steps, machineServer }: MachineSectionClientProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLDivElement>(null);
@@ -189,8 +192,11 @@ export function MachineSectionClient({ steps, stackLayers }: MachineSectionClien
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 opacity-0"
           style={{
+            // Darkened 2026-09-18 (per feedback): still reads as green, but sits much closer to
+            // black -- lower green channel (0,255,135 -> 0,130,70) plus a slightly lower alpha,
+            // instead of the earlier bright, saturated wash.
             background:
-              "radial-gradient(110% 80% at 50% 55%, rgba(0,255,135,0.14), rgba(0,0,0,0) 65%), radial-gradient(80% 50% at 50% 115%, rgba(0,255,135,0.16), rgba(0,0,0,0) 70%)",
+              "radial-gradient(110% 80% at 50% 55%, rgba(0,130,70,0.10), rgba(0,0,0,0) 65%), radial-gradient(80% 50% at 50% 115%, rgba(0,130,70,0.11), rgba(0,0,0,0) 70%)",
           }}
         />
 
@@ -204,8 +210,8 @@ export function MachineSectionClient({ steps, stackLayers }: MachineSectionClien
             fillRef={fillRef}
             steps={steps}
             className=""
-            machineServer={null}
-            stackLayers={stackLayers}
+            machineServer={machineServer}
+            stackLayers={null}
             pinScrollDistance={0}
           />
         </div>

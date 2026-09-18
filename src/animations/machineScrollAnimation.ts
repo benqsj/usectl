@@ -49,13 +49,139 @@ const HOLE_MAX_PERCENT = 80;
 // The hatch opens ALONGSIDE the growth but well behind it: it only starts once the plate is
 // already growing, and its curve is much flatter, so the two finish together. (A "plate first,
 // then the hatch" variant was tried 2026-09-18 and rejected — this pacing is the approved one.)
-const HOLE_START_AT = 0.12; // fraction of the zoom window before the hatch starts opening at all
-const HOLE_CURVE = 2.6; // >1 = the opening lags further behind the growth
+// Slowed down 2026-09-18 (per feedback): the opening was catching up with, and briefly
+// outrunning, the plate's own growth by the end of the zoom. Starting later AND lagging
+// harder behind the growth curve keeps the hole visibly behind the plate's edge the whole
+// way through, not just near the start.
+const HOLE_START_AT = 0.18; // fraction of the zoom window before the hatch starts opening at all
+const HOLE_CURVE = 3.4; // >1 = the opening lags further behind the growth
 
 const clamp01 = (v: number) => gsap.utils.clamp(0, 1, v);
 const easeIO = gsap.parseEase("power2.inOut");
 const easeOut = gsap.parseEase("power3.out");
 const easeCardIn = gsap.parseEase("power1.out");
+const lerp = (a: number, b: number, t: number) => a + (b - a) * clamp01(t);
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+// --- step 3 -> step 4: server separates + icons reveal, then fades into "machine" -------------
+// Approved via demo first (see PROJECT.md-style history in this file's siblings): the server
+// separates and the 5 infra icons + line-circle.svg reveal one by one, clustered inside
+// line-circle.svg, in the gap between the two halves (step 3) — then the top half + icons fade
+// out and the "machine" wordmark takes their place, fading out together with the bottom half
+// (step 4). Both p1 (step 3's own local progress) and p2 (step 4's) are pure functions of the
+// pin's overall `progress`, same as everything else here — so, per explicit feedback that THIS
+// specifically must be scrubbed both ways (unlike the triggered text swap elsewhere), scrolling
+// back un-reveals everything in reverse, one icon at a time, before the server is allowed to
+// close again, and closing/separating never overlaps with the reveal.
+const ICON_ORDER = ["storage", "database", "api", "website", "workflow"] as const;
+const REVEAL_ITEMS = [...ICON_ORDER, "line-circle"] as const;
+type IconKey = (typeof ICON_ORDER)[number];
+// Offsets as a FRACTION of the server column's own rendered width/height (not fixed px), from the
+// gap's centre — itself measured live from the two halves' actual drawn content (getBBox, not the
+// wrapper's rect: both wrapper divs span the identical full canvas) — so the cluster is correctly
+// placed at any breakpoint's server-column size (260-650px), not just the one the demo was tuned
+// against.
+const ICON_OFFSET_PCT: Record<IconKey, { dx: number; dy: number }> = {
+  storage: { dx: -0.2118, dy: -0.0627 }, // left, further up
+  database: { dx: -0.2118, dy: 0.0697 }, // left, further down
+  api: { dx: 0, dy: 0 }, // dead centre, between the two halves
+  website: { dx: 0.2118, dy: -0.0627 }, // right, further up
+  workflow: { dx: 0.2118, dy: 0.0697 }, // right, further down
+};
+// Separation finishes growing over step 3's own progress [0, SEP_PROGRESS_END], then holds — the
+// rest of the range belongs entirely to the icons, one equal slice each, line-circle last. Lowered
+// twice per feedback (was 0.6, then 0.4) so the icons get more of step 3's scroll range each, i.e.
+// need more scroll to reveal, one at a time, more slowly.
+const SEP_PROGRESS_END = 0.25;
+const ICON_RANGE_START = SEP_PROGRESS_END;
+const ICON_SLICE = (1 - ICON_RANGE_START) / REVEAL_ITEMS.length;
+const BASE_GAP_PERCENT = 1.5; // yPercent -- a small built-in gap even fully "closed"
+const SEPARATION_YPERCENT = 31.36; // yPercent each half travels (of its OWN height) at full separation
+// Step 4's own timeline (fractions of p2): 0-0.35 top half + icons fade fully out while the
+// bottom half holds at full opacity throughout; the wordmark then ramps in (same eased scale+fade
+// style as the icons) over 0.35-0.40 and holds at full strength for the rest of step 4 — per
+// feedback, bottom + "machine" do NOT fade out here; that only happens as a triggered tween on the
+// step 4 -> step 5 text swap (see the step-swap block below).
+const TOP_ICONS_FADE_END = 0.35;
+const WORD_RAMP_END = 0.4;
+
+interface EdgeRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+// The tight, screen-mapped bounding box of a server part's ACTUAL drawn content (via getBBox +
+// getScreenCTM) — not `part.getBoundingClientRect()`, which would just return the full shared
+// canvas both parts' wrapper divs span.
+function contentRect(part: HTMLElement): EdgeRect {
+  const svg = part.querySelector<SVGSVGElement>("svg");
+  const fallback = part.getBoundingClientRect();
+  if (!svg) return fallback;
+  let bbox: DOMRect;
+  let ctm: DOMMatrix | null;
+  try {
+    bbox = svg.getBBox();
+    ctm = svg.getScreenCTM();
+  } catch {
+    return fallback;
+  }
+  if (!ctm) return fallback;
+  const p1 = new DOMPoint(bbox.x, bbox.y).matrixTransform(ctm);
+  const p2 = new DOMPoint(bbox.x + bbox.width, bbox.y + bbox.height).matrixTransform(ctm);
+  return {
+    left: Math.min(p1.x, p2.x),
+    right: Math.max(p1.x, p2.x),
+    top: Math.min(p1.y, p2.y),
+    bottom: Math.max(p1.y, p2.y),
+  };
+}
+
+// The gap's centre: midpoint between the top half's actual visible bottom edge and the bottom
+// half's actual top edge, in iconField-local coordinates — plus the field's own rendered size, so
+// callers can turn the fractional offsets above into px at whatever size this breakpoint renders.
+function getGapCenter(top: HTMLElement, bottom: HTMLElement, field: HTMLElement) {
+  const topRect = contentRect(top);
+  const bottomRect = contentRect(bottom);
+  const fieldRect = field.getBoundingClientRect();
+  return {
+    x: (topRect.left + topRect.right) / 2 - fieldRect.left,
+    y: (topRect.bottom + bottomRect.top) / 2 - fieldRect.top,
+    fieldWidth: fieldRect.width,
+    fieldHeight: fieldRect.height,
+  };
+}
+
+// The 6 steps (3-8) no longer split the post-approach range evenly: step 3 (index 0) gets extra
+// scroll room for the icon reveal — twice an ordinary step's width, per feedback ("icons need 2x
+// the scroll to finish") — and every other step keeps its original width. Weights are in units of
+// one ORIGINAL (uniform-6-way) step-width; 5 vs 2 works out to exactly that: step 3 = 5/15 = 1/3 of
+// the post-approach range = 2x the original 1/6, and each other step = 2/15 = 0.8x its original
+// width (a ~20% trim — the range itself didn't grow, so step 3's extra has to come from somewhere).
+const STEP_WEIGHTS = [5, 2, 2, 2, 2, 2];
+
+// Cumulative start fraction (of the post-approach [P.cardEnd, 1] range) for each step, plus a
+// lookup from a progress fraction back to the step index it falls in. Falls back to plain uniform
+// division if `count` doesn't match STEP_WEIGHTS' own length (e.g. the step content changes size).
+function stepBoundaries(count: number) {
+  const weights = STEP_WEIGHTS.length === count ? STEP_WEIGHTS : Array(count).fill(1);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const starts: number[] = [];
+  let acc = 0;
+  for (const w of weights) {
+    starts.push(acc);
+    acc += w / total;
+  }
+  return { starts, widths: weights.map((w) => w / total) };
+}
+
+function stepIndexAt(starts: number[], fraction: number): number {
+  for (let i = starts.length - 1; i >= 0; i--) {
+    if (fraction >= starts[i]) return i;
+  }
+  return 0;
+}
 
 // The card shows up once the hatch is P.cardAtHole open — derived from the hole curve (hole = t²)
 // rather than hardcoded, so it stays correct if the zoom range is retimed.
@@ -131,6 +257,32 @@ export function useMachineScrollAnimation({
 
       const steps = createStepSwap(card);
 
+      // Step 3 -> step 4's own elements (present only once the right column got swapped from the
+      // static stack to the 2-part machineServer — see MachineSection.tsx). Queried once, like
+      // `chars`/`crosses` above, and guarded everywhere below so the section still works if this
+      // card ever goes back to rendering the plain stack.
+      const serverTop = card.querySelector<HTMLElement>('[data-server-part="top"]');
+      const serverBottom = card.querySelector<HTMLElement>('[data-server-part="bottom"]');
+      const iconField = card.querySelector<HTMLElement>("[data-icon-field]");
+      const iconNodes = iconField
+        ? new Map(
+            Array.from(iconField.querySelectorAll<HTMLElement>("[data-icon-node]")).map((el) => [
+              el.dataset.iconNode as IconKey | "line-circle",
+              el,
+            ]),
+          )
+        : null;
+      const machineWord = card.querySelector<HTMLElement>("[data-machine-word]");
+      const hasStep34Visual = !!(serverTop && serverBottom && iconField && iconNodes && machineWord);
+      // Step 3 is the first (weighted) slice after the card finishes approaching (P.cardEnd), step
+      // 4 the second — same boundaries `nextStep` below looks up, just kept as local progress
+      // fractions (p1/p2) for this sub-animation instead of a discrete step index.
+      const { starts: stepStarts, widths: stepWidths } = stepBoundaries(stepCount);
+      const step3Start = P.cardEnd + stepStarts[0] * (1 - P.cardEnd);
+      const step3Width = stepWidths[0] * (1 - P.cardEnd);
+      const step4Start = P.cardEnd + (stepStarts[1] ?? 1) * (1 - P.cardEnd);
+      const step4Width = (stepWidths[1] ?? stepWidths[0]) * (1 - P.cardEnd);
+
       // Pure function of scroll progress — reveal (staggered per character), then fade-out as the
       // plate takes over. Nothing here plays on its own, so stopping the scroll stops the motion.
       const applyWordmark = (progress: number) => {
@@ -165,6 +317,11 @@ export function useMachineScrollAnimation({
       gsap.set(card, { opacity: 0, scale: 0.52 });
       if (tint) gsap.set(tint, { opacity: 0 });
       steps.jumpToStep(0);
+      if (hasStep34Visual) {
+        gsap.set([serverTop!, serverBottom!], { opacity: 1, yPercent: 0 });
+        gsap.set(Array.from(iconNodes!.values()), { opacity: 0, scale: 0.55, xPercent: -50, yPercent: -50 });
+        gsap.set(machineWord!, { opacity: 0, scale: 0.55, xPercent: -50, yPercent: -50 });
+      }
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // No pin, no motion: the wordmark and the content are simply there, the plate is not.
@@ -221,16 +378,80 @@ export function useMachineScrollAnimation({
           });
         }
 
-        // 5) the six steps, inside
+        // 5) the six steps, inside — step 3 (index 0) is a wider slice than the rest (see
+        // stepBoundaries), so this is a lookup against its actual boundaries, not a plain
+        // ((progress - cardEnd) / (1 - cardEnd)) * stepCount division.
         gsap.set(fill, { clipPath: `inset(0% ${100 - 100 * clamp01((progress - P.cardEnd) / (1 - P.cardEnd))}% 0% 0%)` });
-        const nextStep = Math.min(
-          stepCount - 1,
-          Math.max(0, Math.floor(((progress - P.cardEnd) / (1 - P.cardEnd)) * stepCount)),
-        );
+        const nextStep = stepIndexAt(stepStarts, clamp01((progress - P.cardEnd) / (1 - P.cardEnd)));
         if (nextStep !== currentStep || instant) {
+          const prevStep = currentStep;
           if (instant) steps.jumpToStep(nextStep);
           else if (nextStep !== currentStep) steps.animateToStep(nextStep, currentStep);
+
+          // Step 4 (index 1) -> step 5 (index 2): the bottom half + "machine" wordmark fade out
+          // HERE, triggered together with the text swap — per feedback, they hold at full
+          // strength through the rest of step 4 (see the scrubbed block below) instead of fading
+          // mid-scroll, and only go away once the text actually moves on to step 5. `prevStep < 2`
+          // (rather than `=== 1`) so a scroll fast enough to skip straight past step 4 still fades
+          // them, same as animateToStep already treats any-size step jumps as one swap.
+          if (hasStep34Visual && instant && nextStep >= 2) {
+            gsap.set([serverBottom!, machineWord!], { opacity: 0 });
+          } else if (hasStep34Visual && !instant && nextStep >= 2 && prevStep < 2) {
+            gsap.killTweensOf([serverBottom!, machineWord!]);
+            gsap.to([serverBottom!, machineWord!], { opacity: 0, duration: 0.6, ease: "power2.out" });
+          }
+
           currentStep = nextStep;
+        }
+
+        // 6) step 3 -> step 4: server separates + icons reveal, then fades into "machine" —
+        // scrubbed both ways off the SAME `progress`, so it can't drift from the step above.
+        // Per feedback, the bottom half + "machine" do NOT fade out as part of this scrub — once
+        // revealed they just hold (p2 up to 1, i.e. right through the rest of step 4): they only
+        // fade away as a normal TRIGGERED tween, together with the text swap into step 5 (see the
+        // step-swap block below), same as everything else that changes on a step boundary.
+        if (hasStep34Visual) {
+          const p1 = clamp01((progress - step3Start) / step3Width);
+          const p2 = clamp01((progress - step4Start) / step4Width);
+
+          const sepFraction = clamp01(p1 / SEP_PROGRESS_END);
+          const topOpacity = lerp(1, 0, p2 / TOP_ICONS_FADE_END);
+
+          gsap.set(serverTop!, { opacity: topOpacity, yPercent: -(sepFraction * SEPARATION_YPERCENT) });
+          gsap.set(serverBottom!, { yPercent: BASE_GAP_PERCENT + sepFraction * SEPARATION_YPERCENT });
+
+          const center = getGapCenter(serverTop!, serverBottom!, iconField!);
+          REVEAL_ITEMS.forEach((key, i) => {
+            const node = iconNodes!.get(key);
+            if (!node) return;
+            const start = ICON_RANGE_START + i * ICON_SLICE;
+            const eased = easeOutCubic(clamp01((p1 - start) / ICON_SLICE));
+            const off = key === "line-circle" ? { dx: 0, dy: 0 } : ICON_OFFSET_PCT[key];
+            gsap.set(node, {
+              left: center.x + off.dx * center.fieldWidth,
+              top: center.y + off.dy * center.fieldHeight,
+              opacity: eased * topOpacity,
+              scale: lerp(0.55, 1, eased),
+            });
+          });
+
+          const wordRampRaw =
+            p2 <= TOP_ICONS_FADE_END
+              ? 0
+              : p2 <= WORD_RAMP_END
+                ? (p2 - TOP_ICONS_FADE_END) / (WORD_RAMP_END - TOP_ICONS_FADE_END)
+                : 1;
+          const wordRamp = easeOutCubic(clamp01(wordRampRaw));
+          gsap.set(machineWord!, { left: center.x, top: center.y, scale: lerp(0.55, 1, wordRamp) });
+
+          // Bottom half + "machine" opacity: only while still short of step 5 (p2 < 1) — hold at
+          // full strength (bottom always visible, word following its ramp-in) the instant it steps
+          // outside that range ownership passes to the triggered tween below, which is the only
+          // thing allowed to take it to 0 (and back), so this per-frame code can't fight it.
+          if (p2 < 1) {
+            gsap.set(serverBottom!, { opacity: 1 });
+            gsap.set(machineWord!, { opacity: wordRamp });
+          }
         }
       });
 

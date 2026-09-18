@@ -144,8 +144,13 @@ export function InfrastructureSectionClient({
             className={`relative w-[260px] shrink-0 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] ${
               // The machine server's own top margin sits it on the card's optical centre (the
               // static bar below the row pulls that centre down); the static stack is centred by
-              // the row itself.
-              machineServer ? "mt-[120px] min-[1800px]:mt-[140px]" : ""
+              // the row itself. Embedded (steps 3-4, inside the machine screen) sits a little
+              // lower still than the intro's own machineServer, per feedback.
+              machineServer
+                ? embedded
+                  ? "mt-[220px] min-[1800px]:mt-[255px]"
+                  : "mt-[120px] min-[1800px]:mt-[140px]"
+                : ""
             }`}
             style={machineServer ? { aspectRatio: `${machineServer.width} / ${machineServer.height}` } : undefined}
           >
@@ -169,6 +174,65 @@ export function InfrastructureSectionClient({
                     style={{ opacity: 0 }}
                     dangerouslySetInnerHTML={{ __html: machineServer.top.lit }}
                   />
+                </div>
+              </>
+            )}
+
+            {/* Step 3 -> step 4 only (inside the machine screen, see machineScrollAnimation.ts):
+                the server separates and the infra icons reveal, clustered inside line-circle.svg,
+                in the gap between the two halves — then the top half + icons fade into the
+                "machine" wordmark, which fades out together with the bottom half. Entirely driven
+                by useMachineScrollAnimation (left/top/opacity/scale set every frame from scroll
+                progress, scrubbed both ways, per approved demo) — this is just the static markup
+                it targets via the data-* selectors below. Gated on `embedded`: this is the one
+                card instance living inside the machine screen (steps 3-8); the intro's own
+                machineServer (steps 1-2) doesn't get icons/wordmark. */}
+            {embedded && machineServer && (
+              <>
+                <div data-icon-field="" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[6]">
+                  {(["storage", "database", "api", "website", "workflow"] as const).map((key) => (
+                    <div
+                      key={key}
+                      data-icon-node={key}
+                      className="pointer-events-none absolute opacity-0"
+                      style={{ width: "8%", aspectRatio: "1 / 1" }}
+                    >
+                      <Image
+                        src={`/infrastructur/server-icons/${key}.svg`}
+                        alt=""
+                        width={68}
+                        height={68}
+                        aria-hidden="true"
+                        className="h-full w-full object-contain"
+                        style={{ filter: "brightness(2.6) drop-shadow(0 0 8px rgba(255,255,255,0.12))" }}
+                      />
+                    </div>
+                  ))}
+                  {/* Stretched non-uniformly (narrower + taller than its native 514:232 ratio) on
+                      purpose — object-fit:fill on the <Image>, per feedback. Always reveals last. */}
+                  <div
+                    data-icon-node="line-circle"
+                    className="pointer-events-none absolute opacity-0"
+                    style={{ width: "58.8%", aspectRatio: "200 / 110" }}
+                  >
+                    <Image
+                      src="/infrastructur/server-icons/line-circle.svg"
+                      alt=""
+                      width={514}
+                      height={232}
+                      aria-hidden="true"
+                      className="h-full w-full"
+                      style={{ objectFit: "fill", filter: "brightness(2.6) drop-shadow(0 0 8px rgba(255,255,255,0.12))" }}
+                    />
+                  </div>
+                </div>
+                <div
+                  data-machine-word=""
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 left-0 font-heading font-bold text-[#f5f5f5] opacity-0"
+                  style={{ fontSize: 96, lineHeight: "100%", letterSpacing: "-0.02em" }}
+                >
+                  machine
                 </div>
               </>
             )}
