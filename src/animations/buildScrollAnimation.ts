@@ -29,8 +29,10 @@ const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 // its own `setProgress` — "kept centred on screen"), so closing alone doesn't move it. Per explicit
 // request, the wrapper itself also rises as it closes — an extra translateY on top of that, purely
 // cosmetic (the model's internal centering is unaffected), tuned live like every other px constant
-// in this file.
-const LIFT_ON_CLOSE_PX = 120;
+// in this file. Dialed back from 120 → 40: since this is a pure `transform` (doesn't shrink the
+// wrapper's own LAYOUT box), a bigger lift only left more empty space below it once settled — a real
+// contributor to the "too much gap before Footer" follow-up complaint.
+const LIFT_ON_CLOSE_PX = 40;
 
 interface BuildScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
@@ -86,7 +88,20 @@ export function useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrS
         invalidateOnRefresh: true,
         onUpdate: (self) => applyCloseProgress(self.progress),
         onRefresh: (self) => applyCloseProgress(self.progress),
-        onLeave: () => applyCloseProgress(1),
+        // Real bug, found via measurement (getBoundingClientRect on the closed wrapper vs. Footer's
+        // own top) — not a guess: GSAP measures the pin-spacer's reserved height ONCE, from the
+        // section's rendered size at setup time, while `--stack-gap` is still at its OPEN (tall)
+        // value. That reservation never shrinks on its own once the cube closes via scroll — closing
+        // only changes the wrapper's own CSS var, it doesn't trigger GSAP to re-measure — so a large
+        // "phantom" gap (roughly the open/closed height difference) was left between the settled,
+        // closed cube and whatever follows (Footer), even though visually nothing was still reserving
+        // that space for a reason. Fixed by refreshing once the pin fully releases (closed), so the
+        // spacer re-measures against the now-shorter content. Deferred one frame so the DOM has
+        // settled from the same tick's `applyCloseProgress(1)` first.
+        onLeave: () => {
+          applyCloseProgress(1);
+          requestAnimationFrame(() => ScrollTrigger.refresh());
+        },
         onLeaveBack: () => applyCloseProgress(0),
       });
 

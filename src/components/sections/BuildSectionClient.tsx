@@ -23,6 +23,11 @@ import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
 // shouldn't travel down the page, it should sit close to the text, small enough that the heading,
 // paragraph, buttons AND the fully-open server all fit in one screen together, closing while the
 // page is held still. See buildScrollAnimation.ts for the pin.
+//
+// A border + top-left chamfer were added here on a later follow-up, then reverted the same day —
+// the user decided this section shouldn't have one at all, and asked for the same chamfer technique
+// to go on PricingCalculatorSectionClient.tsx's card instead (see that file for the working version,
+// including the diagonal-accent fix this section's own attempt needed).
 export function BuildSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -63,7 +68,7 @@ export function BuildSectionClient() {
           h2Top now changes smoothly, linearly, by exactly the scroll delta right up to the pin
           engaging, with zero discontinuity at that instant. */}
       <div
-        className="flex flex-col items-center justify-center px-6 py-16 text-center"
+        className="flex flex-col items-center justify-center px-6 pt-16 pb-4 text-center"
         style={{ minHeight: `calc(100vh - ${HEADER_HEIGHT_PX}px)` }}
       >
         <h2 className="font-heading text-[98px] leading-none font-medium tracking-[-0.02em] text-foreground">
@@ -130,17 +135,16 @@ export function BuildSectionClient() {
           <section> above for why. */}
       <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: BUILD_PIN_SCROLL_DISTANCE }} />
 
-      {/* Real bug, not a guess: this is the LAST section on the page, its pinned inner div is
-          exactly one viewport tall, and the pin uses `start: "top top"` — so the pin-spacer's
-          reserved distance and the viewport-height the trigger itself occupies cancel out with
-          ZERO margin, leaving the pin's true end landing exactly ON the document's max scroll.
-          Rounding alone was enough to strand it there permanently (verified with a Playwright
-          scroll-scan: `position: fixed` never released even scrolled far past the pin's own
-          distance). A small permanent trailing spacer — unlike ssrScrollReserveRef, this one never
-          collapses — gives the browser a sliver of real room past the pin's end. Same root cause as
-          PricingCalculatorSectionClient's own `min-h-[60vh]` fix, just a much smaller margin here
-          since "top top" (no half-viewport requirement, unlike "center center"). */}
-      <div aria-hidden="true" className="h-24" />
+      {/* This used to be a permanent `h-24` (96px) trailing spacer: this section's pin uses
+          `start: "top top"`, and with nothing following it in the document the pin-spacer's reserved
+          distance and the viewport-height the trigger itself occupies cancelled out with ZERO
+          margin, permanently stranding `position: fixed` at the document's max scroll (see
+          PROJECT.md for the original diagnosis). Now that `Footer` follows immediately with its own
+          real height, that same margin requirement is already satisfied by genuine content — kept
+          only as a tiny fixed buffer (not the full 96px) purely as insurance against a future layout
+          change removing the footer; re-verified via scroll-scan that the pin still releases
+          cleanly with this much smaller value. */}
+      <div aria-hidden="true" className="h-4" />
     </section>
   );
 }

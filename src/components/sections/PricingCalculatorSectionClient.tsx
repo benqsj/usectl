@@ -11,6 +11,7 @@ import {
   formatTotal,
   computeTotal,
 } from "@/lib/pricingLayout";
+import { chamferClipPath, chamferDiagonalStyle } from "@/lib/chamfer";
 
 // Built from a user-supplied screenshot (see PROJECT.md) — heading/paragraph typography below is
 // exact, per explicit spec. The calculator card's exact spacing/assets are NOT spec'd yet
@@ -182,14 +183,18 @@ export function PricingCalculatorSectionClient() {
         deploy. Need more capacity later? You&rsquo;ll see the new price before making the change.
       </p>
 
-      {/* Card — chamfered top-left corner (the working 5-point clip-path noted in PROJECT.md from
-          an earlier, reverted exploration on InfrastructureSection's card). Chamfer size (48px)
-          and the 3-column proportions below are eyeballed from the screenshot, not measured. */}
+      {/* Card — chamfered top-left corner via the shared `chamfer.ts` helpers (see that file for
+          why the diagonal accent div is needed alongside `clip-path`, not just a size choice).
+          Widened chamfer 48px → `CHAMFER_PX` (64px) and shrunk the card itself (`w-[85%]` →
+          `w-[75%]`, `1722px` → `1500px`) per explicit follow-up request, 2026-09-18 — both eyeballed
+          adjustments, not measured against anything. The 3-column proportions inside are still
+          eyeballed from the original screenshot too. */}
       <div
         ref={cardRef}
-        className="relative mx-auto mt-16 w-[85%] border border-white/10 min-[1800px]:w-[1722px]"
-        style={{ clipPath: "polygon(48px 0, 100% 0, 100% 100%, 0 100%, 0 48px)" }}
+        className="relative mx-auto mt-16 w-[75%] border border-white/10 min-[1800px]:w-[1500px]"
+        style={{ clipPath: chamferClipPath() }}
       >
+        <div aria-hidden="true" className="pointer-events-none absolute bg-white/10" style={chamferDiagonalStyle()} />
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1.3fr_1fr] md:divide-x md:divide-white/10">
           {/* Column 1 — machine diagram, built from the real supplied assets (see DiagramPod /
               layout constants above). */}

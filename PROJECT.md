@@ -515,13 +515,270 @@ original 4 layer SVGs directly and is unaffected.
   vs. `buildSection.getBoundingClientRect().top`) — now exactly 0px apart at the section level, with
   the small remaining visual gap coming only from each section's own internal padding.
 
+## New `Footer`, 2026-09-18
+
+Built from two user-supplied screenshots (full footer + a zoomed crop of the Navigation/Contact/
+Subscribe columns). Lives in `src/components/layout/Footer.tsx` and — unlike every section so far,
+which composes in `page.tsx` — is rendered in `src/app/layout.tsx` right after `{children}`, mirroring
+where `<Header />` sits before it. Reasoning: the footer is site-wide chrome with the same nav links
+as the header, not page content, even though this project currently only has the one page.
+
+- **Assets**: only `public/footer/logo.svg` (173×28) and `public/footer/x-twitter.svg` (24×24) were
+  supplied — no dedicated corner-cut SVG, despite the user's own guess that one might be needed
+  ("სავარაუდოდ ეგ svg-ით უნდა გააკეთო"). Built the chamfered corners with CSS `clip-path` instead,
+  reusing the exact same technique already established on `InfrastructureSection`/
+  `PricingCalculatorSection`'s own cards (`polygon(...)`, 48px cut) — extended to BOTH top corners
+  here (the screenshot shows both cut, not just one, unlike those two cards), bottom corners left
+  square. **Verified with a high-contrast debug render** (temporarily set the border to solid red
+  2px via `page.evaluate` and screenshotted just the two top corners) — at the real `border-white/10`
+  opacity the chamfer is genuinely there but very faint, same "looks like nothing's there until you
+  boost contrast" situation as every other faint border/line in this project.
+- **Typography, all exact per spec**: address line and every column-item (nav links, contact details,
+  input placeholder, checkbox label) share one `font-heading text-[14px] leading-none font-light
+  text-white/60` style (`ITEM_TEXT` in the file) — no `tracking` class, since every spec here was
+  "letter-spacing 0%" (Tailwind's default, so the class would be a no-op). Column headers
+  ("Navigation"/"Contact"/"Subscribe") are `font-medium` at the same size (`COLUMN_LABEL`). Exact
+  gaps: logo→address `24px`, column-label→first-item `19px`, between nav/contact list items `12px`,
+  Subscribe-label→input `12px`, checkbox→its label text `8px`. Input: `234×44`, `rounded-[8px]`,
+  `border` (1px). Checkbox: `18×18`, `rounded-[4px]`, `border-[0.5px]`. Footer background
+  `#171717` (distinct from the page's own `--background: #1e1d1d` — confirmed this is intentional
+  per the spec, not a typo, since it was given as an exact hex).
+- **Not spec'd, eyeballed against the screenshots**: column proportions (built as a `flex
+  flex-wrap justify-between` row rather than a strict grid, since the reference's columns are
+  visibly NOT equal-width — logo/address is widest, Subscribe has the most breathing room before
+  it), the outer card's `w-[85%] border-white/10 min-[1800px]:w-[1722px]` sizing convention (reused
+  verbatim from every other card on the page), and the bottom copyright bar's own typography
+  (`© 2026 SYSTEMCTL`, `SYSTEMCTL` in `text-brand`) — no exact size/weight was given for that line.
+- Nav link hrefs mirror `Header.tsx`'s own `NAV_LINKS` exactly (`#the-machine`, `#agents`, etc., same
+  pre-existing mismatch where most of those anchor ids don't actually exist on the page yet — not a
+  regression introduced here, just carried over unchanged) — footer label reads "Doc" per the
+  screenshot, shorter than the header's own "Documentation", same target anchor either way.
+- Verified end-to-end via Playwright at 1920×1080 and 1440×900 (no wrapping/overlap issues at
+  either), and confirmed the footer's OWN content never overflows horizontally even at a 480px
+  mobile width (`footer.querySelectorAll('*')` max right edge stayed at 423.6px, well inside the
+  480px viewport) — a `scrollWidth > clientWidth` check on the full document DID flag overflow at
+  480px, but traced it to `BuildSectionClient.tsx`'s pre-existing ambient-glow div (`w-[170%]` of a
+  400px-wide wrapper), unrelated to this change and already covered by this project's own "no
+  responsive pass done yet" note further down. `tsc --noEmit` and `eslint` both clean, zero
+  console/page errors.
+
+**Follow-up fixes, same day (2026-09-18):**
+- **Real structural mistake, corrected**: the `#171717` background and the chamfer clip-path had
+  been applied to two DIFFERENT elements — background on the outer `<footer>` (spanning the full
+  page width), chamfer+border on a narrower inner "card" div nested inside it. Since both elements
+  shared the identical background color, there was no visual contrast between "inside the clipped
+  shape" and "outside it" — the chamfer only ever read as a diagonal segment of the border's own
+  stroke, not as a real notch cut into a panel (user's own framing: "the cut shouldn't be made on
+  the border, the footer itself should have the cut"). Fixed by moving the background color onto
+  the SAME element that carries the chamfer + border — now there's genuine color contrast at the
+  cut (the panel's `#171717` fill vs. the page's own lighter background + grid showing through
+  around it), which is what makes it read as an actual corner cut instead of a border artifact.
+- **Checkbox background removed**: it still had the browser's native checkbox chrome (a filled
+  white-ish box) despite `bg-transparent`, because `bg-transparent` alone doesn't override a native
+  control's own rendering — added `appearance-none` (which does) alongside it. Note: since no custom
+  checkmark was added, a checked state now shows no visual indication at all — matches the
+  unchecked-only reference screenshot; flag if a checked-state visual is wanted later.
+- **Content row height set to exactly `317px`** (verified via `getBoundingClientRect()`, not just
+  eyeballed) — a fixed-height flex row (`items-center`) wrapping the 4 columns, separate from the
+  copyright bar below it (which keeps its own natural/unconstrained height, per no spec being given
+  for that line).
+- **Logo/Subscribe brought inward**: horizontal padding on that same row went `40px → 96px → 144px`
+  (`p-10` → `px-24` → `px-36`) across two live-tuned iterations — user's own words were "way too far
+  outside," so this was pushed further than the first bump alone. Re-verified via screenshot at both
+  1920×1080 and 1440×900 — no wrapping, comfortable margin from the panel's own edges at either size.
+
+**2nd follow-up, same day**: user liked the chamfer direction but wanted it deeper, and the panel
+full-bleed (edge-to-edge) rather than inset like every other card on the page. `CHAMFER_PX = 48 → 90`.
+Removed the `w-[85%] border-white/10 min-[1800px]:w-[1722px]` sizing convention (the one shared by
+every other card on the page) in favor of plain `w-full`, and dropped the outer `<footer>`'s own
+`px-6` too — verified via `getBoundingClientRect()` that the panel now spans exactly `0` to the true
+viewport width (`1920` at that test size), not just 100% of an already-padded container. The inner
+content row keeps its own horizontal padding (`px-36` from the prior fix), so text/columns still
+don't touch the true edges even though the panel's background and border now do. Re-verified at
+1920×1080 and 1440×900 — chamfer reads clearly deeper, panel is genuinely edge-to-edge at both sizes.
+
+**3rd follow-up, same day**: gap above the panel (to `BuildSection`) and below it (to the true page
+end) both shrunk — `pt-24 pb-12` (96px/48px) → `pt-8 pb-0` (32px/0px). Verified via
+`getBoundingClientRect()` + `document.documentElement.scrollHeight` that the panel's own bottom edge
+now lands EXACTLY on the document's total height (`19403px` in the test — zero trailing whitespace),
+satisfying "push it all the way down" literally, not just approximately.
+
+**4th follow-up, same day**: user asked to shrink the BuildSection↔Footer gap further, and to grow
+the footer's own height so its top lands on a `BackgroundLines.tsx` horizontal grid row line.
+
+- **Real, deep bug found and fixed** while investigating why the gap was still large (~517px)
+  despite the 3rd follow-up's padding cuts: measured (not guessed) that the CLOSED cube's own visual
+  bottom sat ~517px above the footer, even though the structural CSS gap (a `h-4` spacer +
+  `Footer`'s own `pt`) only accounted for ~50px of that. Root cause: GSAP's pin-spacer reserves
+  document height based on the section's rendered size measured ONCE at `ScrollTrigger.create()` /
+  `refresh()` time — which happens while `--stack-gap` is still at its OPEN (tall) value, before any
+  scrolling. Closing the cube later only changes a CSS custom property; it never triggers GSAP to
+  re-measure, so the spacer kept reserving the OPEN state's ~285px-taller footprint even once fully
+  closed and settled — a persistent "phantom" gap with no visible cause in the DOM inspector (the
+  cube's own box had genuinely shrunk; the STALE SPACER was the only thing still tall). Fixed by
+  calling `ScrollTrigger.refresh()` (deferred one frame via `requestAnimationFrame`) inside `onLeave`,
+  once the pin has fully released and settled on `closeProgress: 1` — re-measures against the now-
+  short content and the spacer collapses to match. Verified via a natural (not `scrollTo`-jumped)
+  incremental scroll-through: gap dropped `517px → 104px`, `document.documentElement.scrollHeight`
+  itself shrank by the reclaimed ~285px, the pin still releases cleanly (`position: relative`), and
+  scrolling back up still re-opens the cube correctly (reversibility unaffected).
+- Two smaller, more direct contributors to the same gap were also trimmed alongside the bug fix:
+  `BuildSectionClient.tsx`'s content wrapper `py-16` (64px both sides) → `pt-16 pb-4` (only the
+  bottom side cut, real fixed padding, not content-driven), and `buildScrollAnimation.ts`'s
+  `LIFT_ON_CLOSE_PX` (the cosmetic rise-as-it-closes effect from an earlier follow-up) `120 → 40` —
+  since that lift is a pure `transform` that doesn't shrink the wrapper's own layout box, a larger
+  lift purely left more dead space below it once settled.
+- **Grid-snap**: with the gap now small and stable, measured `<footer>`'s own natural top (driven
+  entirely by everything above it, independent of the footer's own padding) via
+  `getBoundingClientRect()`, found the nearest `BackgroundLines.tsx` horizontal row line
+  (`rowY()`/`ROW_PITCH` from `src/lib/grid.ts`, 114px pitch at the 1920 reference width) strictly
+  below it, and set `pt-8` (32px) → `pt-[101px]` — the exact difference needed to land the panel's
+  own top edge precisely on that line. Verified via `getBoundingClientRect()`: `panelTop` landed
+  EXACTLY on the computed line (`18678px`, delta `0`) at the tested 1920px width. Same caveat as
+  every other grid-snap in this project (see InfrastructureSection's own entry): `ROW_PITCH` is
+  `vw`-fluid but this offset is a flat px constant, so it's only pixel-exact at 1920px — re-checked
+  at 1440×900 and it still looks visually reasonable there, just not laser-precise.
+- Re-verified the whole page after all of this: `PricingCalculatorSectionClient`'s own stepper still
+  completes to `$40.45` (its pin wasn't touched, but BuildSection's height changing shifts everything
+  after it, worth re-checking), and a full-document scroll sweep (400px steps, `pageerror` +
+  console-error capture) came back clean — zero errors.
+
+**5th follow-up, same day**: user asked for BuildSection to get the same chamfer treatment as
+Footer, but only on its top-left corner (the other 3 stay square) — matching `CHAMFER_PX = 90` for
+visual consistency between the two.
+
+- **Real bug, caught before it shipped**: the first attempt put `border` + the chamfer `clipPath`
+  directly on the outer `<section>` (which also carries `paddingTop: HEADER_HEIGHT_PX` to clear the
+  sticky header). Border always wraps the FULL box INCLUDING padding, but `paddingTop` only pushes
+  CONTENT down — so the border's own top edge (and the chamfered corner with it) sat exactly where
+  the section starts, y=0, directly BEHIND the sticky header's higher stacking context. Verified with
+  a two-step check: (1) a high-contrast red-border debug render, scrolled with `section.scrollIntoView()`
+  so the section's top was exactly at the viewport's top — showed a plain vertical edge running under
+  the header, no diagonal anywhere; (2) confirmed the section's own rect really did start at `y: 0`
+  post-scroll. The chamfer was rendering correctly, it was just permanently invisible.
+- Fixed by moving `border` + `clipPath` off the `<section>` and onto the INNER content div instead —
+  the one that already starts below the header-clearance padding, i.e. exactly where content (and
+  now the border) is actually visible on screen. Re-verified with the same red-border debug
+  technique: the diagonal top-left cut is now clearly visible immediately below the header, both in
+  the debug render and in a normal screenshot at the real `border-white/10` opacity (faint, same as
+  every other border on the page, but present). Re-checked at 1440×900 too — consistent. Re-ran the
+  pin-release check (`position: relative` at the document's max scroll) — unaffected by this change.
+- **Lesson for this project generally**: any border/clip-path meant to be visually chamfered should
+  go on the element that's actually positioned where the user can see it — a box whose top edge is
+  pushed below a fixed/sticky header via `padding` (not `margin`, not a wrapping offset) will still
+  have that padding's OWN region be part of the bordered box, and anything drawn at that box's edge
+  (borders, clip-path corners) inherits the same hidden-behind-the-header problem regardless of how
+  correctly the CSS itself is written.
+
+**6th follow-up, same day — two more real bugs, both caught from a live screenshot**: the previous
+fix's own "no overlap" claim was checked with a debug BORDER color, which showed border-top and
+border-left correctly clipped and stopping at the right points — but never actually proved a
+diagonal line existed connecting them, and it turns out one didn't.
+
+1. **An unwanted horizontal line had appeared right above Footer**, "ruining the design" there (the
+   user's own words, with a screenshot). Cause: the chamfered div used a plain `border` (all 4
+   sides) — its own BOTTOM edge sat close to Footer and read as a stray extra rule. Only a top-left
+   corner accent was ever wanted, not a full rectangle. Fixed: `border` → `border-t border-l`
+   (top/left only); the other two sides are simply gone now, and with them, the unwanted line.
+2. **The chamfer itself was invisible** — not a faint line, an actual empty gap ("გაქრალი ხაზი", a
+   vanished line, per the user's own description, with a zoomed screenshot pointing at the empty
+   corner). Root cause: `clip-path` only clips what an element ALREADY paints — it doesn't draw a new
+   border stroke along the shape it cuts. Footer's own chamfer reads as a real notch because that
+   panel has a solid `#171717` fill, so the color contrast against the page background IS the visible
+   edge, with or without an explicit stroke there. This div has no fill (transparent — the page's own
+   grid shows through, intentionally, since it's not meant to be a solid panel like Footer), so once
+   `clip-path` clipped border-top and border-left short, there was genuinely nothing left to see in
+   the gap between them. Fixed by adding an explicit diagonal accent: a 1px-tall `bg-white/10` div,
+   width `CHAMFER_PX * Math.SQRT2` (the exact length of the cut diagonal), centered at
+   `(CHAMFER_PX/2, CHAMFER_PX/2)` and rotated `-45deg` — same color as the border, bridging exactly
+   between the two clipped ends. `clip-path` is still kept (so border-top/border-left still stop
+   exactly at the chamfer points rather than running into the corner); it just no longer has to do
+   the diagonal's own rendering.
+   - Verified BOTH fixes properly this time — not just via a same-color debug border, but by
+     boosting the diagonal accent element's OWN color/thickness independently in a debug pass, and
+     separately confirming the plain (real-opacity) screenshot shows a continuous, connected
+     horizontal→diagonal→vertical line at the corner. Re-checked the footer-area screenshot too —
+     the stray line above it is gone, matches the pre-border look. Re-ran the pin-release check —
+     unaffected.
+
+**7th follow-up, same day — reassigned, not just tweaked**: user reconsidered and decided
+BuildSection shouldn't have a border/chamfer at all — reverted it back to a plain section (no
+border, no clip-path, no diagonal accent; `CHAMFER_PX` constant and all related JSX removed). Asked
+for the SAME chamfer technique to go on `PricingCalculatorSectionClient.tsx`'s card instead — which
+already had a `border` + a single top-left `clip-path` chamfer from much earlier in the project (see
+that section's own "Implemented so far" entry), predating the diagonal-accent fix discovered today.
+That card almost certainly had the exact same "invisible cut" bug (no background fill, so
+`clip-path` alone clips the border short with nothing bridging the gap) — never noticed before
+because nobody had looked closely at that specific corner since the diagonal-line issue was
+understood.
+- Added the same fix directly to the card: a 1px `bg-white/10` div, `48 * Math.SQRT2` wide (the
+  card's own 48px chamfer, not BuildSection's 90px), centered at `(24, 24)` and rotated `-45deg`.
+- **A verification false alarm along the way, worth recording**: an initial debug pass (scrolling
+  the card to `cardTop - 20` via `window.scrollTo`, to put its corner near the viewport top like the
+  earlier BuildSection/Footer debug checks) showed NO diagonal at all, even with forced
+  `!important` red styling confirmed applied via `getComputedStyle` — looked like a repeat of the
+  same bug. Root cause: that scroll position was artificial and never occurs during real use — in
+  normal document flow the "Pricing" heading and paragraph always sit above the card, so scrolling
+  the page normally never actually places the card's own top edge behind the sticky header the way
+  a raw `scrollTo` to `cardTop - 20` does. Switched to `scrollIntoViewIfNeeded()` (respects normal
+  flow) and the diagonal was immediately, clearly visible, cropped and confirmed via screenshot.
+  **Lesson**: a debug scroll position chosen to make screenshotting easier can itself land an
+  element somewhere it would never naturally be (e.g. behind a sticky header) — if a "verified"
+  element still doesn't show up after confirming its computed styles are correct, check whether the
+  verification's OWN scroll position is realistic before concluding the fix is broken.
+- Re-verified end-to-end: BuildSection's corner confirmed back to plain/no-border (screenshot),
+  Pricing card's chamfer confirmed visible in a realistic scroll position, and a full-document
+  scroll sweep (400px steps) came back with zero console/page errors. `tsc --noEmit` and `eslint`
+  both clean.
+
+**8th follow-up, same day — chamfer unified across the whole page**: user liked Pricing's chamfer,
+asked to cut it a bit deeper, shrink Pricing's card width, and apply the SAME chamfer (same size) to
+every other bordered section card on the page.
+
+- **New shared module, `src/lib/chamfer.ts`**: `CHAMFER_PX` (64, up from Pricing's own 48 — "a bit
+  more") plus `chamferClipPath()` and `chamferDiagonalStyle()` helpers, so the size and the
+  diagonal-accent technique (see the 6th/7th follow-ups above for why the accent div is needed at
+  all) live in exactly one place instead of being copy-pasted per file and drifting.
+- **Pricing card** (`PricingCalculatorSectionClient.tsx`): switched to the shared helpers; width
+  `w-[85%]`/`1722px` → `w-[75%]`/`1500px` (verified via `getBoundingClientRect()`: exactly `1500px`
+  at the tested width) — both eyeballed reductions, no exact target given.
+- **Infrastructure card** (`InfrastructureSectionClient.tsx`) — this one had a `border` but NO
+  chamfer at all before now (an earlier chamfer attempt here was tried and reverted, per this file's
+  own older history). Added the same `clip-path` + diagonal-accent treatment. This card is shared
+  between the standalone intro section AND the `embedded` instance inside MachineSection's own zoom
+  sequence (steps 3-8) — same markup either way, so the chamfer appears correctly scaled in both
+  contexts automatically (it's just an absolutely-positioned child, inherits the same transform as
+  everything else in the card).
+- **Footer's panel**: already had a working chamfer (own background fill, so it never needed the
+  diagonal-accent fix) — just resized `90px → 64px` (the new shared `CHAMFER_PX`) via the same
+  import, dropping its own locally-defined constant. Its "both top corners" treatment (vs. every
+  other card's top-left-only) is unchanged — that was a deliberate, separate earlier decision, not
+  something this consistency pass was meant to touch. The `pt-[101px]` grid-snap (measured against
+  the panel's top-edge *position*, unrelated to corner-cut depth) is unaffected by this resize.
+- **Deliberately excluded** (per the request's own "sections" framing, and matching a research pass
+  that inventoried every `border` usage on the page first): the small "From $15 / month" pill/box on
+  the Pricing card (a button-like element with `rounded-[4px]`, not a section-level card), Header's
+  `border-b` and Footer's internal `border-t` above the copyright row (single-edge dividers with no
+  actual corner to chamfer), and every pill-button border (Button.tsx, BuildSection's two CTAs) —
+  none of these are "cards."
+- Verified all three chamfers side by side via cropped screenshots at each card's real corner
+  position (not an artificial scroll position — see the 7th follow-up's own lesson about that):
+  Pricing and Infrastructure both show a clean connected horizontal→diagonal→vertical line at 64px;
+  Footer's own color-contrast cut is unaffected by the size change. Re-ran the Pricing stepper
+  end-to-end (still reaches `$40.45`) and a full-document console-error sweep — zero errors.
+  `tsc --noEmit` and `eslint` both clean.
+
 ## Open items / TODO
 
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot weren't added (no spec given, and Hero's own identical crosses were a whole saga before being removed — see that entry above).
 - Verify `HeroSection.tsx` against real Figma data once the MCP rate limit resets — see the "Implemented so far" note above for exactly what's unconfirmed (font sizes, spacing, button styling).
 - `public/herosection/cross.svg` exists but isn't used anywhere in the code right now — **temporarily removed 2026-09-17** from both `HeroSection.tsx` (4 `GridCross` corner marks around the cube, wide/FullHD only) and `InfrastructureSection.tsx` (4 `CardCross` corner marks on the card). User asked to remove them "temporarily," implying they'll likely come back — exact removed code + restoration instructions are preserved in both files' entries above under "Implemented so far." Restore from there when asked, rather than re-deriving the positioning math from scratch.
-- Footer — Figma content exists (`26:3243` area) but not requested/built yet.
+- Footer — built 2026-09-18 from user-supplied screenshots (see the "New `Footer`" entry above), NOT
+  from the Figma `26:3243` node (Figma MCP still rate-limited, and the screenshots were exact enough
+  to build from directly). The chamfer size (48px) and column proportions are eyeballed against the
+  screenshots, not measured; the copyright bar's own typography is estimated (not spec'd). The
+  checkbox/subscribe form has no submit handler — purely static markup, matching the reference.
 - Verify vertical line color/opacity against actual Figma stroke (currently a guess: `white/2%`, 1px — lowered twice 2026-09-16 per user feedback).
 - Verify the `82px`/`114px` grid pitch and `99px` edge inset against Figma directly (currently: 82px column pitch is Figma-confirmed from earlier metadata; 114px row pitch and the fluid-vw scaling approach are per user instruction 2026-09-16, not yet cross-checked against a fresh Figma render). Figma MCP hit its View-seat rate limit on 2026-09-16 mid-verification (`get_metadata`/`get_screenshot` calls blocked). Re-check once the limit resets.
 - ~~The fluid `vw()` scaling in `BackgroundLines.tsx` only applies to the grid line pitch, not the content container~~ — **resolved 2026-09-16**: both `Header.tsx` and `BackgroundLines.tsx` now use the same `vw`-fluid inset convention, see "Conventions established" below.

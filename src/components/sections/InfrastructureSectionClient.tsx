@@ -7,6 +7,7 @@ import { useInfrastructureScrollAnimation } from "@/animations/infrastructureScr
 import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import { BlurText } from "@/components/ui/BlurText";
 import type { MachineServerParts } from "@/lib/machineServerParts";
+import { chamferClipPath, chamferDiagonalStyle } from "@/lib/chamfer";
 
 // The hero's cap layer is 383 wide, the other layers 372 (both 256 tall) — same ratio as
 // HeroSectionClient.tsx. Kept here, NOT imported from serverStackLayers.ts: that module reads the
@@ -68,7 +69,15 @@ export function InfrastructureSectionClient({
       className={`relative mx-auto w-[85%] border border-white/10 px-8 pt-6 pb-10 min-[1800px]:w-[1722px] md:px-16 md:pt-8 md:pb-14 ${
         embedded ? "will-change-transform [backface-visibility:hidden]" : ""
       }`}
+      style={{ clipPath: chamferClipPath() }}
     >
+        {/* Same chamfer technique as Pricing/Footer's own cards (see src/lib/chamfer.ts) — added
+            2026-09-18 per an explicit "chamfer every bordered section card, same size" request.
+            This card has no background fill of its own (transparent, `border` only), so the
+            diagonal accent div is required, not optional — plain `clip-path` alone just clips
+            border-top/border-left short with nothing bridging the gap (see chamfer.ts's own
+            comment for the full diagnosis). */}
+        <div aria-hidden="true" className="pointer-events-none absolute bg-white/10" style={chamferDiagonalStyle()} />
         <div className="flex flex-col items-center gap-16 md:flex-row">
           {/* Blur-stagger step sequence. Every step's eyebrow / heading+paragraph is rendered up
               front and stacked in the same grid cell ([grid-area:1/1]), so each stack auto-sizes to
