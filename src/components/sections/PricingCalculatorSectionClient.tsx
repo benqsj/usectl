@@ -362,16 +362,17 @@ export function PricingCalculatorSectionClient() {
 
       <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: PRICING_PIN_SCROLL_DISTANCE }} />
 
-      {/* Real bug, not a guess: this is the LAST section on the page, and the pin's "center
-          center" start needs the card to reach the viewport's vertical center — which, this close
-          to the document's end, means the browser needs roughly another half-viewport of trailing
-          height below the pin just to physically scroll that far (verified with a Playwright
-          scroll-scan: without this, scrollY clamped ~174px short of the pin's true end at 1080px
-          viewport height, permanently stranding the sequence one press short). `min-h-[60vh]`
-          scales with viewport height, so the margin holds at any screen size — the math: required
-          trailing space is `0.5*viewportHeight - 366px` (366 comes from this page's own fixed
-          layout above), and `0.6*viewportHeight` clears that for every realistic viewport height. */}
-      <div aria-hidden="true" className="min-h-[60vh]" />
+      {/* This used to be `min-h-[60vh]`: when PricingCalculatorSection was the LAST section on the
+          page, the "center center" pin needed roughly another half-viewport of trailing height below
+          it just to physically scroll that far (see PROJECT.md for the original diagnosed bug —
+          scrollY clamped short of the pin's true end, permanently stranding the sequence one press
+          short). Now that BuildSection follows with real, substantial height of its own, that
+          trailing margin is already satisfied by real content — the artificial spacer just added a
+          large, empty-looking gap between the two sections (user-reported 2026-09-18). Shrunk to a
+          much smaller fixed buffer, kept only as cheap insurance against a future layout change
+          removing BuildSection's height; re-verified via scroll-scan that the pin still completes
+          fully to $40.45 with this much smaller value. */}
+      <div aria-hidden="true" className="h-16" />
     </section>
   );
 }

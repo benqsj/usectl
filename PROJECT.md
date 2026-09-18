@@ -501,6 +501,20 @@ original 4 layer SVGs directly and is unaffected.
   top of it. Verified via screenshot: open/entry state now has a small clean gap from the buttons,
   and by the time it's closed the whole wrapper has visibly risen ~120px closer to the text.
 
+- **6th pass, same day**: user reported PricingCalculatorSection and BuildSection sat too far apart.
+  The culprit was `PricingCalculatorSectionClient.tsx`'s own `min-h-[60vh]` trailing spacer (~648px
+  at a 1080px-tall viewport) — added earlier specifically because Pricing used to be the LAST section
+  on the page and its `"center center"` pin needed that much artificial trailing room just to
+  physically complete (see that entry above). Now that BuildSection follows with substantial real
+  height of its own, that requirement is already satisfied by genuine content — the 60vh spacer was
+  just adding a large empty gap on top of it. Shrunk to `h-16` (64px, cheap insurance against a future
+  change removing BuildSection's height, not load-bearing any more). Re-verified via the same
+  scroll-scan technique used to diagnose the original bug: Pricing's stepper still reaches its exact
+  final state (`2, 4, 4` / `$40.45`) and the pin still releases cleanly — confirms the large margin
+  wasn't needed once real content follows. Measured the seam directly (`pricing.getBoundingClientRect().bottom`
+  vs. `buildSection.getBoundingClientRect().top`) — now exactly 0px apart at the section level, with
+  the small remaining visual gap coming only from each section's own internal padding.
+
 ## Open items / TODO
 
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
