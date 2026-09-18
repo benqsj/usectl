@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import type { RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -65,9 +65,12 @@ interface HeroScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   cubeWrapperRef: RefObject<HTMLDivElement | null>;
-  // The 3D server. Null until the GLB has parsed; the timeline simply skips it until then, and
-  // HeroSectionClient calls ScrollTrigger.refresh() once it's ready so the scrub re-applies.
+  // The 3D server. Null until the GLB has parsed; the timeline simply skips it until then.
   modelRef: RefObject<HeroServerModelHandle | null>;
+  // Filled in with a resync function once the timeline exists; HeroSectionClient.tsx calls it from
+  // HeroServerModel's `onReady` the instant the GLB finishes loading, so the model's very first
+  // rendered frame already matches the current scroll position instead of popping from closed.
+  modelSyncRef: RefObject<(() => void) | null>;
   // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
   // before any client JS runs — see the long comment where this is collapsed, below.
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
@@ -78,21 +81,11 @@ export function useHeroScrollAnimation({
   contentRef,
   cubeWrapperRef,
   modelRef,
+  modelSyncRef,
   ssrScrollReserveRef,
 }: HeroScrollRefs) {
-  // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle (a plain `let` inside
-  // the useGSAP callback would not — it gets a fresh value on every invocation). See the long
-  // comment below (`restoreScrollY`) for why this needs to persist across that cycle specifically.
-  const scrollYBeforeChurnRef = useRef<number | null>(null);
-
   useGSAP(
     () => {
-      // Captured on the FIRST of the two StrictMode invocations only (guarded by the `=== null`
-      // check) — by the time the SECOND invocation's effect body runs, scrollY has often already
-      // been clamped away (see `restoreScrollY` below), so re-capturing here on every invocation
-      // would just cache the WRONG, already-broken value instead of the real one.
-      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
-
       // Real bug, diagnosed with hard numbers: the server-rendered page (before any client JS
       // runs) is SHORTER than the final, hydrated page by exactly PIN_SCROLL_DISTANCE — because
       // GSAP's pin-spacer (which reserves that scroll room) only gets created below, client-side,
@@ -122,7 +115,15 @@ export function useHeroScrollAnimation({
       // and browsers respond to a scrollable-area collapse below the current scroll position by
       // CLAMPING scrollY to fit the new (shorter) max. The collapse recovers a frame later, but
       // the browser does NOT automatically scroll back down to where it clamped FROM — so scrollY
-      // stays stuck at the clamped value permanently.
+      // stays stuck at the clamped value permanently. This used to be patched HERE (a captured
+      // `scrollYBeforeChurnRef` + a 100ms-later restore, once per section) — moved out to a single
+      // shared `<ScrollChurnGuard />` (src/components/layout/ScrollChurnGuard.tsx), mounted once in
+      // layout.tsx, because five independent copies of this same fix (one per pinned section) raced
+      // each other: each captured scrollY inside its OWN effect, which ran only after every EARLIER
+      // section's effect had already collapsed ITS spacer and potentially already clamped scrollY —
+      // so later sections captured an already-wrong value, and whichever section's stale correction
+      // fired last would drag the page into ITS OWN pin range regardless of where the user actually
+      // was. See ScrollChurnGuard.tsx for the full diagnosis.
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       if (!sectionRef.current || !contentRef.current || !cubeWrapperRef.current) return;
@@ -223,19 +224,65 @@ export function useHeroScrollAnimation({
         // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
         .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
 
-      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn (see the long comment
-      // above `ssrScrollReserveRef.current.style.height = "0px"`) clamped it away. 100ms is
-      // comfortable margin past the ~15ms the document height took to recover in testing — GSAP's
-      // own scroll listener picks up the resulting scroll event and re-syncs the timeline
-      // automatically, no explicit ScrollTrigger.refresh()/update() needed. A no-op in production
-      // (and on any render where nothing actually got clamped), since the condition only fires
-      // when scrollY has actually drifted from the captured value.
-      const targetScrollY = scrollYBeforeChurnRef.current;
-      if (targetScrollY !== null) {
-        setTimeout(() => {
-          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
-        }, 100);
-      }
+      // The GLB loads asynchronously and arrives well after this timeline (and its ScrollTrigger)
+      // already exist — HeroServerModel.tsx always starts it at setProgress(0) (closed), since it
+      // has no way to know the scroll-derived target itself. Real bug, reported as "instead of
+      // open, I find it closed, then it suddenly opens": the old fix here just called
+      // `ScrollTrigger.refresh()` once the model was ready, which recomputes pin positions and
+      // re-syncs `self.progress` — but this timeline's `scrub: 1` means that re-sync goes through
+      // the SAME eased catch-up scroll uses for ordinary scrolling, so the model visibly animated
+      // from closed to its true open pose over about a second, instead of just already being there.
+      // First fix: jump the timeline's own progress directly to the ScrollTrigger's post-refresh
+      // value via `tl.progress(value)`, which sets time immediately (skipping the scrub's eased
+      // interpolation) and still fires each tween's onUpdate — so `disassemble`'s callback still
+      // calls `modelRef.current.setProgress(...)`.
+      //
+      // Second, subtler bug in that same fix, reported separately: refresh while scrolled to the
+      // FOOTER, then scroll straight up past Hero without pausing — Hero's server was STILL closed
+      // once you reached it, well after the GLB must have finished loading. Root cause: GSAP skips
+      // firing a tween's onUpdate when `.progress()` is set to a value the timeline is ALREADY at.
+      // If the user scrolls fast enough that the timeline's progress organically reaches 1 (driven
+      // by the OTHER tweens in this same timeline — text fade, scale, --stack-gap — none of which
+      // are gated on the model) before the GLB finishes loading, then by the time `onReady` fires,
+      // `tl.progress(st.progress)` is a no-op (already there, nothing "changes"), the disassemble
+      // tween's onUpdate never fires, and `modelRef.current.setProgress` never gets its first real
+      // call. Fixed by ALSO calling `modelRef.current.setProgress` directly and unconditionally
+      // here, reading straight off the `disassemble` proxy object — GSAP keeps that object's own
+      // `.t` correctly interpolated on every render regardless of whether anything is listening via
+      // onUpdate, so it's trustworthy to read directly.
+      //
+      // Third bug, found diagnosing the second with instrumented logging (traced every
+      // `setProgress` call back to its caller): this function's own synchronous sync correctly
+      // called `setProgress(1)` — then, within the same tick, `setProgress(0)` fired several more
+      // times from the disassemble tween's OWN normal `onUpdate` callback, undoing it. Root cause
+      // isn't this section at all — it's `BuildSectionClient.tsx`'s `handleModelReady`, which (for
+      // its OWN, separate HeroServerModel instance) calls the STATIC `ScrollTrigger.refresh()` —
+      // a page-wide call that refreshes EVERY ScrollTrigger, not just Build's own. Hero's own
+      // ScrollTrigger has `invalidateOnRefresh: true`, so any such refresh — triggered by Hero's own
+      // GLB becoming ready, Build's, or anything else on the page — makes GSAP briefly reset Hero's
+      // animated properties to their natural/un-animated state to re-measure them, and that reset
+      // can land AFTER this function's own sync already ran, since both GLBs tend to finish loading
+      // within the same handful of milliseconds (both are small, both typically already cached).
+      // Removing Hero's OWN `ScrollTrigger.refresh()` call (an earlier attempt at this same fix)
+      // only prevented HERO's copy of this from firing — it did nothing about Build's.
+      //
+      // Rather than trying to coordinate every other section's own refresh() calls (fragile, and
+      // more will likely be added later), this re-asserts the correct value defensively: once
+      // immediately (handles a refresh that already happened before this runs), then once more a
+      // frame later (`requestAnimationFrame`, catches a refresh landing the SAME tick — exactly what
+      // the logged repro showed) and once more after a short delay (catches a refresh from a slower
+      // GLB arriving after both of those). All three read `disassemble.t` fresh at call time, so
+      // they're correct regardless of what scrolling has done between them.
+      const syncModelToTimeline = () => {
+        const st = tl.scrollTrigger;
+        if (st) tl.progress(st.progress);
+        modelRef.current?.setProgress(disassemble.t);
+      };
+      modelSyncRef.current = () => {
+        syncModelToTimeline();
+        requestAnimationFrame(syncModelToTimeline);
+        setTimeout(syncModelToTimeline, 300);
+      };
     },
     { scope: sectionRef },
   );

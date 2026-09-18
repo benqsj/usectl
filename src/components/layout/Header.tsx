@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ColumnLines, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/components/layout/BackgroundLines";
+import { INSET_VW } from "@/lib/grid";
 
 const NAV_LINKS = [
   { label: "The Machine", href: "#the-machine" },
@@ -12,6 +14,16 @@ const NAV_LINKS = [
 export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/60 backdrop-blur-md">
+      {/* Rendered here (a child of <header>, above its own bg-background/60 + backdrop-blur-md
+          layer) rather than in BackgroundLines.tsx's fixed background — at this grid's real
+          opacity, sitting behind the header's blur washes the lines out to fully invisible. See
+          BackgroundLines.tsx's own note at the removed call site. */}
+      <ColumnLines
+        hideWide={HEADER_HIDE_WIDE}
+        hideNarrow={HEADER_HIDE_NARROW}
+        className="pointer-events-none absolute top-0 h-24"
+        style={{ left: INSET_VW, right: INSET_VW }}
+      />
       <div
         className="relative flex h-24 w-full items-center"
         style={{ paddingLeft: "6.770833vw", paddingRight: "5.15625vw" }}

@@ -19,8 +19,8 @@ const START_COLUMNS = new Set([2, 3]);
 const MIDDLE_COLUMNS_WIDE = new Set([9, 10, 11, 12, 13, 14]); // hidden at >=1800px (FullHD-ish)
 const MIDDLE_COLUMNS_NARROW = new Set([8, 9, 10, 11, 12, 13, 14, 15]); // hidden below 1800px
 
-const HEADER_HIDE_WIDE = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_WIDE]);
-const HEADER_HIDE_NARROW = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_NARROW]);
+export const HEADER_HIDE_WIDE = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_WIDE]);
+export const HEADER_HIDE_NARROW = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_NARROW]);
 const BELOW_HEADER_HIDE_WIDE = MIDDLE_COLUMNS_WIDE;
 const BELOW_HEADER_HIDE_NARROW = MIDDLE_COLUMNS_NARROW;
 
@@ -30,7 +30,7 @@ const BELOW_HEADER_HIDE_NARROW = MIDDLE_COLUMNS_NARROW;
 const HIDDEN_AT_WIDE = "min-[1800px]:hidden";
 const HIDDEN_AT_NARROW = "max-[1799px]:hidden";
 
-function ColumnLines({
+export function ColumnLines({
   hideWide,
   hideNarrow,
   className,
@@ -94,13 +94,13 @@ export function BackgroundLines() {
           backgroundSize: "100% auto",
         }}
       />
-      {/* vertical column lines, header band — hides both the logo (start) and nav (middle) columns */}
-      <ColumnLines
-        hideWide={HEADER_HIDE_WIDE}
-        hideNarrow={HEADER_HIDE_NARROW}
-        className="absolute top-0 h-24"
-        style={{ left: INSET_VW, right: INSET_VW }}
-      />
+      {/* Header-band column lines are NOT rendered here — this whole layer sits behind the sticky
+          header's own `backdrop-blur-md` (see Header.tsx), and at this grid's real production
+          opacity (2%) the blur+60%-tint washes them out to fully invisible (confirmed 2026-09-18 via
+          a Playwright pixel check: a solid, fully-opaque red override in this band produced zero
+          visible pixels through the header, while the identical override one row below painted
+          cleanly). Rendered instead as a child of <header> itself, above its blur/tint layer, so it
+          reads at the same weight as the rest of the page's grid instead of being dampened by it. */}
       {/* vertical column lines, one row directly below the header — the middle (nav) gap continues just this once */}
       <ColumnLines
         hideWide={BELOW_HEADER_HIDE_WIDE}

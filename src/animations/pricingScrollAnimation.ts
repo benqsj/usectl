@@ -58,10 +58,6 @@ export function usePricingScrollAnimation({
   lineGreenRef,
   ssrScrollReserveRef,
 }: PricingScrollRefs) {
-  // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle — same mechanism as
-  // heroScrollAnimation.ts's identical `scrollYBeforeChurnRef`.
-  const scrollYBeforeChurnRef = useRef<number | null>(null);
-
   // Manual +/- clicks are wired as plain React onClick handlers in JSX (so React owns their
   // lifecycle), but the logic that actually moves a row lives inside the useGSAP effect below
   // (it needs the same `qty`/`render`/`press`/`pop` closures the scroll sequence uses, so both
@@ -71,8 +67,6 @@ export function usePricingScrollAnimation({
 
   useGSAP(
     (_context, contextSafe) => {
-      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
-
       // Collapse the SSR placeholder before anything else — see the matching comment in
       // infrastructureScrollAnimation.ts for why this has to happen on every code path.
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
@@ -208,15 +202,6 @@ export function usePricingScrollAnimation({
         onLeave: () => syncToProgress(1, true),
         onLeaveBack: () => syncToProgress(0, true),
       });
-
-      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
-      // mechanism as heroScrollAnimation.ts / infrastructureScrollAnimation.ts.
-      const targetScrollY = scrollYBeforeChurnRef.current;
-      if (targetScrollY !== null) {
-        setTimeout(() => {
-          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
-        }, 100);
-      }
     },
     { scope: cardRef, dependencies: [] },
   );

@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import type { RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -54,7 +54,9 @@ interface InfrastructureScrollRefs {
   // heroScrollAnimation.ts's identical fix for an identical, already-diagnosed bug (see
   // PROJECT.md): without it, a hard refresh while scrolled past this pin restores scrollY against
   // the shorter pre-hydration document, then destabilizes once hydration grows the page underneath
-  // it.
+  // it. (The StrictMode-churn scrollY *restore* that used to also live in this file was moved to a
+  // single shared `<ScrollChurnGuard />` — see that component for why five independent copies of
+  // it, one per pinned section, was itself a bug.)
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
 }
 
@@ -73,19 +75,12 @@ export function useInfrastructureScrollAnimation({
   stepCount,
   ssrScrollReserveRef,
 }: InfrastructureScrollRefs) {
-  // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle (a plain `let`
-  // inside the useGSAP callback would not) — see the matching comment in heroScrollAnimation.ts's
-  // `scrollYBeforeChurnRef` for the full mechanism this works around.
-  const scrollYBeforeChurnRef = useRef<number | null>(null);
-
   useGSAP(
     (_context, contextSafe) => {
       // Embedded card (steps 3-8 inside the machine screen): something else owns the scroll, so
       // this hook must not create a pin of its own. Checked FIRST — before the SSR spacer is
       // collapsed or any ScrollTrigger is built.
       if (!enabled) return;
-
-      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
 
       // Collapse the SSR placeholder before doing anything else, on every code path (including
       // prefers-reduced-motion, which never creates a real pin-spacer and so never needs this
@@ -224,16 +219,6 @@ export function useInfrastructureScrollAnimation({
         // Bar fill spans the WHOLE pinned range, scrubbed continuously — reads as "0 -> fully
         // filled across the whole step sequence" rather than discrete jumps.
         .fromTo(fill, { clipPath: "inset(0% 100% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", ease: "none" });
-
-      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — see the
-      // identical, already-diagnosed mechanism in heroScrollAnimation.ts. 100ms is comfortable
-      // margin past the ~15ms the document height took to recover in testing there.
-      const targetScrollY = scrollYBeforeChurnRef.current;
-      if (targetScrollY !== null) {
-        setTimeout(() => {
-          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
-        }, 100);
-      }
     },
     { scope: cardRef, dependencies: [enabled, stepCount, pinScrollDistance, serverOpenOffsetPercent] },
   );

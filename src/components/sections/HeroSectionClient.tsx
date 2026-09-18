@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { useCallback, useRef, type CSSProperties } from "react";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Button } from "@/components/ui/Button";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
@@ -14,13 +13,16 @@ export function HeroSectionClient() {
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
+  const modelSyncRef = useRef<(() => void) | null>(null);
 
-  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, ssrScrollReserveRef });
+  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, modelSyncRef, ssrScrollReserveRef });
 
-  // The GLB arrives well after the timeline is built. Refreshing re-applies the current scrub
-  // position to the model, so a reload deep inside the pinned range shows the server at the pose
-  // that scroll position calls for instead of closed.
-  const handleModelReady = useCallback(() => ScrollTrigger.refresh(), []);
+  // The GLB arrives well after the timeline is built, always starting at its closed pose. This
+  // jumps it straight to the pose the current scroll position calls for — see modelSyncRef's own
+  // comment in heroScrollAnimation.ts for why a plain ScrollTrigger.refresh() alone isn't enough
+  // (it re-syncs through the scrub's eased catch-up, which visibly animates closed -> open instead
+  // of just already being there).
+  const handleModelReady = useCallback(() => modelSyncRef.current?.(), []);
 
   return (
     <section
