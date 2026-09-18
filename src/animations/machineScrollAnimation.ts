@@ -97,13 +97,58 @@ const ICON_RANGE_START = SEP_PROGRESS_END;
 const ICON_SLICE = (1 - ICON_RANGE_START) / REVEAL_ITEMS.length;
 const BASE_GAP_PERCENT = 1.5; // yPercent -- a small built-in gap even fully "closed"
 const SEPARATION_YPERCENT = 31.36; // yPercent each half travels (of its OWN height) at full separation
-// Step 4's own timeline (fractions of p2): 0-0.35 top half + icons fade fully out while the
-// bottom half holds at full opacity throughout; the wordmark then ramps in (same eased scale+fade
-// style as the icons) over 0.35-0.40 and holds at full strength for the rest of step 4 — per
-// feedback, bottom + "machine" do NOT fade out here; that only happens as a triggered tween on the
-// step 4 -> step 5 text swap (see the step-swap block below).
+// Step 4's own timeline (fractions of p2): 0-0.35 top half + icons fade out while the bottom half
+// holds at full opacity throughout; the wordmark ramps in over WORD_RAMP_START-WORD_RAMP_END and
+// then holds for the rest of step 4 — per feedback, bottom + "machine" do NOT fade out here; that
+// only happens as a triggered tween on the step 4 -> step 5 text swap (see the step-swap block).
+//
+// Retimed 2026-09-18: the word used to start only once the icons were completely gone and to reach
+// full strength in the 0.05 that followed, which read as it popping into existence. It now starts
+// at 0.15 — while the icons are still on their way out, so the two cross over, which is what was
+// asked for — and takes until 0.6 to arrive.
 const TOP_ICONS_FADE_END = 0.35;
-const WORD_RAMP_END = 0.4;
+const WORD_RAMP_START = 0.15;
+const WORD_RAMP_END = 0.6;
+
+// --- steps 5+: the per-step diagrams assemble themselves -----------------------------------------
+// Same idea as step 3's icon reveal, and scrubbed the same way (a pure function of the pin's
+// progress, so scrolling back takes them apart again piece by piece): each diagram's pieces arrive
+// in DOM order — see MachineInfraDiagram.tsx / MachineDeployDiagram.tsx — every piece's own drawn
+// border leading, its contents (icon + text) following a beat later.
+//
+// TRIGGERED, NOT SCRUBBED (changed 2026-09-18, per explicit feedback — the first version scrubbed
+// these off the pin's progress like step 3's icons do). Arriving at the step now just STARTS the
+// sequence and it plays out at its own pace, so how fast the reader scrolls no longer decides how
+// the diagram assembles: the pieces always come in one after another, evenly, and the step's own
+// scroll range (steps 5 and 6 are double-width, see STEP_WEIGHTS) is the room left over for
+// carrying on scrolling once it has finished. Leaving the step fades the whole thing out and
+// resets it, so coming back plays it again from the start.
+const DIAGRAM_PIECE_DURATION = 0.6; // seconds, per piece
+const DIAGRAM_PIECE_STAGGER = 0.18; // seconds between one piece and the next
+const DIAGRAM_CONTENT_DELAY = 0.18; // a piece's contents follow its own border by this much
+const DIAGRAM_OUT_DURATION = 0.5;
+const DIAGRAM_EASE = "power2.out";
+const DIAGRAM_HIDDEN_SCALE = 0.96;
+const DIAGRAM_HIDDEN_Y = 7; // px it rises from
+
+interface DiagramPiece {
+  border: HTMLElement | null;
+  content: HTMLElement | null;
+}
+
+interface DiagramEntry {
+  el: HTMLElement;
+  stepIndex: number;
+  // Last step this diagram stays up for (inclusive). Usually the same as stepIndex; steps that
+  // share their text with the next one (7+8) set data-diagram-until so the visual spans both and
+  // arrives with the text rather than a step later.
+  untilStep: number;
+  pieces: DiagramPiece[];
+  timeline: gsap.core.Timeline | null;
+}
+
+const DIAGRAM_HIDDEN = { opacity: 0, scale: DIAGRAM_HIDDEN_SCALE, y: DIAGRAM_HIDDEN_Y };
+const DIAGRAM_SHOWN = { opacity: 1, scale: 1, y: 0 };
 
 interface EdgeRect {
   left: number;
@@ -159,7 +204,14 @@ function getGapCenter(top: HTMLElement, bottom: HTMLElement, field: HTMLElement)
 // one ORIGINAL (uniform-6-way) step-width; 5 vs 2 works out to exactly that: step 3 = 5/15 = 1/3 of
 // the post-approach range = 2x the original 1/6, and each other step = 2/15 = 0.8x its original
 // width (a ~20% trim — the range itself didn't grow, so step 3's extra has to come from somewhere).
-const STEP_WEIGHTS = [5, 2, 2, 2, 2, 2];
+//
+// Every step that carries a diagram (indices 2-5) is double-width: at one ordinary step's width
+// those assembled far too quickly, and the extra room is what they hold still for once the sequence
+// has played. Index 4 joined them when the agent diagram moved onto step 7 — it's the step the
+// sequence now actually starts on. The pin itself grew by exactly the added weight each time
+// (7200 -> 8000 -> 8400 -> 8800, see machineLayout.ts), so a weight unit is still the same ~200px
+// of scroll it always was and no other step changed length.
+const STEP_WEIGHTS = [5, 2, 4, 4, 4, 4];
 
 // Cumulative start fraction (of the post-approach [P.cardEnd, 1] range) for each step, plus a
 // lookup from a progress fraction back to the step index it falls in. Falls back to plain uniform
@@ -274,6 +326,7 @@ export function useMachineScrollAnimation({
         : null;
       const machineWord = card.querySelector<HTMLElement>("[data-machine-word]");
       const hasStep34Visual = !!(serverTop && serverBottom && iconField && iconNodes && machineWord);
+
       // Step 3 is the first (weighted) slice after the card finishes approaching (P.cardEnd), step
       // 4 the second — same boundaries `nextStep` below looks up, just kept as local progress
       // fractions (p1/p2) for this sub-animation instead of a discrete step index.
@@ -282,6 +335,68 @@ export function useMachineScrollAnimation({
       const step3Width = stepWidths[0] * (1 - P.cardEnd);
       const step4Start = P.cardEnd + (stepStarts[1] ?? 1) * (1 - P.cardEnd);
       const step4Width = (stepWidths[1] ?? stepWidths[0]) * (1 - P.cardEnd);
+
+      // The per-step right-column diagrams (step 5's Pod diagram, step 6's deploy chain, …). Each
+      // wrapper says which step index it belongs to; its pieces are revealed one at a time in DOM
+      // order, each as a border + contents pair. Queried once, like everything else above, and the
+      // whole feature is a no-op when the card carries none of them.
+      // The card's own outline. Steps 6-8 (indices 3-5) drop it entirely: those steps' diagrams are
+      // wider than the column they sit in and were crossing the border, which read as broken.
+      const cardDiagonal = card.querySelector<HTMLElement>("[data-card-diagonal]");
+      const CARD_BORDER_COLOR = "rgba(255,255,255,0.1)"; // what `border-white/10` resolves to
+      const BORDERLESS_FROM_STEP = 3;
+
+      const diagrams: DiagramEntry[] = Array.from(
+        card.querySelectorAll<HTMLElement>("[data-machine-diagram]"),
+      ).map((el) => ({
+        el,
+        stepIndex: Number(el.dataset.diagramStep ?? -1),
+        untilStep: Number(el.dataset.diagramUntil ?? el.dataset.diagramStep ?? -1),
+        pieces: Array.from(el.querySelectorAll<HTMLElement>("[data-diagram-item]")).map((item) => ({
+          border: item.querySelector<HTMLElement>("[data-diagram-border]"),
+          content: item.querySelector<HTMLElement>("[data-diagram-content]"),
+        })),
+        timeline: null,
+      }));
+
+      // Back to the start: nothing drawn, and any half-played sequence dropped.
+      const resetDiagram = (d: DiagramEntry) => {
+        d.timeline?.kill();
+        d.timeline = null;
+        d.pieces.forEach(({ border, content }) => {
+          if (border) gsap.set(border, DIAGRAM_HIDDEN);
+          if (content) gsap.set(content, DIAGRAM_HIDDEN);
+        });
+      };
+
+      // Fully assembled with no animation — for refreshes and for landing mid-step on load, where
+      // replaying the sequence would be wrong.
+      const showDiagramAtOnce = (d: DiagramEntry) => {
+        d.timeline?.kill();
+        d.timeline = null;
+        d.pieces.forEach(({ border, content }) => {
+          if (border) gsap.set(border, DIAGRAM_SHOWN);
+          if (content) gsap.set(content, DIAGRAM_SHOWN);
+        });
+      };
+
+      // The sequence itself: piece after piece, each one's border first and its icons/text just
+      // behind. Runs on its own clock — the only thing scroll decides is when it starts.
+      const playDiagram = (d: DiagramEntry) => {
+        resetDiagram(d);
+        const tl = gsap.timeline();
+        d.pieces.forEach(({ border, content }, i) => {
+          const at = i * DIAGRAM_PIECE_STAGGER;
+          if (border) tl.to(border, { ...DIAGRAM_SHOWN, duration: DIAGRAM_PIECE_DURATION, ease: DIAGRAM_EASE }, at);
+          if (content)
+            tl.to(
+              content,
+              { ...DIAGRAM_SHOWN, duration: DIAGRAM_PIECE_DURATION, ease: DIAGRAM_EASE },
+              at + DIAGRAM_CONTENT_DELAY,
+            );
+        });
+        d.timeline = tl;
+      };
 
       // Pure function of scroll progress — reveal (staggered per character), then fade-out as the
       // plate takes over. Nothing here plays on its own, so stopping the scroll stops the motion.
@@ -322,6 +437,10 @@ export function useMachineScrollAnimation({
         gsap.set(Array.from(iconNodes!.values()), { opacity: 0, scale: 0.55, xPercent: -50, yPercent: -50 });
         gsap.set(machineWord!, { opacity: 0, scale: 0.55, xPercent: -50, yPercent: -50 });
       }
+      diagrams.forEach((d) => {
+        gsap.set(d.el, { opacity: 0 });
+        resetDiagram(d);
+      });
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // No pin, no motion: the wordmark and the content are simply there, the plate is not.
@@ -394,12 +513,70 @@ export function useMachineScrollAnimation({
           // mid-scroll, and only go away once the text actually moves on to step 5. `prevStep < 2`
           // (rather than `=== 1`) so a scroll fast enough to skip straight past step 4 still fades
           // them, same as animateToStep already treats any-size step jumps as one swap.
+          // Their exit was 0.6s of straight power2.out fade, which read as them blinking off rather
+          // than leaving. Now it's twice as long, on a gentle in-out, and the bottom half drifts a
+          // little further down as it goes so there's some movement to follow. (The `y` has to be
+          // put back when scrolling into this from the other side — see the p2 < 1 block below —
+          // because nothing else writes it.)
           if (hasStep34Visual && instant && nextStep >= 2) {
             gsap.set([serverBottom!, machineWord!], { opacity: 0 });
+            gsap.set(serverBottom!, { y: 40 });
           } else if (hasStep34Visual && !instant && nextStep >= 2 && prevStep < 2) {
             gsap.killTweensOf([serverBottom!, machineWord!]);
-            gsap.to([serverBottom!, machineWord!], { opacity: 0, duration: 0.6, ease: "power2.out" });
+            gsap.to([serverBottom!, machineWord!], { opacity: 0, duration: 1.2, ease: "power1.inOut" });
+            gsap.to(serverBottom!, { y: 40, duration: 1.4, ease: "power1.inOut" });
           }
+
+          // Each diagram is on for its own step and off everywhere else — and arriving at that
+          // step is the ONLY thing that starts its sequence (see playDiagram: it then runs on its
+          // own clock, not on scroll). Leaving fades the whole thing out and resets it, so coming
+          // back plays it again from the first piece.
+          // Card outline on/off — see BORDERLESS_FROM_STEP above.
+          {
+            const outlined = nextStep < BORDERLESS_FROM_STEP;
+            const wasOutlined = prevStep < BORDERLESS_FROM_STEP;
+            const targets = cardDiagonal ? [card, cardDiagonal] : [card];
+            if (instant) {
+              gsap.killTweensOf(targets);
+              gsap.set(card, { borderColor: outlined ? CARD_BORDER_COLOR : "rgba(255,255,255,0)" });
+              if (cardDiagonal) gsap.set(cardDiagonal, { opacity: outlined ? 1 : 0 });
+            } else if (outlined !== wasOutlined) {
+              gsap.killTweensOf(targets);
+              gsap.to(card, {
+                borderColor: outlined ? CARD_BORDER_COLOR : "rgba(255,255,255,0)",
+                duration: 0.5,
+                ease: "power1.inOut",
+              });
+              if (cardDiagonal)
+                gsap.to(cardDiagonal, { opacity: outlined ? 1 : 0, duration: 0.5, ease: "power1.inOut" });
+            }
+          }
+
+          diagrams.forEach((d) => {
+            // A diagram can cover a RANGE of steps (stepIndex..untilStep) — moving between steps
+            // inside that range leaves it alone, so it plays once, on the way in.
+            const inRange = (step: number) => step >= d.stepIndex && step <= d.untilStep;
+            const show = inRange(nextStep);
+            if (instant) {
+              gsap.killTweensOf(d.el);
+              gsap.set(d.el, { opacity: show ? 1 : 0 });
+              if (show) showDiagramAtOnce(d);
+              else resetDiagram(d);
+            } else if (show !== inRange(prevStep)) {
+              gsap.killTweensOf(d.el);
+              if (show) {
+                gsap.set(d.el, { opacity: 1 });
+                playDiagram(d);
+              } else {
+                gsap.to(d.el, {
+                  opacity: 0,
+                  duration: DIAGRAM_OUT_DURATION,
+                  ease: "power1.inOut",
+                  onComplete: () => resetDiagram(d),
+                });
+              }
+            }
+          });
 
           currentStep = nextStep;
         }
@@ -436,10 +613,10 @@ export function useMachineScrollAnimation({
           });
 
           const wordRampRaw =
-            p2 <= TOP_ICONS_FADE_END
+            p2 <= WORD_RAMP_START
               ? 0
               : p2 <= WORD_RAMP_END
-                ? (p2 - TOP_ICONS_FADE_END) / (WORD_RAMP_END - TOP_ICONS_FADE_END)
+                ? (p2 - WORD_RAMP_START) / (WORD_RAMP_END - WORD_RAMP_START)
                 : 1;
           const wordRamp = easeOutCubic(clamp01(wordRampRaw));
           gsap.set(machineWord!, { left: center.x, top: center.y, scale: lerp(0.55, 1, wordRamp) });
@@ -449,10 +626,13 @@ export function useMachineScrollAnimation({
           // outside that range ownership passes to the triggered tween below, which is the only
           // thing allowed to take it to 0 (and back), so this per-frame code can't fight it.
           if (p2 < 1) {
-            gsap.set(serverBottom!, { opacity: 1 });
+            gsap.set(serverBottom!, { opacity: 1, y: 0 });
             gsap.set(machineWord!, { opacity: wordRamp });
           }
         }
+
+        // (The step 5+ diagrams are deliberately NOT handled here: they are triggered on the step
+        // boundary above and play on their own clock. See the DIAGRAM_* block at the top.)
       });
 
       ScrollTrigger.create({

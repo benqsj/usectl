@@ -10,7 +10,7 @@ import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
 import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
 import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
-import { vw } from "@/lib/grid";
+import { vw, HEADER_HEIGHT_PX } from "@/lib/grid";
 
 // Hatch mark ("Subtract.svg", the same green diagonal-hatch icon HeroSection/InfrastructureSection
 // use for their eyebrow rows) sized to roughly match the wordmark's cap height at the 1920
@@ -203,7 +203,14 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
         {/* Steps 3-8, INSIDE the machine: the very same InfrastructureSection card (unchanged
             markup, no background of its own), starting small and deep and flown towards by this
             screen's pin — not a separate section scrolling up from below. */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        {/* Centred in the space UNDER the header, not in the raw viewport: the header is sticky and
+            sits over the top of this pinned screen, so plain viewport centring read as too high.
+            Only this layer is padded — the wordmark and topside.svg above stay centred on the
+            viewport itself, which is what the fly-through is built around. */}
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          style={{ paddingTop: HEADER_HEIGHT_PX }}
+        >
           <InfrastructureSectionClient
             embedded
             cardRef={cardRef}

@@ -8,6 +8,9 @@ import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import { BlurText } from "@/components/ui/BlurText";
 import type { MachineServerParts } from "@/lib/machineServerParts";
 import { chamferClipPath, chamferDiagonalStyle } from "@/lib/chamfer";
+import { MachineInfraDiagram } from "./MachineInfraDiagram";
+import { MachineDeployDiagram } from "./MachineDeployDiagram";
+import { MachineAgentDiagram } from "./MachineAgentDiagram";
 
 // The hero's cap layer is 383 wide, the other layers 372 (both 256 tall) — same ratio as
 // HeroSectionClient.tsx. Kept here, NOT imported from serverStackLayers.ts: that module reads the
@@ -77,7 +80,16 @@ export function InfrastructureSectionClient({
             diagonal accent div is required, not optional — plain `clip-path` alone just clips
             border-top/border-left short with nothing bridging the gap (see chamfer.ts's own
             comment for the full diagnosis). */}
-        <div aria-hidden="true" className="pointer-events-none absolute bg-white/10" style={chamferDiagonalStyle()} />
+        {/* data-card-diagonal: machineScrollAnimation.ts takes the card's whole outline away on
+            steps 6-8 (per feedback — those steps' diagrams are wider than the column and were
+            crossing this border), and the chamfer accent has to go with it or a stray diagonal
+            stroke is left floating where the corner used to be. */}
+        <div
+          data-card-diagonal=""
+          aria-hidden="true"
+          className="pointer-events-none absolute bg-white/10"
+          style={chamferDiagonalStyle()}
+        />
         <div className="flex flex-col items-center gap-16 md:flex-row">
           {/* Blur-stagger step sequence. Every step's eyebrow / heading+paragraph is rendered up
               front and stacked in the same grid cell ([grid-area:1/1]), so each stack auto-sizes to
@@ -142,15 +154,25 @@ export function InfrastructureSectionClient({
             ref={serverRef}
             aria-hidden="true"
             className={`relative w-[260px] shrink-0 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] ${
-              // The machine server's own top margin sits it on the card's optical centre (the
-              // static bar below the row pulls that centre down); the static stack is centred by
-              // the row itself. Embedded (steps 3-4, inside the machine screen) sits a little
-              // lower still than the intro's own machineServer, per feedback.
-              machineServer
-                ? embedded
-                  ? "mt-[220px] min-[1800px]:mt-[255px]"
-                  : "mt-[120px] min-[1800px]:mt-[140px]"
-                : ""
+              // The machine server is pushed DOWN by a top margin, sitting it on the card's optical
+              // centre (the static bar below the row pulls that centre down); the static stack is
+              // centred by the row itself.
+              //
+              // Embedded (steps 3-8) now uses the IDENTICAL margin to the intro rather than one of
+              // its own, which is what makes the card's border box the same size on steps 3-5 as it
+              // is on steps 1-2 and puts the server at the same height inside it. Two earlier
+              // variants are worth not repeating: a bigger top margin (220/255) made this card
+              // taller than the intro's, and splitting it evenly (my-60/70) kept the height right
+              // but sat the server too high.
+              machineServer ? "mt-[120px] min-[1800px]:mt-[140px]" : ""
+            } ${
+              // Embedded only: the server SITS lower without the column getting any taller. It has
+              // to be a transform rather than more margin — margin would grow the card's border box
+              // again, and matching the intro's box on steps 3-5 was the whole point of the margin
+              // above. Nothing else transforms this element in the embedded card (the scroll
+              // animation moves the two server halves inside it, not the column), and the icon
+              // cluster measures its position live, so it follows along on its own.
+              machineServer && embedded ? "translate-y-[100px] min-[1800px]:translate-y-[115px]" : ""
             }`}
             style={machineServer ? { aspectRatio: `${machineServer.width} / ${machineServer.height}` } : undefined}
           >
@@ -234,6 +256,7 @@ export function InfrastructureSectionClient({
                 >
                   machine
                 </div>
+
               </>
             )}
 
@@ -264,6 +287,58 @@ export function InfrastructureSectionClient({
             )}
           </div>
         </div>
+
+        {/* The per-step diagrams that take over the right column from step 5 on. Each is off until
+            the pinned scroll reaches ITS step (data-diagram-step is the index within this card's
+            own steps array: 2 = step 5, 3 = step 6, 4-5 = steps 7+8) and then assembles itself
+            piece by piece — all driven by machineScrollAnimation.ts, which reads these data
+            attributes and the [data-diagram-item] marks inside each diagram. A step 9 visual would
+            just be another entry here.
+
+            They sit at CARD level, not inside the server column, on purpose: the column carries a
+            top margin and (embedded) a translate that deliberately push the SERVER down, and while
+            the diagrams lived in there they inherited both and hung low. Anchored here they line
+            up horizontally with the column (same widths, right edge on the card's own padding)
+            while `inset-y-0 items-center` keeps them centred on the card itself. */}
+        {embedded && (
+          <>
+            {/* Step 5 is the one diagram narrower than its column (90%), so centring it left a
+                margin on both sides; `justify-end` puts that slack all on the left and sits it
+                against the column's right edge. The translate then carries it further right still,
+                into the card's own padding — asked for twice, so it now sits close to the card's
+                right border (24/40px short of it) rather than on the content line. */}
+            <div
+              data-machine-diagram=""
+              data-diagram-step="2"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] translate-x-[24px] items-center justify-end opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px] min-[1800px]:translate-x-[40px]"
+            >
+              <MachineInfraDiagram />
+            </div>
+            <div
+              data-machine-diagram=""
+              data-diagram-step="3"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] items-center justify-center opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px]"
+            >
+              <MachineDeployDiagram />
+            </div>
+            {/* Steps 7 AND 8 (data-diagram-until), not just 8: those two steps deliberately carry
+                the SAME heading and paragraph (see infrastructureSteps.ts), so the text visibly
+                changes on the way into step 7 — starting this diagram on step 8 left the reader
+                looking at new text beside an empty column until they scrolled again. It now
+                arrives with the text and stays put across both steps. */}
+            <div
+              data-machine-diagram=""
+              data-diagram-step="4"
+              data-diagram-until="5"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-8 z-[6] flex w-[260px] items-center justify-center opacity-0 md:right-16 md:max-[1799px]:w-[320px] min-[1800px]:w-[650px]"
+            >
+              <MachineAgentDiagram />
+            </div>
+          </>
+        )}
 
         <InfrastructureStaticBar fillRef={fillRef} />
     </div>

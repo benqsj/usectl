@@ -29,10 +29,15 @@ const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 // its own `setProgress` — "kept centred on screen"), so closing alone doesn't move it. Per explicit
 // request, the wrapper itself also rises as it closes — an extra translateY on top of that, purely
 // cosmetic (the model's internal centering is unaffected), tuned live like every other px constant
-// in this file. Dialed back from 120 → 40: since this is a pure `transform` (doesn't shrink the
-// wrapper's own LAYOUT box), a bigger lift only left more empty space below it once settled — a real
-// contributor to the "too much gap before Footer" follow-up complaint.
-const LIFT_ON_CLOSE_PX = 40;
+// in this file. Dialed back from 120 → 40 once, because a pure `transform` doesn't shrink the
+// wrapper's own LAYOUT box, so a bigger lift only left more empty space below it once settled.
+//
+// Raised again to 160 on 2026-09-18 ("ძაან დიდი დაშორება არის როცა server.svg იხურება") — but this
+// time the lift is paired with an equal negative margin-bottom, applied off the same progress, so
+// the wrapper's layout box shrinks by exactly what the transform takes away. That's what makes a
+// big lift safe now: the closed server ends up much closer to the copy above it WITHOUT leaving the
+// hole underneath that forced the earlier climb-down.
+const LIFT_ON_CLOSE_PX = 160;
 
 interface BuildScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
@@ -64,6 +69,9 @@ export function useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrS
         gsap.set(wrapper, {
           "--stack-gap": `${gsap.utils.interpolate(STACK_GAP_OPEN_PX, STACK_GAP_CLOSED_PX, clamped)}px`,
           y: -LIFT_ON_CLOSE_PX * clamped,
+          // Takes the lift out of the layout too, so nothing is left holding the space the server
+          // just vacated (see LIFT_ON_CLOSE_PX).
+          marginBottom: -LIFT_ON_CLOSE_PX * clamped,
         });
         modelRef.current?.setProgress(1 - clamped);
       };
