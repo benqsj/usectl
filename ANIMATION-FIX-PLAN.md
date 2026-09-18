@@ -1,6 +1,25 @@
 # Machine-section scroll animation fix — agreed plan (2026-09-18)
 
-Status: **agreed, not yet implemented.** Nothing in this plan has been applied to the code.
+Status: **implemented 2026-09-18.** All seven steps are in the code; what is left is the user's own
+pass through the sequence in a browser (step 7 below).
+
+What landed, in the plan's own order:
+- `scrub: true` -> `scrub: 0.8` on the machine pin (`SCRUB_SECONDS`).
+- The per-step diagrams are pure functions of pin progress again — reveal, cross-fade and all — so
+  scrolling up un-assembles them in reverse instead of replaying them forward. The triggered
+  timeline helpers (`playDiagram` / `resetDiagram` / `showDiagramAtOnce`) are gone.
+- Step 4 has a real exit window (`STEP4_EXIT_START` 0.7): the bottom half and the "machine" wordmark
+  fade and drift away over the last 30% of the step, i.e. BEFORE the text reaches step 5, and they
+  come back in reverse on the way up. The triggered exit tween is gone, so nothing fights the
+  per-frame code for `opacity` any more.
+- Each diagram starts a beat into its own step (`DIAGRAM_ENTRY_DELAY`), and a diagram spanning two
+  steps (7+8) still assembles within the first of them (`revealSpan`).
+- Weights `[5, 2, 4, 4, 4, 4]` -> `[5, 4, 5, 5, 5, 5]`, pin 8800 -> 10000 with every phase fraction
+  rescaled by the same ratio, so everything before `cardEnd` keeps its exact pixel length.
+- `stepSwap.animateToStep` now kills every word's tweens and hard-hides any step that is neither the
+  one being left nor the one being entered, so a three-boundary flick can't strand half-faded copy.
+- The card's outline is derived from progress with a short cross-fade at the step 5 -> 6 boundary
+  rather than being tweened on the boundary itself.
 
 Trigger: the user will say *"ანიმაციები გავასწოროთ"* ("let's fix the animations"). That phrase means
 **this document** — the scroll behaviour of the machine screen (steps 3-8), not any other animation

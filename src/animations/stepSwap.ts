@@ -45,10 +45,20 @@ export function createStepSwap(root: HTMLElement) {
   };
 
   const animateToStep = (to: number, from: number) => {
+    // Kill EVERY word's tweens, not just this pair's, and hard-hide any step that is neither the one
+    // being left nor the one being entered. A fast scroll (especially upwards) can cross three
+    // boundaries within a few frames: the older code only tidied up the two steps it was told about,
+    // so a step swapped away from mid-fade could be left stranded half-visible over the new one.
+    gsap.killTweensOf(allWords);
+    root.querySelectorAll<HTMLElement>("[data-step]").forEach((el) => {
+      const step = Number(el.dataset.step);
+      if (step === to || step === from) return;
+      gsap.set(el.querySelectorAll<HTMLElement>("[data-blur-word]"), STEP_HIDDEN);
+    });
+
     for (const field of FIELDS) {
       const outWords = wordsOf(from, field);
       const inWords = wordsOf(to, field);
-      gsap.killTweensOf([...outWords, ...inWords]);
 
       // Same text in both steps (the shared eyebrow, steps 3+4 / 7+8): swap without motion —
       // re-animating identical copy reads as a glitch.
