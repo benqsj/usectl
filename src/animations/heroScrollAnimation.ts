@@ -9,7 +9,7 @@ import {
 } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
 import { readScale } from "@/lib/grid";
-import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
+import type { HeroMachineHandle } from "@/components/sections/HeroMachineSvg";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -43,8 +43,8 @@ const DISASSEMBLE_DURATION = 1.8;
 // (4.2 units -> 5.4), which is why every earlier phase still needs the same scroll it always did.
 const HOLD_OPEN_DURATION = 1.2;
 
-// Starting point for the closed/open vertical gap between stacked layers. The 3D model does its
-// own separation (the GLB's explode_sequence, scrubbed below); --stack-gap is still animated
+// Starting point for the closed/open vertical gap between stacked layers. The SVG does its own
+// separation (HeroMachineSvg.setProgress, scrubbed below); --stack-gap is still animated
 // because the wrapper's document-flow HEIGHT is derived from it, and keeping that identical is
 // what keeps the page's total height — and the SSR reservation above — behaving exactly as before.
 const STACK_GAP_CLOSED_PX = HERO_STACK_GAP_CLOSED_PX;
@@ -68,12 +68,8 @@ interface HeroScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   cubeWrapperRef: RefObject<HTMLDivElement | null>;
-  // The 3D server. Null until the GLB has parsed; the timeline simply skips it until then.
-  modelRef: RefObject<HeroServerModelHandle | null>;
-  // Filled in with a resync function once the timeline exists; HeroSectionClient.tsx calls it from
-  // HeroServerModel's `onReady` the instant the GLB finishes loading, so the model's very first
-  // rendered frame already matches the current scroll position instead of popping from closed.
-  modelSyncRef: RefObject<(() => void) | null>;
+  // The layered server SVG (HeroMachineSvg) — setProgress(0..1) opens it.
+  modelRef: RefObject<HeroMachineHandle | null>;
   // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
   // before any client JS runs — see the long comment where this is collapsed, below.
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
@@ -84,7 +80,6 @@ export function useHeroScrollAnimation({
   contentRef,
   cubeWrapperRef,
   modelRef,
-  modelSyncRef,
   ssrScrollReserveRef,
 }: HeroScrollRefs) {
   useGSAP(
@@ -175,26 +170,14 @@ export function useHeroScrollAnimation({
           pinSpacing: true,
           invalidateOnRefresh: true,
           onRefreshInit: measureRecenterY,
-          // THE FIX for "the hero's server is closed after the build section closed its own".
-          //
-          // Nothing is shared between the two 3D servers — each HeroServerModel instance builds its
-          // own scene, mixer and action, and each section drives its own apiRef. What IS shared is
-          // ScrollTrigger: BuildSection calls the page-wide, static `ScrollTrigger.refresh()` (from
-          // its onLeave, once its server has finished closing, and from its own model's onReady).
-          // A refresh reverts every trigger's animated properties to re-measure them, and because
-          // this timeline has `invalidateOnRefresh: true`, Hero's disassemble proxy gets reset with
-          // them — leaving the model at whatever pose that reset produced until something drives it
-          // again. Hero had no such re-assertion (its sync only ran when its own GLB reported
-          // ready), while BuildSection has always re-applied its own state in `onRefresh` — which is
-          // exactly why the bug only ever went one way, Build breaking Hero and never the reverse.
-          //
-          // So: Hero now re-asserts too. `syncModelToTimeline` is a pure function of the trigger's
-          // current progress, so this is idempotent and correct no matter who fired the refresh.
+          // BuildSection calls the page-wide ScrollTrigger.refresh(), which (with
+          // invalidateOnRefresh) resets this timeline's animated values — re-assert the server's
+          // pose from the trigger's progress every time, whoever fired the refresh.
           onRefresh: () => syncModelOnRefresh?.(),
         },
       });
 
-      // Proxies whose only job is to carry a scrubbed number: `disassemble.t` drives the model,
+      // Proxies whose only job is to carry a scrubbed number: `disassemble.t` drives the server SVG,
       // `hold.t` exists purely to give the timeline its trailing dead time.
       const disassemble = { t: 0 };
       const hold = { t: 0 };
@@ -221,10 +204,8 @@ export function useHeroScrollAnimation({
         )
         // 3. The instant that finishes, the server pulls apart. Two tweens run together here:
         //    --stack-gap (so the wrapper's document height grows exactly as it did with the SVG
-        //    stack) and `disassemble.t`, which scrubs the GLB's explode_sequence clip. No
-        //    re-centring tween is needed any more: the model keeps itself centred as it opens
-        //    (see HeroServerModel.setProgress), which is what the old CENTER_SHIFT_ON_OPEN_PX
-        //    offset on this tween used to do by hand.
+        //    stack) and `disassemble.t`, which moves the SVG's layers apart. No re-centring
+        //    tween is needed: HeroMachineSvg.setProgress keeps the stack centred as it opens.
         .fromTo(
           cubeWrapper,
           { "--stack-gap": () => `${STACK_GAP_CLOSED_PX * readScale()}px` },
@@ -249,66 +230,19 @@ export function useHeroScrollAnimation({
         // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
         .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
 
-      // The GLB loads asynchronously and arrives well after this timeline (and its ScrollTrigger)
-      // already exist — HeroServerModel.tsx always starts it at setProgress(0) (closed), since it
-      // has no way to know the scroll-derived target itself. Real bug, reported as "instead of
-      // open, I find it closed, then it suddenly opens": the old fix here just called
-      // `ScrollTrigger.refresh()` once the model was ready, which recomputes pin positions and
-      // re-syncs `self.progress` — but this timeline's `scrub: 1` means that re-sync goes through
-      // the SAME eased catch-up scroll uses for ordinary scrolling, so the model visibly animated
-      // from closed to its true open pose over about a second, instead of just already being there.
-      // First fix: jump the timeline's own progress directly to the ScrollTrigger's post-refresh
-      // value via `tl.progress(value)`, which sets time immediately (skipping the scrub's eased
-      // interpolation) and still fires each tween's onUpdate — so `disassemble`'s callback still
-      // calls `modelRef.current.setProgress(...)`.
-      //
-      // Second, subtler bug in that same fix, reported separately: refresh while scrolled to the
-      // FOOTER, then scroll straight up past Hero without pausing — Hero's server was STILL closed
-      // once you reached it, well after the GLB must have finished loading. Root cause: GSAP skips
-      // firing a tween's onUpdate when `.progress()` is set to a value the timeline is ALREADY at.
-      // If the user scrolls fast enough that the timeline's progress organically reaches 1 (driven
-      // by the OTHER tweens in this same timeline — text fade, scale, --stack-gap — none of which
-      // are gated on the model) before the GLB finishes loading, then by the time `onReady` fires,
-      // `tl.progress(st.progress)` is a no-op (already there, nothing "changes"), the disassemble
-      // tween's onUpdate never fires, and `modelRef.current.setProgress` never gets its first real
-      // call. Fixed by ALSO calling `modelRef.current.setProgress` directly and unconditionally
-      // here, reading straight off the `disassemble` proxy object — GSAP keeps that object's own
-      // `.t` correctly interpolated on every render regardless of whether anything is listening via
-      // onUpdate, so it's trustworthy to read directly.
-      //
-      // Third bug, found diagnosing the second with instrumented logging (traced every
-      // `setProgress` call back to its caller): this function's own synchronous sync correctly
-      // called `setProgress(1)` — then, within the same tick, `setProgress(0)` fired several more
-      // times from the disassemble tween's OWN normal `onUpdate` callback, undoing it. Root cause
-      // isn't this section at all — it's `BuildSectionClient.tsx`'s `handleModelReady`, which (for
-      // its OWN, separate HeroServerModel instance) calls the STATIC `ScrollTrigger.refresh()` —
-      // a page-wide call that refreshes EVERY ScrollTrigger, not just Build's own. Hero's own
-      // ScrollTrigger has `invalidateOnRefresh: true`, so any such refresh — triggered by Hero's own
-      // GLB becoming ready, Build's, or anything else on the page — makes GSAP briefly reset Hero's
-      // animated properties to their natural/un-animated state to re-measure them, and that reset
-      // can land AFTER this function's own sync already ran, since both GLBs tend to finish loading
-      // within the same handful of milliseconds (both are small, both typically already cached).
-      // Removing Hero's OWN `ScrollTrigger.refresh()` call (an earlier attempt at this same fix)
-      // only prevented HERO's copy of this from firing — it did nothing about Build's.
-      //
-      // Rather than trying to coordinate every other section's own refresh() calls (fragile, and
-      // more will likely be added later), this re-asserts the correct value defensively: once
-      // immediately (handles a refresh that already happened before this runs), then once more a
-      // frame later (`requestAnimationFrame`, catches a refresh landing the SAME tick — exactly what
-      // the logged repro showed) and once more after a short delay (catches a refresh from a slower
-      // GLB arriving after both of those). All three read `disassemble.t` fresh at call time, so
-      // they're correct regardless of what scrolling has done between them.
+      // Re-asserts the server's pose from the timeline. Called from onRefresh: any page-wide
+      // ScrollTrigger.refresh() (BuildSection issues some) reverts this timeline's animated values
+      // because of invalidateOnRefresh, and nothing else would put the layers back until the next
+      // scroll. Reads `disassemble.t` directly because GSAP skips onUpdate when progress is unchanged.
       const syncModelToTimeline = () => {
         const st = tl.scrollTrigger;
         if (st) tl.progress(st.progress);
         modelRef.current?.setProgress(disassemble.t);
       };
       syncModelOnRefresh = syncModelToTimeline;
-      modelSyncRef.current = () => {
-        syncModelToTimeline();
-        requestAnimationFrame(syncModelToTimeline);
-        setTimeout(syncModelToTimeline, 300);
-      };
+      // The SVG is server-rendered at its closed pose; put it straight into the pose the current
+      // scroll position calls for (e.g. after a refresh mid-scroll).
+      syncModelToTimeline();
     },
     { scope: sectionRef },
   );

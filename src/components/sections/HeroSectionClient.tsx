@@ -1,29 +1,21 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useRef, type CSSProperties } from "react";
+import { useRef, type CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
-import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
+import { HeroMachineSvg, type HeroMachineHandle } from "@/components/sections/HeroMachineSvg";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
 import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
 import { s } from "@/lib/grid";
 
-export function HeroSectionClient() {
+export function HeroSectionClient({ machineSvg }: { machineSvg: string }) {
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
-  const modelRef = useRef<HeroServerModelHandle | null>(null);
-  const modelSyncRef = useRef<(() => void) | null>(null);
+  const modelRef = useRef<HeroMachineHandle | null>(null);
 
-  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, modelSyncRef, ssrScrollReserveRef });
-
-  // The GLB arrives well after the timeline is built, always starting at its closed pose. This
-  // jumps it straight to the pose the current scroll position calls for — see modelSyncRef's own
-  // comment in heroScrollAnimation.ts for why a plain ScrollTrigger.refresh() alone isn't enough
-  // (it re-syncs through the scrub's eased catch-up, which visibly animates closed -> open instead
-  // of just already being there).
-  const handleModelReady = useCallback(() => modelSyncRef.current?.(), []);
+  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, ssrScrollReserveRef });
 
   return (
     <section
@@ -55,39 +47,19 @@ export function HeroSectionClient() {
         </div>
       </div>
 
-      {/* The server, now a real 3D model (HeroServerModel) instead of four stacked layer SVGs.
-          This wrapper's BOX is unchanged from the SVG version on purpose — same w-[400px], same
-          --core-height, same height tracking --stack-gap — because it is what the rest of the
-          hero is measured against: the scroll timeline scales and re-centres THIS element, and
-          the model was scaled (see HERO_MODEL_PX_PER_UNIT) so the closed server lands in exactly
-          the same 400x409px the SVG stack occupied. The <canvas> itself is larger than this box
-          and overflows it, since the exploded stack is about twice as tall and the silhouette
-          widens as it turns.
-
-          --stack-gap is still animated 45px -> 140px by the timeline even though no layer reads
-          it for positioning any more: the wrapper's own height is derived from it, and keeping
-          that growth identical is what keeps the page's total height (and the SSR reservation
-          below) behaving exactly as it did before. */}
+      {/* The server: public/sources/hero-machine.svg, inlined so its layers can be moved one by one
+          (see HeroMachineSvg). This wrapper's BOX is what the rest of the hero is measured against:
+          the scroll timeline scales and re-centres THIS element, and its height tracks
+          --stack-gap so the page's total height (and the SSR reservation below) behaves as before.
+          The SVG canvas is larger than the box and overflows it — the open stack is much taller,
+          and the drawing carries its own ground glow. */}
       <div
         ref={cubeWrapperRef}
         aria-hidden="true"
         className="relative mx-auto mt-[calc(var(--s)*84)] w-[calc(var(--s)*480)] [--core-height:calc(var(--s)*330.32)] h-[calc(3*var(--stack-gap)_+_var(--core-height))]"
-        style={{ "--stack-gap": `${HERO_STACK_GAP_CLOSED_PX}px` } as CSSProperties}
+        style={{ "--stack-gap": s(HERO_STACK_GAP_CLOSED_PX) } as CSSProperties}
       >
-        {/* Soft ambient glow beneath the server, matching server-cube.png's reference look — the
-            model has no equivalent "shadow/glow" of its own, so it's a plain CSS radial gradient.
-            Positioned off the same formula as the wrapper's own height, so it tracks the base
-            layer down as the stack opens. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 h-[calc(var(--s)*130)] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
-          style={{
-            top: `calc(3 * var(--stack-gap) + var(--core-height) - 45px)`,
-            background: "radial-gradient(ellipse at center, rgba(72,144,72,0.55) 0%, rgba(72,144,72,0) 70%)",
-          }}
-        />
-
-        <HeroServerModel apiRef={modelRef} wrapperRef={cubeWrapperRef} onReady={handleModelReady} />
+        <HeroMachineSvg markup={machineSvg} apiRef={modelRef} />
       </div>
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add

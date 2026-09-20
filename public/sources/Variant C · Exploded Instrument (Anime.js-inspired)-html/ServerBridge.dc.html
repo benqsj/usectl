@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>usectl server — disassembly bridge</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<div style="position: relative; width: 800px; height: 800px; overflow: visible; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; color: #9C9E99;">
+  <div style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; transform: {{sceneT}};">
+    <img src="./assets/5960d0381514e394dde207ea163f5a82.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{groundOp}};">
+    <img src="./assets/3ef087d19159470381267db1c45db221.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{guideOp}};">
+    <img src="./assets/72c39ae6b4c157efa112b23e65c6eb29.svg" alt="Server base" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{renderOp}};">
+    <img src="./assets/22e8d1c94593dc4247802efb654867d1.svg" alt="Server tray 1" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{renderOp}}; transform: {{t1T}};">
+    <img src="./assets/bf2c83b1c172502aab315651000110a7.svg" alt="Server tray 2" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{renderOp}}; transform: {{t2T}};">
+    <img src="./assets/0637eefb9fc4c0b11ed283d2c031f28b.svg" alt="Server lid" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; opacity: {{renderOp}}; transform: {{lidT}};">
+  </div>
+  <div style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; transform: {{sceneT}}; opacity: {{bpOp}};">
+    <img src="./assets/814d201ffb97242165ab097c639239c0.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px;">
+    <img src="./assets/5333238888bdc127208133f058404f29.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px;">
+    <img src="./assets/5b1e616cdf9780baa58cf983e8a68c40.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; transform: {{t1T}};">
+    <img src="./assets/ef6d36231a774f74d3608b951c2a2ebc.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; transform: {{t2T}};">
+    <img src="./assets/86e94a9dcd631bbcc44140b6fea05860.svg" alt="" style="position: absolute; left: 0px; top: 0px; width: 800px; height: 800px; transform: {{lidT}};">
+  </div>
+  <sc-for list="{{labels}}" as="l" hint-placeholder-count="0">
+    <div style="position: absolute; left: 596px; top: {{l.y}}; opacity: {{l.op}}; display: flex; align-items: center; gap: 12px; white-space: nowrap;">
+      <span style="display: block; width: 7px; height: 7px; border-radius: 50%; background: #22C23D;"></span>
+      <span style="display: block; width: 64px; height: 1px; background: #8F918C;"></span>
+      <span style="font-size: 15px; line-height: 1; color: #CFCFCA;">{{l.text}}</span>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"variant":{"editor":"enum","default":"topDown","options":["uniform","topDown","spring","lidFirst"],"section":"Motion"},"autoplay":{"editor":"boolean","default":true,"section":"Motion"},"loopMode":{"editor":"enum","default":"pingpong","options":["pingpong","once","restart"],"section":"Motion"},"duration":{"editor":"range","default":2.6,"min":0.6,"max":6,"step":0.1,"unit":"s","section":"Motion"},"hold":{"editor":"range","default":1.2,"min":0,"max":5,"step":0.1,"unit":"s","section":"Motion"},"reverse":{"editor":"boolean","default":false,"section":"Motion"},"rest":{"editor":"enum","default":"end","options":["start","end"],"section":"Motion"},"stopAt":{"editor":"range","default":0.75,"min":0,"max":1,"step":0.05,"section":"Bridge"},"blueprint":{"editor":"boolean","default":false,"section":"Bridge"},"motionShare":{"editor":"range","default":0.6,"min":0.3,"max":0.9,"step":0.05,"section":"Bridge"},"pitch":{"editor":"range","default":80,"min":40,"max":120,"step":5,"unit":"px","section":"Geometry"},"compactLift":{"editor":"range","default":120,"min":0,"max":180,"step":10,"unit":"px","section":"Geometry"},"labelLid":{"editor":"text","default":"","section":"Labels"},"labelTray2":{"editor":"text","default":"","section":"Labels"},"labelTray1":{"editor":"text","default":"","section":"Labels"},"labelBase":{"editor":"text","default":"","section":"Labels"},"$preview":{"width":800,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { t: 0, dir: 1 };
+    this._raf = null; this._last = null; this._hold = 0.8;
+  }
+  _flag(v, d) { if (v === undefined || v === null || v === '') return d; return v === true || v === 'true'; }
+  _num(v, d) { var n = Number(v); return (v === undefined || v === null || v === '' || isNaN(n)) ? d : n; }
+  componentDidMount() {
+    var reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var rest = (this.props.rest || 'end') === 'end' ? 1 : 0;
+    if (reduce || !this._flag(this.props.autoplay, true)) { this.setState({ t: rest }); return; }
+    this._tick = this._tick.bind(this);
+    this._raf = requestAnimationFrame(this._tick);
+  }
+  componentWillUnmount() { if (this._raf) cancelAnimationFrame(this._raf); }
+  _tick(ts) {
+    this._raf = requestAnimationFrame(this._tick);
+    if (this._last == null) this._last = ts;
+    var dt = Math.min(0.1, (ts - this._last) / 1000); this._last = ts;
+    if (this._hold > 0) { this._hold -= dt; return; }
+    var dur = this._num(this.props.duration, 2.6);
+    var hold = this._num(this.props.hold, 1.2);
+    var mode = this.props.loopMode || 'pingpong';
+    var t = this.state.t + (dt / dur) * this.state.dir;
+    var dir = this.state.dir;
+    if (t >= 1) { t = 1; if (mode === 'pingpong') { dir = -1; this._hold = hold; } else if (mode === 'restart') { t = 0; this._hold = hold; } else { cancelAnimationFrame(this._raf); this._raf = null; } }
+    if (t <= 0) { t = 0; if (dir === -1) { dir = 1; this._hold = hold; } }
+    this.setState({ t: t, dir: dir });
+  }
+  renderVals() {
+    var clamp = function (x) { return Math.min(1, Math.max(0, x)); };
+    var win = function (p, a, b) { return clamp((p - a) / (b - a)); };
+    var inOutCubic = function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+    var outCubic = function (t) { return 1 - Math.pow(1 - t, 3); };
+    var outQuart = function (t) { return 1 - Math.pow(1 - t, 4); };
+    var inOutSine = function (t) { return -(Math.cos(Math.PI * t) - 1) / 2; };
+    var spring = function (t) { if (t <= 0) return 0; if (t >= 1) return 1; var k = 5.2, w = 7.6; var f = function (x) { return 1 - Math.exp(-k * x) * Math.cos(w * x); }; return f(t) / f(1); };
+    var none = [0, 0, 0];
+    var V = {
+      uniform: function (p) { var e = inOutCubic(p); return { lid: e, t2: e, t1: e, dx: none, dy: none }; },
+      topDown: function (p) { return { lid: outCubic(win(p, 0, 0.5)), t2: outCubic(win(p, 0.25, 0.75)), t1: outCubic(win(p, 0.5, 1)), dx: none, dy: none }; },
+      spring: function (p) { return { lid: spring(win(p, 0, 0.84)), t2: spring(win(p, 0.08, 0.92)), t1: spring(win(p, 0.16, 1)), dx: none, dy: none }; },
+      lidFirst: function (p) { var a = win(p, 0.15, 1), b = win(p, 0.3, 1); var d2 = Math.sin(Math.PI * a), d1 = Math.sin(Math.PI * b); return { lid: outQuart(win(p, 0, 0.55)), t2: inOutSine(a), t1: inOutSine(b), dx: [0, -16 * d2, 18 * d1], dy: [0, -9 * d2, 10 * d1] }; }
+    };
+    var fn = V[this.props.variant] || V.topDown;
+    var t = this._flag(this.props.reverse, false) ? 1 - this.state.t : this.state.t;
+    var bpMode = this._flag(this.props.blueprint, false);
+    var stopAt = this._num(this.props.stopAt, 0.75);
+    var share = this._num(this.props.motionShare, 0.6);
+    // motion runs to the stop point; in blueprint mode the rest of the timeline crosses over to the line drawing
+    var p = bpMode ? stopAt * clamp(t / share) : stopAt * t;
+    var bp = bpMode ? inOutCubic(win(t, share, 1)) : 0;
+    var r = fn(p);
+    var pitch = this._num(this.props.pitch, 80);
+    var lift = this._num(this.props.compactLift, 120);
+    var avg = (r.lid + r.t2 + r.t1) / 3;
+    var off = function (i, f) { return pitch * i * (1 - f); };
+    var ty = function (i, f, dx, dy) { return 'translate(' + dx.toFixed(2) + 'px, ' + (off(i, f) + dy).toFixed(2) + 'px)'; };
+    var scene = -lift * (1 - avg);
+    // labels ride with their slab; they appear once the box has opened
+    var lop = stopAt > 0 ? win(p / stopAt, 0.7, 1) : 0;
+    var raw = [
+      { text: this.props.labelLid, y: 205 + off(3, r.lid) },
+      { text: this.props.labelTray2, y: 318 + off(2, r.t2) },
+      { text: this.props.labelTray1, y: 430 + off(1, r.t1) },
+      { text: this.props.labelBase, y: 555 }
+    ];
+    var labels = raw.filter(function (l) { return !!l.text; }).map(function (l) {
+      return { text: l.text, y: (l.y + scene - 4).toFixed(1) + 'px', op: lop.toFixed(3) };
+    });
+    return {
+      sceneT: 'translateY(' + scene.toFixed(2) + 'px)',
+      groundOp: ((0.8 + 0.2 * avg) * (1 - bp)).toFixed(3),
+      guideOp: (win(p, 0.65, 1) * (1 - bp)).toFixed(3),
+      renderOp: (1 - bp).toFixed(3),
+      bpOp: bp.toFixed(3),
+      lidT: ty(3, r.lid, r.dx[0], r.dy[0]),
+      t2T: ty(2, r.t2, r.dx[1], r.dy[1]),
+      t1T: ty(1, r.t1, r.dx[2], r.dy[2]),
+      labels: labels
+    };
+  }
+}
+</script>
+</body>
+</html>
