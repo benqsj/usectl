@@ -1,6 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CHAMFER_PX } from "@/lib/chamfer";
+
+// Footer keeps its own (larger) chamfer size, independent of the shared `CHAMFER_PX` used by
+// Pricing/Infrastructure's cards — bumped per explicit request, without dragging those other
+// cards' cut along with it.
+const FOOTER_CHAMFER_PX = 80;
 
 // Built from two user-supplied screenshots (see PROJECT.md), 2026-09-18. Typography/dimensions
 // spec'd exactly are noted per-element below; anything not spec'd (column proportions, the
@@ -31,7 +35,7 @@ const ITEM_TEXT = "font-heading text-[calc(var(--s)*14)] leading-none font-light
 
 export function Footer() {
   return (
-    <footer className="relative pt-[calc(var(--s)*101)] pb-0">
+    <footer className="relative max-[1799px]:pt-[calc(var(--s)*165)] min-[1800px]:pt-[calc(var(--s)*100)] pb-0">
       {/* The chamfer + background both live on THIS element (not a separate outer wrapper) — per
           explicit correction: the cut belongs to the footer's own panel, not traced by a border
           around a same-colored area (which read as "a cut drawn on the border" rather than a real
@@ -44,30 +48,94 @@ export function Footer() {
           <footer> lost its own `px-6` too, so this really does reach the true viewport edges rather
           than just filling a still-padded container.
 
-          `pt-[calc(var(--s)*101)]` (grew the footer's own top gap, not shrunk it) is a grid-snap, per explicit
-          request: the panel's own top edge should coincide with one of BackgroundLines.tsx's
-          horizontal row lines (`rowY()`/`ROW_PITCH` in `src/lib/grid.ts`, 114px pitch from the
-          header's bottom edge at the 1920 reference width). Measured `<footer>`'s own natural top
-          (driven entirely by everything above it — BuildSection's true end, independent of this
-          padding) via `getBoundingClientRect()`, found the nearest row line strictly below it, and
-          set `pt` to exactly the difference. Same caveat as every other grid-snap in this project
-          (see InfrastructureSection's own "Card top snapped to a grid row line" entry in
+          `pt` here WAS originally a pixel-exact grid-snap (the panel's own top edge landing on one
+          of BackgroundLines.tsx's horizontal row lines, `rowY()`/`ROW_PITCH` in `src/lib/grid.ts`)
+          but that approach broke down: `<footer>`'s natural top (driven by everything above it,
+          all the way up through Hero/Infrastructure/Machine/Pricing/Build's own GSAP pin-spacers)
+          measured **392px apart** between two Playwright runs that only differed in whether the
+          page had been scrolled all the way through first — GSAP settles several pin-spacers'
+          reserved heights only once their own ScrollTrigger has actually fired, so an automated
+          "exact" measurement here depends on scroll history and isn't trustworthy as a one-shot
+          computation. Both `pt` values (narrow and wide bucket) are now tuned directly against the
+          user's own visual feedback in their real browser instead (150 → 190 → 180 → 200 → 97 →
+          105 → 94 → 165/100 across this conversation) — treat further reports of "slightly
+          off" as the expected way to keep tuning this, not as a sign the formula is wrong. Same
+          caveat as every other grid-snap in this project (see InfrastructureSection's own "Card
+          top snapped to a grid row line" entry in
           PROJECT.md): `ROW_PITCH` is `vw`-fluid but this offset is a flat px constant, so it's only
           pixel-exact at the 1920px width it was measured against — verified there via
-          `getBoundingClientRect()` (panel top landed within a few px of the target line). */}
+          `getBoundingClientRect()` (panel top landed within a few px of the target line). The
+          narrow (`max-[1799px]`) bucket's `pt` was tuned by eye across the same conversation, not
+          grid-snapped — its own alignment (if wanted) would need the same measure-and-diff pass
+          repeated at a representative narrow width. */}
       <div
-        className="relative w-full border border-white/10"
+        className="relative w-full border-t border-white/10 pb-[calc(var(--s)*16)]"
         style={{
           backgroundColor: "#171717",
-          clipPath: `polygon(${CHAMFER_PX}px 0, calc(100% - ${CHAMFER_PX}px) 0, 100% ${CHAMFER_PX}px, 100% 100%, 0 100%, 0 ${CHAMFER_PX}px)`,
+          // The right and bottom edge points sit at `calc(100% + 1px)`, not a bare `100%` — a
+          // clip-path edge exactly on an element's own boundary gets anti-aliased away to ~0
+          // visible width (the same fencepost bug already hit and fixed for the vertical grid
+          // lines in BackgroundLines.tsx, see PROJECT.md). Without this nudge the panel's own
+          // `border` (below) rendered on the left/top but silently vanished on the right/bottom.
+          clipPath: `polygon(${FOOTER_CHAMFER_PX}px 0, calc(100% - ${FOOTER_CHAMFER_PX}px) 0, calc(100% + 1px) ${FOOTER_CHAMFER_PX}px, calc(100% + 1px) calc(100% + 1px), 0 calc(100% + 1px), 0 ${FOOTER_CHAMFER_PX}px)`,
         }}
       >
-        {/* height: 317px per explicit spec. Horizontal padding widened (40px → 96px) so the
-            logo/Subscribe columns sit further in from the panel's own edges — user feedback: they
-            read as "way too far out" at the original padding. */}
+        {/* `border-t` above draws the panel's own top edge only — no left/right/bottom border on
+            the PANEL itself any more. Per explicit correction, the vertical lines instead live on
+            the two 90%-width, centered rows below (content row + copyright row), inset from the
+            panel's true edges rather than flush against them — sitting exactly at the clip-path's
+            own boundary (0%/100%) was the root cause of the vertical borders rendering
+            inconsistently across browsers/displays (see the `calc(100% + 1px)` fencepost note
+            below, which was a partial fix for the same symptom); moving the border-carrying
+            elements inward sidesteps that boundary entirely instead of fighting it. Both rows use
+            the same `w-[90%] mx-auto`, so their vertical lines always land at the same x position
+            as each other, at any viewport width. The horizontal line below "© 2026 SYSTEMCTL" is
+            its own `border-b` on that row, not the panel's outer edge — so it sits with a small
+            gap (this `pb`) above the panel's true bottom, instead of flush against it.
+            `clip-path` only clips what's
+            already painted — it doesn't draw a new stroke along the diagonal it cuts (same bug
+            documented for Pricing/Infrastructure's chamfer in src/lib/chamfer.ts). Footer's own
+            background fill makes the CUT itself visible via color contrast, but the diagonal still
+            had no border line of its own — these two accent divs bridge each clipped corner's
+            straight edges with a matching 1px `white/10` line, one per top corner (mirrored). */}
         <div
-          className="flex flex-col gap-12 px-8 py-8 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-8 md:px-36"
-          style={{ minHeight: 317 }}
+          aria-hidden="true"
+          className="pointer-events-none absolute bg-white/10"
+          style={{
+            width: FOOTER_CHAMFER_PX * Math.SQRT2,
+            height: 1,
+            top: FOOTER_CHAMFER_PX / 2,
+            left: FOOTER_CHAMFER_PX / 2,
+            transform: "translate(-50%, -50%) rotate(-45deg)",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bg-white/10"
+          style={{
+            width: FOOTER_CHAMFER_PX * Math.SQRT2,
+            height: 1,
+            top: FOOTER_CHAMFER_PX / 2,
+            right: FOOTER_CHAMFER_PX / 2,
+            transform: "translate(50%, -50%) rotate(45deg)",
+          }}
+        />
+        {/* height: 317px per explicit spec at the 1920 reference — bumped a bit taller for the
+            min-[1800px] (FullHD-and-up) bucket only, per explicit request, while the narrow bucket
+            keeps the original 317px. Horizontal padding widened (40px → 96px) so the
+            logo/Subscribe columns sit further in from the panel's own edges — user feedback: they
+            read as "way too far out" at the original padding. `border-l/r` per the panel-border
+            note above — inset via `marginInline: FOOTER_CHAMFER_PX` (a fixed px, matching the
+            chamfer's own unscaled unit exactly, NOT a `w-[90%]` percentage) so the vertical line's
+            top endpoint always lands exactly on the chamfer diagonal's own endpoint, at any
+            viewport width. A percentage inset and the chamfer's fixed-px cut follow different
+            scaling laws — they'd only coincide at the one width they were tuned against, same
+            "fixed vs. fluid" lesson documented elsewhere in this project (see PROJECT.md). No
+            explicit width is set — a block element with fixed left/right margins and `width: auto`
+            fills the remaining space automatically. */}
+        <div
+          className="flex flex-col gap-12 border-l border-r border-white/10 px-8 py-8 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-8 md:px-36 max-[1799px]:min-h-[calc(var(--s)*317)] min-[1800px]:min-h-[calc(var(--s)*340)]"
+          style={{ marginInline: FOOTER_CHAMFER_PX }}
         >
           <div>
             <Image src="/footer/logo.svg" alt="usectl" width={173} height={28} />
@@ -127,7 +195,10 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-white/10 py-6 text-center">
+        <div
+          className="border-l border-r border-t border-b border-white/10 py-6 text-center"
+          style={{ marginInline: FOOTER_CHAMFER_PX }}
+        >
           <p className="font-heading text-[calc(var(--s)*13)] leading-none text-white/40">
             © 2026 <span className="text-brand">SYSTEMCTL</span>
           </p>
