@@ -54,7 +54,14 @@ const HOLE_MAX_PERCENT = 80;
 // outrunning, the plate's own growth by the end of the zoom. Starting later AND lagging
 // harder behind the growth curve keeps the hole visibly behind the plate's edge the whole
 // way through, not just near the start.
-const HOLE_START_AT = 0.18; // fraction of the zoom window before the hatch starts opening at all
+// Delayed further 2026-09-20 (per feedback, twice): compared to how fast the plate itself
+// (topside.svg) visibly grows, the hole was starting too soon — pushed later (0.18 -> 0.3 -> 0.65)
+// so the plate is noticeably bigger before the hole even begins to show. Since `holeAt(1)` always
+// resolves to fully-open regardless of this value (the curve is normalised over [HOLE_START_AT, 1]
+// — see `holeAt` below), pushing the start later doesn't change WHEN it finishes, only compresses
+// the actual opening into a smaller, later portion of the zoom window, so it opens noticeably
+// quicker once it starts. That's the tradeoff for "grows later" with the same end point.
+const HOLE_START_AT = 0.65; // fraction of the zoom window before the hatch starts opening at all
 const HOLE_CURVE = 3.4; // >1 = the opening lags further behind the growth
 
 const clamp01 = (v: number) => gsap.utils.clamp(0, 1, v);
