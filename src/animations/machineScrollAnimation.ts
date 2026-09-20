@@ -18,10 +18,16 @@ export const CROSS_HIDDEN_SCALE = 0.6;
 // topside.svg's own start/base scale (it fades in at the base, then grows from there).
 export const TOPSIDE_HIDDEN_SCALE = 0.5;
 const TOPSIDE_BASE_SCALE = 0.75;
-// How much bigger it gets by the time we're through it. Capped deliberately: every new scale makes
-// the browser re-rasterise the plate, and past ~10x that costs real frames for no visible gain
-// (the plate's edges are long off-screen by then).
-const TOPSIDE_MAX_SCALE = 9;
+// Replaced 2026-09-21 (per demo, approved): there is no hole to fly through any more — the zoom
+// itself IS the effect, so the plate has to keep growing long past what a hole-based version ever
+// needed (that one only had to clear its own opening at 9x). 700x reads as diving toward a single
+// point on the surface rather than "a bigger image". Safe to push this far because
+// useRasterizedSvg rasterises the plate ONCE to a bitmap and everything past that is a plain CSS
+// transform:scale on the GPU — the cost doesn't grow with how far we scale it.
+const TOPSIDE_MAX_SCALE = 700;
+// >1.6 (was 1.6): barely moves at first, then accelerates hard right at the end — the
+// "falling into a point" feeling the demo was tuned for, instead of a steady climb.
+const TOPSIDE_ZOOM_CURVE = 2.8;
 
 // --- wordmark: SCRUBBED (per user) -------------------------------------------------------------
 // The "machine" entrance follows scroll frame by frame instead of playing out on its own: stop
@@ -55,30 +61,17 @@ const staggerProgress = (t: number, index: number, count: number, span: number) 
   return gsap.utils.clamp(0, 1, (t - index * step) / (1 - span));
 };
 
-// The hatch opening: a rounded square (the plate's own inner panel shape) as a static mask image.
-// Only its SIZE animates — mask-composite:exclude punches it out of the plate.
-const HOLE_SHAPE = `url("data:image/svg+xml;utf8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" rx="18" fill="#000"/></svg>',
-)}")`;
-const HOLE_MASK_IMAGE = `linear-gradient(#000,#000), ${HOLE_SHAPE}`;
-// as a % of the plate's own box
-const HOLE_MAX_PERCENT = 80;
-// The hatch opens ALONGSIDE the growth but well behind it: it only starts once the plate is
-// already growing, and its curve is much flatter, so the two finish together. (A "plate first,
-// then the hatch" variant was tried 2026-09-18 and rejected — this pacing is the approved one.)
-// Slowed down 2026-09-18 (per feedback): the opening was catching up with, and briefly
-// outrunning, the plate's own growth by the end of the zoom. Starting later AND lagging
-// harder behind the growth curve keeps the hole visibly behind the plate's edge the whole
-// way through, not just near the start.
-// Delayed further 2026-09-20 (per feedback, twice): compared to how fast the plate itself
-// (topside.svg) visibly grows, the hole was starting too soon — pushed later (0.18 -> 0.3 -> 0.65)
-// so the plate is noticeably bigger before the hole even begins to show. Since `holeAt(1)` always
-// resolves to fully-open regardless of this value (the curve is normalised over [HOLE_START_AT, 1]
-// — see `holeAt` below), pushing the start later doesn't change WHEN it finishes, only compresses
-// the actual opening into a smaller, later portion of the zoom window, so it opens noticeably
-// quicker once it starts. That's the tradeoff for "grows later" with the same end point.
-const HOLE_START_AT = 0.65; // fraction of the zoom window before the hatch starts opening at all
-const HOLE_CURVE = 3.4; // >1 = the opening lags further behind the growth
+// Removed 2026-09-21 (per feedback: "no hole, just zoom in and fade like we've gone inside"): this
+// used to be a two-layer CSS mask (mask-composite: exclude) that punched a literal transparent
+// hole through the plate as it grew, so the page background showed through the middle. Replaced
+// with a plain opacity fade on the whole plate (see `applyProgress` below) — no aperture, nothing
+// cut out of it, it just grows and then dissolves.
+//
+// `CARD_TRIGGER_AT`/`CARD_TRIGGER_CURVE` below are what's left of that mechanism: NOT a visual any
+// more, just the same two numbers the old hole-opening curve used, kept as-is so the steps-3-8
+// card still arrives at exactly the same point in the scroll it always did (see `CARD_START`).
+const CARD_TRIGGER_AT = 0.65;
+const CARD_TRIGGER_CURVE = 3.4;
 
 const clamp01 = (v: number) => gsap.utils.clamp(0, 1, v);
 const easeIO = gsap.parseEase("power2.inOut");
@@ -291,13 +284,13 @@ function stepIndexAt(starts: number[], fraction: number): number {
   return 0;
 }
 
-// The card shows up once the hatch is P.cardAtHole open — derived from the hole curve (hole = t²)
-// rather than hardcoded, so it stays correct if the zoom range is retimed.
-// hole as a function of the growth's own progress `t`
-const holeAt = (t: number) => Math.pow(clamp01((t - HOLE_START_AT) / (1 - HOLE_START_AT)), HOLE_CURVE);
-const zoomTimeAtHole = (hole: number) => HOLE_START_AT + Math.pow(hole, 1 / HOLE_CURVE) * (1 - HOLE_START_AT);
-// the card shows up once the hatch is P.cardAtHole open — inverse of the curve above
-const CARD_START = P.zoomStart + zoomTimeAtHole(P.cardAtHole) * (P.zoomEnd - P.zoomStart);
+// CARD_START is unchanged by the 2026-09-21 hole removal — still the same point in the zoom
+// window `P.cardAtHole` always resolved to (was "the hatch is 90% open", now just a fixed anchor
+// derived from the same curve), so the card keeps arriving exactly when it always did even though
+// there's no hole left to measure "90% open" against.
+const zoomTimeAtCardTrigger = (v: number) =>
+  CARD_TRIGGER_AT + Math.pow(v, 1 / CARD_TRIGGER_CURVE) * (1 - CARD_TRIGGER_AT);
+const CARD_START = P.zoomStart + zoomTimeAtCardTrigger(P.cardAtHole) * (P.zoomEnd - P.zoomStart);
 
 interface MachineScrollRefs {
   // Pin trigger AND pin target — the whole full-viewport screen.
@@ -308,7 +301,8 @@ interface MachineScrollRefs {
   // The 4 corner "+" marks, drawn by the background grid rather than by elements in this section
   // (see lib/gridEffect/useGridMarks.ts) — this only drives how visible they are.
   gridMarks: GridMarksHandle;
-  // topside.svg — grows, and its middle opens, as we fly through it.
+  // topside.svg — grows continuously, then fades out (opacity) right at the end, as if we'd flown
+  // straight into it. No hole/aperture cut into it any more (removed 2026-09-21).
   topsideRef: RefObject<HTMLElement | null>;
   // Light green wash right after we're inside; fades out before the content has arrived.
   tintRef: RefObject<HTMLElement | null>;
@@ -324,10 +318,11 @@ interface MachineScrollRefs {
 // ONE pin for the whole "machine" sequence (per the approved demo):
 //   wordmark entrance (triggered)
 //   -> topside fades in ON TOP of it and starts growing the moment the wordmark starts leaving
-//   -> the growth never pauses; the hatch opens alongside it, just slower (hole = t²), so both
-//      finish together and we end up through the opening (all scrubbed)
-//   -> at 90% open the steps 3-8 card is already there, small and far away, and scroll flies us
-//      towards it until it sits at full size (scrubbed)
+//   -> the growth never pauses, all the way to 700x, then fades out (opacity) right at the very
+//      end — no hole/aperture (removed 2026-09-21, per a second approved demo): it just grows and
+//      dissolves, as if we'd flown straight into it (all scrubbed)
+//   -> by the time it's most of the way through that fade the steps 3-8 card is already there,
+//      small and far away, and scroll flies us towards it until it sits at full size (scrubbed)
 //   -> then the six steps swap their text (triggered, same as everywhere else) while the static
 //      bar fills (scrubbed).
 export function useMachineScrollAnimation({
@@ -515,18 +510,15 @@ export function useMachineScrollAnimation({
         applyWordmark(progress);
 
         // 2+3) topside: fades in over the wordmark, then ONE continuous exponential ramp (constant
-        // "speed towards you", no plateau) while its hatch opens on a slower, squared curve.
+        // "speed towards you", no plateau) all the way to TOPSIDE_MAX_SCALE, then fades back out
+        // (opacity) right at the very end. No mask/hole any more (removed 2026-09-21) — just scale
+        // + opacity, so it reads as flying straight into the plate rather than through an opening.
         const fadeIn = clamp01((progress - P.plateIn) / (P.plateFull - P.plateIn));
         const t = clamp01((progress - P.zoomStart) / (P.zoomEnd - P.zoomStart));
-        const scale = TOPSIDE_BASE_SCALE * Math.pow(TOPSIDE_MAX_SCALE / TOPSIDE_BASE_SCALE, Math.pow(t, 1.6));
-        const holePercent = holeAt(t) * HOLE_MAX_PERCENT;
+        const scale = TOPSIDE_BASE_SCALE * Math.pow(TOPSIDE_MAX_SCALE / TOPSIDE_BASE_SCALE, Math.pow(t, TOPSIDE_ZOOM_CURVE));
         gsap.set(topside, {
           opacity: fadeIn * (1 - clamp01((t - 0.93) / 0.07)),
           scale,
-          webkitMaskImage: HOLE_MASK_IMAGE,
-          maskImage: HOLE_MASK_IMAGE,
-          webkitMaskSize: `100% 100%, ${holePercent}% ${holePercent}%`,
-          maskSize: `100% 100%, ${holePercent}% ${holePercent}%`,
         });
 
         // 4) the card: already there when the hatch is ~90% open, then flown towards, slowly

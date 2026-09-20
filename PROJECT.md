@@ -838,6 +838,7 @@ and the places the plan turned out to be wrong. Short version of what changed he
   box with the four snapped crosses around it.
 
 ## Open items / TODO
+- **2026-09-21 — grid deformation dropped, replaced by a glow inside the cross marks (plan final, not started).** Full plan: `grid-glow.md` (root). The lines stop bending; everything else about the grid canvas and the crosses stays; when the pointer is inside the rectangle framed by a section's 4 crosses, a glow follows it there. Work in that file's stage order and stop at its STOP markers.
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot still aren't added. No longer a hard problem: they would be one `useGridMarks(ref, {gapX, gapY})` call (see the background-grid entry above), the same as Hero's and the machine screen's. Same for the Infrastructure card's. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.
 - Verify `HeroSection.tsx` against real Figma data once the MCP rate limit resets — see the "Implemented so far" note above for exactly what's unconfirmed (font sizes, spacing, button styling).

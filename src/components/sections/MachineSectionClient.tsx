@@ -142,16 +142,6 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
           style={{
             opacity: 0,
             transform: `translate(-50%, -50%) scale(${TOPSIDE_HIDDEN_SCALE})`,
-            // The hatch opening is a two-layer CSS mask: a full-cover layer plus the rounded-square
-            // hole shape, combined with mask-composite so the shape is SUBTRACTED (without this the
-            // two layers are added together and no hole ever appears). Only the hole's size is
-            // animated, by machineScrollAnimation.ts — everything static lives here.
-            WebkitMaskRepeat: "no-repeat",
-            maskRepeat: "no-repeat",
-            WebkitMaskPosition: "center, center",
-            maskPosition: "center, center",
-            WebkitMaskComposite: "xor",
-            maskComposite: "exclude",
           }}
         >
           <Image
