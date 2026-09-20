@@ -4,6 +4,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
 import { readScale } from "@/lib/grid";
+import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import { createStepSwap } from "@/animations/stepSwap";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -283,7 +284,9 @@ interface MachineScrollRefs {
   // Wrapper around hatch + wordmark + crosses.
   wordmarkRef: RefObject<HTMLElement | null>;
   hatchRef: RefObject<HTMLElement | null>;
-  crossRefs: RefObject<(HTMLElement | null)[]>;
+  // The 4 corner "+" marks, drawn by the background grid rather than by elements in this section
+  // (see lib/gridEffect/useGridMarks.ts) — this only drives how visible they are.
+  gridMarks: GridMarksHandle;
   // topside.svg — grows, and its middle opens, as we fly through it.
   topsideRef: RefObject<HTMLElement | null>;
   // Light green wash right after we're inside; fades out before the content has arrived.
@@ -310,7 +313,7 @@ export function useMachineScrollAnimation({
   sectionRef,
   wordmarkRef,
   hatchRef,
-  crossRefs,
+  gridMarks,
   topsideRef,
   tintRef,
   cardRef,
@@ -338,7 +341,6 @@ export function useMachineScrollAnimation({
       const card = cardRef.current;
       const fill = fillRef.current;
       const chars = section ? Array.from(section.querySelectorAll<HTMLElement>("[data-blur-char]")) : [];
-      const crosses = crossRefs.current.filter((el): el is HTMLElement => el !== null);
       if (!section || !wordmark || !hatch || !topside || !card || !fill || chars.length === 0) return;
 
       const steps = createStepSwap(card);
@@ -434,7 +436,13 @@ export function useMachineScrollAnimation({
           });
         });
         const crossIn = easeOut(clamp01((reveal - 0.55) / 0.45));
-        gsap.set(crosses, { opacity: crossIn, scale: CROSS_HIDDEN_SCALE + (1 - CROSS_HIDDEN_SCALE) * crossIn });
+        // Multiplied by the wordmark's own fade: the crosses used to be its CHILDREN and left with
+        // it for free. They are grid marks now, outside this DOM entirely, so the exit has to be
+        // applied to them explicitly or they would stay lit over the fly-through.
+        gridMarks.setAppearance({
+          opacity: crossIn * (1 - exit),
+          scale: CROSS_HIDDEN_SCALE + (1 - CROSS_HIDDEN_SCALE) * crossIn,
+        });
 
         gsap.set(wordmark, {
           opacity: 1 - exit,
@@ -464,6 +472,10 @@ export function useMachineScrollAnimation({
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // No pin, no motion: the wordmark and the content are simply there, the plate is not.
         applyWordmark(WORD_REVEALED_AT);
+        // …but no corner marks. They are drawn in VIEWPORT space by the background grid, which is
+        // only ever right while this screen is pinned (i.e. also standing still in the viewport).
+        // With the pin gone the wordmark scrolls and they would stay behind, floating on their own.
+        gridMarks.setAppearance({ opacity: 0 });
         gsap.set(topside, { opacity: 0 });
         gsap.set(card, { opacity: 1, scale: 1, filter: "none" });
         gsap.set(fill, { clipPath: "inset(0% 0% 0% 0%)" });
@@ -691,6 +703,12 @@ export function useMachineScrollAnimation({
         // leaves a stale step showing once you come back.
         onLeave: () => applySmoothed(1, true),
         onLeaveBack: () => applySmoothed(0, true),
+        // The moment the pin engages is the moment the wordmark stops moving relative to the
+        // viewport, which is the only frame of reference the grid marks have. One rect read here,
+        // never in the scroll loop.
+        onToggle: (self) => {
+          if (self.isActive) gridMarks.refreshAnchor();
+        },
       });
 
       // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same

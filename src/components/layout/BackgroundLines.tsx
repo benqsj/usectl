@@ -1,48 +1,58 @@
 import type { CSSProperties } from "react";
-import { INSET_VW, COLUMN_PITCH, ROW_PITCH, HEADER_HEIGHT_PX } from "@/lib/grid";
+import { GridCanvas } from "@/components/layout/GridCanvas";
+import {
+  INSET_VW,
+  COLUMN_PITCH,
+  ROW_PITCH,
+  HEADER_HEIGHT_PX,
+  LINE_COLOR,
+  LINE_THICKNESS_PX,
+  NUM_COLUMNS,
+  MIDDLE_COLUMNS_WIDE,
+  MIDDLE_COLUMNS_NARROW,
+} from "@/lib/grid";
 
 const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
-const LINE_COLOR = "rgba(255,255,255,0.02)";
-const LINE_THICKNESS_PX = 2; // thicker than a hairline on purpose — with fluid (vw) pitch, 1px lines land on fractional device pixels and anti-alias unevenly (some crisp, some blurry); 2px makes that variance much less noticeable
 
-const NUM_COLUMNS = 22; // 1722 / 82 + 1, matches the confirmed x=99..1820 span
+// Geometry, colours and the hidden-column sets all live in lib/grid.ts now, so the WebGL layer
+// (lib/gridEffect/) that draws the very same grid reads the identical numbers. Re-exported here
+// because Header.tsx and this file's own ColumnLines have always been the public face of them.
+export { HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
 
-// Explicit hide-lists for vertical columns — replaces four failed CSS-mask attempts (mask-composite, data-URI SVG
-// mask, inline SVG mask with userSpaceOnUse, inline SVG mask with objectBoundingBox — see PROJECT.md for why).
-// Column numbers are 1-indexed left to right (data-col attribute below matches).
-// "Start" columns (2-3) sit under the header logo — computed from its fixed-px box (130px offset, 150px wide, see
-// Header.tsx), not yet user-confirmed. "Middle" columns (9-14 wide / 8-15 narrow) sit under the header nav text —
-// user-counted by eye, trustworthy. The middle gap continues for exactly one row below the header (2026-09-17,
-// corrected from an earlier version that continued it for the whole page — user only wanted the first occurrence),
-// then the rest of the page shows the full, unbroken grid.
-const START_COLUMNS = new Set([2, 3]);
-const MIDDLE_COLUMNS_WIDE = new Set([9, 10, 11, 12, 13, 14]); // hidden at >=1800px (FullHD-ish)
-const MIDDLE_COLUMNS_NARROW = new Set([8, 9, 10, 11, 12, 13, 14, 15]); // hidden below 1800px
-
-export const HEADER_HIDE_WIDE = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_WIDE]);
-export const HEADER_HIDE_NARROW = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_NARROW]);
 const BELOW_HEADER_HIDE_WIDE = MIDDLE_COLUMNS_WIDE;
 const BELOW_HEADER_HIDE_NARROW = MIDDLE_COLUMNS_NARROW;
 
 // Literal class strings (not built from a template-interpolated variable) — Tailwind's build-time scanner needs the
 // exact "min-[1800px]:hidden" text to appear in the source to generate that utility; a `` `min-[${x}px]:hidden` ``
 // template would be invisible to it and silently produce no CSS at all.
+//
+// The narrow one is `max-[1800px]`, NOT `max-[1799px]`, and that is deliberate: Tailwind v4 compiles
+// `max-[Npx]` to `@media not (min-width: Npx)`, i.e. strictly LESS than N — so the old
+// `max-[1799px]` left a one-pixel hole at exactly 1799px where neither rule matched and every
+// column showed (measured 2026-09-20 at 1798/1799/1800). `max-[1800px]` is the exact complement of
+// `min-[1800px]`, which is also what the canvas evaluates (isWideViewport in lib/grid.ts), so the
+// two can no longer disagree at any width.
 const HIDDEN_AT_WIDE = "min-[1800px]:hidden";
-const HIDDEN_AT_NARROW = "max-[1799px]:hidden";
+const HIDDEN_AT_NARROW = "max-[1800px]:hidden";
 
 export function ColumnLines({
   hideWide,
   hideNarrow,
   className,
   style,
+  color = LINE_COLOR,
+  cssLayer = false,
 }: {
   hideWide: Set<number>;
   hideNarrow: Set<number>;
   className: string;
   style: CSSProperties;
+  color?: string;
+  /** tag this instance as part of the CSS grid fallback, so it hides once the canvas takes over */
+  cssLayer?: boolean;
 }) {
   return (
-    <div className={className} style={style}>
+    <div className={className} style={style} {...(cssLayer ? { "data-grid-css-layer": "" } : {})}>
       {Array.from({ length: NUM_COLUMNS }, (_, idx) => {
         const col = idx + 1;
         const visibilityClass = [
@@ -59,12 +69,72 @@ export function ColumnLines({
             style={{
               left: `calc(${idx} * ${COLUMN_PITCH} - ${LINE_THICKNESS_PX / 2}px)`,
               width: `${LINE_THICKNESS_PX}px`,
-              backgroundColor: LINE_COLOR,
+              backgroundColor: color,
             }}
           />
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The grid itself, as CSS gradient layers — three absolutely-positioned children that expect a
+ * positioned parent spanning the viewport.
+ *
+ * Split out of BackgroundLines so the same markup can be reused: it is what paints on FIRST paint
+ * (before any JS), it is the permanent fallback when WebGL2 is unavailable, and the lab page
+ * (/lab/lines) renders a second copy of it in a loud colour to compare the canvas against.
+ *
+ * Every layer is tagged `data-grid-css-layer` — globals.css hides them all once the canvas has
+ * actually drawn its first frame (`[data-grid-canvas="on"]` on the wrapper). See GridCanvas.tsx.
+ */
+export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
+  return (
+    <>
+      {/* Header-band column lines are NOT rendered here — this whole layer sits behind the sticky
+          header's own `backdrop-blur-md` (see Header.tsx), and at this grid's real production
+          opacity (2%) the blur+60%-tint washes them out to fully invisible (confirmed 2026-09-18 via
+          a Playwright pixel check: a solid, fully-opaque red override in this band produced zero
+          visible pixels through the header, while the identical override one row below painted
+          cleanly). Rendered instead as a child of <header> itself, above its blur/tint layer, so it
+          reads at the same weight as the rest of the page's grid instead of being dampened by it. */}
+      {/* vertical column lines, one row directly below the header — the middle (nav) gap continues just this once */}
+      <ColumnLines
+        hideWide={BELOW_HEADER_HIDE_WIDE}
+        hideNarrow={BELOW_HEADER_HIDE_NARROW}
+        className="absolute"
+        color={color}
+        cssLayer
+        style={{
+          left: INSET_VW,
+          right: INSET_VW,
+          top: `${HEADER_HEIGHT_PX}px`,
+          height: ROW_PITCH,
+        }}
+      />
+      {/* vertical column lines, rest of the page — full unbroken grid, no columns hidden */}
+      <div
+        data-grid-css-layer=""
+        className="absolute bottom-0"
+        style={{
+          left: INSET_VW,
+          right: INSET_VW,
+          top: ROW_GRID_TOP,
+          backgroundImage: `repeating-linear-gradient(to right, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${COLUMN_PITCH})`,
+          backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
+        }}
+      />
+      {/* horizontal row lines — full viewport width (left:0 to right:0), starts below the header so none land inside it */}
+      <div
+        data-grid-css-layer=""
+        className="absolute inset-x-0 bottom-0"
+        style={{
+          top: ROW_GRID_TOP,
+          backgroundImage: `repeating-linear-gradient(to bottom, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${ROW_PITCH})`,
+        }}
+      />
+    </>
   );
 }
 
@@ -94,39 +164,13 @@ export function BackgroundLines() {
           backgroundSize: "100% auto",
         }}
       />
-      {/* Header-band column lines are NOT rendered here — this whole layer sits behind the sticky
-          header's own `backdrop-blur-md` (see Header.tsx), and at this grid's real production
-          opacity (2%) the blur+60%-tint washes them out to fully invisible (confirmed 2026-09-18 via
-          a Playwright pixel check: a solid, fully-opaque red override in this band produced zero
-          visible pixels through the header, while the identical override one row below painted
-          cleanly). Rendered instead as a child of <header> itself, above its blur/tint layer, so it
-          reads at the same weight as the rest of the page's grid instead of being dampened by it. */}
-      {/* vertical column lines, one row directly below the header — the middle (nav) gap continues just this once */}
-      <ColumnLines
-        hideWide={BELOW_HEADER_HIDE_WIDE}
-        hideNarrow={BELOW_HEADER_HIDE_NARROW}
-        className="absolute"
-        style={{ left: INSET_VW, right: INSET_VW, top: `${HEADER_HEIGHT_PX}px`, height: ROW_PITCH }}
-      />
-      {/* vertical column lines, rest of the page — full unbroken grid, no columns hidden */}
-      <div
-        className="absolute bottom-0"
-        style={{
-          left: INSET_VW,
-          right: INSET_VW,
-          top: ROW_GRID_TOP,
-          backgroundImage: `repeating-linear-gradient(to right, ${LINE_COLOR} 0, ${LINE_COLOR} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${COLUMN_PITCH})`,
-          backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
-        }}
-      />
-      {/* horizontal row lines — full viewport width (left:0 to right:0), starts below the header so none land inside it */}
-      <div
-        className="absolute inset-x-0 bottom-0"
-        style={{
-          top: ROW_GRID_TOP,
-          backgroundImage: `repeating-linear-gradient(to bottom, ${LINE_COLOR} 0, ${LINE_COLOR} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${ROW_PITCH})`,
-        }}
-      />
+      <CssGridLines />
+      {/* The same grid again, on a WebGL2 canvas that bends it around the cursor. It hides the CSS
+          layers above only once it has drawn a frame (see GridCanvas.tsx / globals.css), so a
+          browser without WebGL2 — or a failed context — simply keeps the page exactly as it is
+          today. Values are GRID_EFFECT_DEFAULTS, picked in /lab/lines (pull, radius 220,
+          strength 16, easing 0.12). */}
+      <GridCanvas />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
 import { readScale } from "@/lib/grid";
+import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -64,6 +65,15 @@ const coreHeightPx = () => MODEL_WIDTH_PX * HERO_CORE_HEIGHT_RATIO * readScale()
 // centering fix. Applies to both the closed and open positions (baked into recenterY below).
 const EXTRA_RISE_PX = 0;
 
+// The corner "+" marks are drawn by the background grid, which lives in VIEWPORT space — so they
+// are only truthful while the thing they frame is standing still in the viewport too. The server
+// starts moving the instant you scroll (the pin engages one header-height in, and the scale/rise
+// tween starts at progress 0), so they are given the landing view and then got out of the way:
+// snapped to the model's box at the top of the page, and faded out over the first bit of scroll.
+// Measured from scroll 0 rather than from the pin's own start, because the model has already
+// travelled a header's worth by the time the pin engages.
+const CROSS_FADE_SCROLL_PX = 260;
+
 interface HeroScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
@@ -77,6 +87,9 @@ interface HeroScrollRefs {
   // Server-rendered placeholder spacer that pre-reserves PIN_SCROLL_DISTANCE worth of height
   // before any client JS runs — see the long comment where this is collapsed, below.
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
+  // The 4 corner "+" marks around the server — drawn by the background grid, not by elements in
+  // this section (see lib/gridEffect/useGridMarks.ts). This only drives how visible they are.
+  gridMarks: GridMarksHandle;
 }
 
 export function useHeroScrollAnimation({
@@ -86,6 +99,7 @@ export function useHeroScrollAnimation({
   modelRef,
   modelSyncRef,
   ssrScrollReserveRef,
+  gridMarks,
 }: HeroScrollRefs) {
   useGSAP(
     () => {
@@ -128,7 +142,12 @@ export function useHeroScrollAnimation({
       // fired last would drag the page into ITS OWN pin range regardless of where the user actually
       // was. See ScrollChurnGuard.tsx for the full diagnosis.
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        // No pin here, so the server just scrolls away with the page while the grid (and anything
+        // drawn on it) stays put in the viewport — the marks would detach and float. Left off.
+        gridMarks.setAppearance({ opacity: 0 });
+        return;
+      }
       if (!sectionRef.current || !contentRef.current || !cubeWrapperRef.current) return;
 
       const cubeWrapper = cubeWrapperRef.current;
@@ -304,6 +323,21 @@ export function useHeroScrollAnimation({
         modelRef.current?.setProgress(disassemble.t);
       };
       syncModelOnRefresh = syncModelToTimeline;
+
+      // The corner marks' own fade (see CROSS_FADE_SCROLL_PX). Its own trigger, not the pin's
+      // onUpdate, because it has to start at scroll 0 — the pin's range only begins once the
+      // section's top reaches the viewport top, i.e. a header-height in, by which point the
+      // server has already travelled.
+      gridMarks.setAppearance({ opacity: 1, scale: 1 });
+      ScrollTrigger.create({
+        trigger: document.documentElement,
+        start: "top top",
+        end: () => `+=${CROSS_FADE_SCROLL_PX * readScale()}`,
+        onUpdate: (self) => gridMarks.setAppearance({ opacity: 1 - self.progress }),
+        onLeave: () => gridMarks.setAppearance({ opacity: 0 }),
+        onEnterBack: () => gridMarks.setAppearance({ opacity: 1 }),
+      });
+
       modelSyncRef.current = () => {
         syncModelToTimeline();
         requestAnimationFrame(syncModelToTimeline);

@@ -39,6 +39,18 @@ body {
   color: var(--foreground);
 }
 
+/* The background grid is painted twice over: the CSS gradient layers below (first paint, and the
+   permanent fallback) and a WebGL canvas that can bend them around the cursor. GridCanvas.tsx sets
+   data-grid-canvas="on" on the wrapper only after WebGL2 initialised AND the first frame is on
+   screen, so there is never a moment with neither — and never a moment with both.
+
+   Plain CSS rather than a Tailwind `group-data-[...]` variant on purpose: this project has been
+   bitten before by Tailwind's scanner not seeing a class it should generate, and a silently missing
+   rule here would mean two grids drawn on top of each other. */
+[data-grid-canvas="on"] [data-grid-css-layer] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

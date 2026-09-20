@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ColumnLines, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/components/layout/BackgroundLines";
-import { INSET_VW, s } from "@/lib/grid";
+import { ColumnLines } from "@/components/layout/BackgroundLines";
+import { INSET_VW, s, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
 
 const NAV_LINKS = [
   { label: "The Machine", href: "#the-machine" },

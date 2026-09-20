@@ -6,7 +6,24 @@ import { Button } from "@/components/ui/Button";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
 import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
-import { s } from "@/lib/grid";
+import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
+import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
+import { HEADER_HEIGHT_PX, readScale, s } from "@/lib/grid";
+
+// The 4 corner "+" marks around the server, restored 2026-09-20 — as grid marks this time, not
+// cross.svg images. The whole reason they were pulled in the first place (PROJECT.md's grid-snap ->
+// cube-relative -> "just delete them" saga) was that a fixed-px offset and a vw-fluid grid only
+// line up at the width you tuned them at; a mark that IS a grid intersection cannot have that
+// problem. These two numbers reproduce the approved 1920 look — columns 7/16, rows 4/7 — and the
+// snap picks the nearest equivalent everywhere else.
+//
+// gapX 129 is the exact distance from the model box's edge to column 7 at 1920. gapY is ZERO,
+// which means "the row nearest each edge" rather than "push away by N" — at 1920 the model box is
+// almost exactly four row pitches tall, so the pair lands on its top and bottom edges, and at any
+// other width the snap keeps that framing as closely as the grid allows.
+const HERO_MARK_GAP_X_PX = 129;
+const HERO_MARK_GAP_Y_PX = 0;
+const HERO_MODEL_WIDTH_PX = 480;
 
 export function HeroSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -16,7 +33,40 @@ export function HeroSectionClient() {
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
 
-  useHeroScrollAnimation({ sectionRef, contentRef, cubeWrapperRef, modelRef, modelSyncRef, ssrScrollReserveRef });
+  // The box the marks are snapped around is deliberately NOT getBoundingClientRect(): this wrapper
+  // is scaled, shifted and grown by the scroll timeline, and its section is position:fixed while
+  // pinned, so a live rect says something different at every scroll position. This is the wrapper's
+  // pure LAYOUT box at the top of the page — offsetTop/offsetLeft are relative to the <section>
+  // (position:relative) and unaffected by scroll, pinning or the timeline's transforms, and the
+  // height is the CLOSED height computed from the same formula the CSS uses rather than read back
+  // from --stack-gap, which the timeline owns. Same reasoning as measureRecenterY in
+  // heroScrollAnimation.ts, which was a real refresh bug there.
+  const markBox = useCallback(() => {
+    const el = cubeWrapperRef.current;
+    if (!el) return null;
+    const k = readScale();
+    const closedHeight = 3 * HERO_STACK_GAP_CLOSED_PX * k + HERO_MODEL_WIDTH_PX * HERO_CORE_HEIGHT_RATIO * k;
+    // The hero is the first thing in <main>, and the header is sticky (so it occupies flow) —
+    // the section therefore starts exactly one header below the document top.
+    const top = HEADER_HEIGHT_PX + el.offsetTop;
+    return { left: el.offsetLeft, right: el.offsetLeft + el.offsetWidth, top, bottom: top + closedHeight };
+  }, []);
+
+  const gridMarks = useGridMarks(cubeWrapperRef, {
+    gapX: HERO_MARK_GAP_X_PX,
+    gapY: HERO_MARK_GAP_Y_PX,
+    box: markBox,
+  });
+
+  useHeroScrollAnimation({
+    sectionRef,
+    contentRef,
+    cubeWrapperRef,
+    modelRef,
+    modelSyncRef,
+    ssrScrollReserveRef,
+    gridMarks,
+  });
 
   // The GLB arrives well after the timeline is built, always starting at its closed pose. This
   // jumps it straight to the pose the current scroll position calls for — see modelSyncRef's own

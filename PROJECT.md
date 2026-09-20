@@ -792,12 +792,56 @@ every other bordered section card on the page.
   end-to-end (still reaches `$40.45`) and a full-document console-error sweep — zero errors.
   `tsc --noEmit` and `eslint` both clean.
 
-## Open items / TODO
+## Background grid: mouse deformation + grid-drawn cross marks (2026-09-20)
 
+Built to the plan in `background-line-animations.md` — read that file's §10 for the measurements
+and the places the plan turned out to be wrong. Short version of what changed here:
+
+- **The grid is now drawn twice over.** `CssGridLines` (split out of `BackgroundLines.tsx`, takes a
+  colour) is the first paint and the permanent fallback; `GridCanvas.tsx` puts a WebGL2 canvas over
+  it that draws the identical grid and bends it around the cursor. The canvas sets
+  `data-grid-canvas="on"` on the wrapper only after it has drawn a frame, and one plain CSS rule in
+  `globals.css` hides the fallback off that attribute — so there is never a frame with two grids
+  and never one with none. No WebGL2, or a lost context, and the page is exactly what it is today.
+  Raw WebGL2, not three.js: this layer is on every page and always on, and the whole thing is a
+  fullscreen triangle plus one shader (its own lazily-imported 8.5 KB chunk, no new dependency).
+- **Effect**: `pull`, radius 220, strength 16, easing 0.12 — chosen in the lab, living in
+  `src/lib/gridEffect/config.ts`. All lengths are design px, scaled by `--s` like everything else.
+- **An idle page draws zero frames** (measured by patching `drawArrays`). The rAF loop stops itself
+  once the eased cursor has caught up; the `pointermove` listener is passive and only records a
+  position; reduced motion and coarse pointers never attach it at all.
+- **`src/lib/grid.ts` is now the single source of truth for both sides** — it gained the hidden
+  column sets (moved out of `BackgroundLines.tsx`, `Header.tsx` imports them from there now) and the
+  numeric helpers `gridMetrics()` / `columnCenterX()` / `rowTopY()` / `nearestColumn()` /
+  `nearestRow()`, so the CSS and the shader cannot drift.
+- **The "+" crosses are grid intersections now, not `cross.svg` images.** `useGridMarks(anchor,
+  {gapX, gapY})` snaps four marks around an element's box and the shader draws them as short
+  brighter segments of the very column and row they sit on — so they bend with the lines and they
+  cannot be off-grid at any viewport width. Measured at 33 widths, 1280→2560: worst distance from
+  the exact line **0.227px**. This retires the whole grid-snap → cube-relative → "just delete them"
+  saga documented further down; do NOT restore the old `GridCross`/`CardCross` code from those
+  entries — use the hook.
+  - Machine section: same 4 corners as before (`gapX: 60, gapY: 70`), same fade, `crossRefs` gone.
+  - Hero: **restored** (they had been removed "temporarily" 2026-09-17). `gapX: 129, gapY: 0` puts
+    them on columns 7/16 and rows 4/8 at 1920, and the snap handles every other width. They fade out
+    over the first 260 design px of scroll — marks live in viewport space, and the hero's server
+    starts moving immediately, so they get the landing view and then get out of the way.
+  - Infrastructure card and Build section: still not built, one hook call each.
+- **Real bug found and fixed in the CSS fallback**: Tailwind v4 compiles `max-[1799px]:` to
+  `@media not (min-width: 1799px)`, i.e. strictly *less than* 1799 — so at exactly 1799px neither
+  hide-rule fired and every middle column showed. Measured at 1798/1799/1800. Now `max-[1800px]:`,
+  the exact complement of `min-[1800px]:`. **`Footer.tsx` has two more `max-[1799px]:`/`min-[1800px]:`
+  pairs with the same one-pixel hole** — left alone, out of scope, but they are wrong too.
+- Lab: `/lab/lines` (`npm run dev` → `http://localhost:3000/lab/lines`). Not linked, `noindex`, and
+  `notFound()` in a production build (verified: 404). Every parameter live, a variant switcher, a
+  "compare" overlay that draws today's CSS grid in red over the canvas, and a drag/resizable dummy
+  box with the four snapped crosses around it.
+
+## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
-- `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot weren't added (no spec given, and Hero's own identical crosses were a whole saga before being removed — see that entry above).
+- `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot still aren't added. No longer a hard problem: they would be one `useGridMarks(ref, {gapX, gapY})` call (see the background-grid entry above), the same as Hero's and the machine screen's. Same for the Infrastructure card's. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.
 - Verify `HeroSection.tsx` against real Figma data once the MCP rate limit resets — see the "Implemented so far" note above for exactly what's unconfirmed (font sizes, spacing, button styling).
-- `public/herosection/cross.svg` exists but isn't used anywhere in the code right now — **temporarily removed 2026-09-17** from both `HeroSection.tsx` (4 `GridCross` corner marks around the cube, wide/FullHD only) and `InfrastructureSection.tsx` (4 `CardCross` corner marks on the card). User asked to remove them "temporarily," implying they'll likely come back — exact removed code + restoration instructions are preserved in both files' entries above under "Implemented so far." Restore from there when asked, rather than re-deriving the positioning math from scratch.
+- ~~`public/herosection/cross.svg` … restore the preserved `GridCross`/`CardCross` code~~ — **superseded 2026-09-20.** The crosses are drawn by the background grid now (see the background-grid entry above). Hero's are back, the machine screen's were converted, and `cross.svg` is no longer referenced anywhere. The `GridCross`/`CardCross` snippets preserved in the entries below are history only — restoring them would reintroduce the exact drift the grid marks exist to remove. The Infrastructure card's four are still missing; add them with `useGridMarks`, not with that code.
 - Footer — built 2026-09-18 from user-supplied screenshots (see the "New `Footer`" entry above), NOT
   from the Figma `26:3243` node (Figma MCP still rate-limited, and the screenshots were exact enough
   to build from directly). The chamfer size (48px) and column proportions are eyeballed against the

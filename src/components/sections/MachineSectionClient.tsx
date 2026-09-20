@@ -8,8 +8,9 @@ import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import type { MachineServerParts } from "@/lib/machineServerParts";
 import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
-import { useMachineScrollAnimation, CROSS_HIDDEN_SCALE, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
+import { useMachineScrollAnimation, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
 import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
+import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
 import { vw, s, HEADER_HEIGHT_PX } from "@/lib/grid";
 
 // Hatch mark ("Subtract.svg", the same green diagonal-hatch icon HeroSection/InfrastructureSection
@@ -22,20 +23,18 @@ const HATCH_NATIVE_HEIGHT = 26;
 const WORDMARK_FONT_SIZE_PX = 150;
 const WORDMARK_GAP_PX = 28;
 
-// The 4 corner crosses are positioned relative to the wordmark block itself (hatch + "machine"),
-// not snapped to BackgroundLines.tsx's page-absolute grid rows/columns — considered, but skipped:
-// this content is centered in the *viewport* while pinned, and its page-absolute Y depends on how
-// much content sits above it, which isn't a fixed grid row the way HeroSection's original
-// page-anchored corner crosses were (see PROJECT.md's "cube-relative rewrite" note on HeroSection
-// for the same lesson learned there — a floating/re-positionable element and a page-absolute grid
-// only reliably line up at the one width/scroll-position you happened to test). `vw()` from
-// grid.ts is still reused here for the *fluid scaling convention* (offsets grow proportionally
-// with viewport width, matching every other measurement on this page), just anchored to the
-// wordmark's own box instead of the page grid.
-const CROSS_H_OFFSET_PX = 60;
-const CROSS_V_OFFSET_PX = 70;
-
-const CROSS_POSITIONS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+// The 4 corner crosses are no longer <Image src="cross.svg"> elements at hand-tuned offsets from
+// the wordmark — they are drawn BY the background grid, at real grid intersections chosen around
+// the wordmark's box for whatever viewport this is (see lib/gridEffect/useGridMarks.ts).
+//
+// The comment that used to sit here argued grid-snapping was impossible because "the page-absolute
+// Y depends on how much content sits above it". That stopped being true: the grid is `fixed`, i.e.
+// viewport space, and this section is pinned (also viewport space) for the whole time the crosses
+// are visible — so the intersection under a given corner is perfectly deterministic. These two
+// numbers are now the REQUESTED gap before snapping, not the final offset: the snap may land the
+// cross a little nearer or further, and it is always exactly on the lines.
+const CROSS_GAP_X_PX = 60;
+const CROSS_GAP_Y_PX = 70;
 
 // topside.svg is 688x688 (a top-down view of the server, same lid as servertitanium.svg's top
 // face, with an ambient glow baked in) — sized here at the 1920 reference, vw-scaled like
@@ -61,7 +60,6 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
   const stageRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLDivElement>(null);
   const hatchRef = useRef<HTMLDivElement>(null);
-  const crossRefs = useRef<(HTMLImageElement | null)[]>([]);
   const topsideRef = useRef<HTMLDivElement>(null);
   const tintRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -70,11 +68,15 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
 
   const topsideRaster = useRasterizedSvg("/infrastructur/topside.svg", TOPSIDE_RASTER_WIDTH);
 
+  // Four grid intersections around the wordmark block. The hook owns WHERE they are (re-snapped on
+  // resize and on every ScrollTrigger refresh); the animation below owns how visible they are.
+  const gridMarks = useGridMarks(wordmarkRef, { gapX: CROSS_GAP_X_PX, gapY: CROSS_GAP_Y_PX });
+
   useMachineScrollAnimation({
     sectionRef,
     wordmarkRef,
     hatchRef,
-    crossRefs,
+    gridMarks,
     topsideRef,
     tintRef,
     cardRef,
@@ -123,30 +125,8 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
             style={{ fontSize: vw(WORDMARK_FONT_SIZE_PX) }}
           />
 
-          {/* 4 corner cross marks, SSR-hidden (opacity 0 + CROSS_HIDDEN_SCALE) — fade in with a
-              slight scale-up last in the entrance sequence, after the wordmark itself. */}
-          {CROSS_POSITIONS.map((pos, i) => (
-            <Image
-              key={pos}
-              ref={(el) => {
-                crossRefs.current[i] = el;
-              }}
-              src="/herosection/cross.svg"
-              alt=""
-              width={32}
-              height={32}
-              aria-hidden="true"
-              className="pointer-events-none absolute"
-              style={{
-                opacity: 0,
-                transform: `scale(${CROSS_HIDDEN_SCALE})`,
-                ...(pos.startsWith("top") ? { top: `calc(-1 * ${vw(CROSS_V_OFFSET_PX)})` } : {}),
-                ...(pos.startsWith("bottom") ? { bottom: `calc(-1 * ${vw(CROSS_V_OFFSET_PX)})` } : {}),
-                ...(pos.endsWith("left") ? { left: `calc(-1 * ${vw(CROSS_H_OFFSET_PX)})` } : {}),
-                ...(pos.endsWith("right") ? { right: `calc(-1 * ${vw(CROSS_H_OFFSET_PX)})` } : {}),
-              }}
-            />
-          ))}
+          {/* The 4 corner cross marks used to live here as cross.svg images. They are now part of
+              the background grid itself — see the gridMarks hook above. */}
         </div>
 
         {/* topside.svg — absolutely centered on the SAME point as the wordmark above (the
