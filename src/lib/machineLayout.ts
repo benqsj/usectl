@@ -28,19 +28,39 @@
 // as every fraction here, keeping `cardEnd`'s ABSOLUTE px (4176px, `0.4176 * 10000` before, `0.261 *
 // 16000` now — identical) unchanged: only the [cardEnd, 1] range — the steps — actually grew, from
 // 5824px to 11824px, roughly 2x.
-export const MACHINE_PIN_SCROLL_DISTANCE = 16000;
+//
+// Raised a third time, 16000 -> 16334, on 2026-09-20, for a DIFFERENT reason — per explicit
+// instruction to touch only the two named spots, not the sequence as a whole:
+// 1) step 8 (the last of the six, `STEP_WEIGHTS`'s last entry in machineScrollAnimation.ts) had
+//    grown to need noticeably too much scroll — its weight was cut back down (5 -> 2, the same
+//    "one ordinary step" baseline `STEP_WEIGHTS`'s own comment already documents), which by itself
+//    would have freed up (5-2) * (11824/29) ≈ 1223px. Every OTHER step's absolute px was kept
+//    exactly where it was by shrinking the [cardEnd, 1] pool by that same 1223px instead of just
+//    reallocating it — so only step 8 got shorter; steps 3-7 didn't quietly get longer to compensate.
+// 2) topside.svg's own growth (the [zoomStart, zoomEnd] window — the plate scaling up while its
+//    hatch opens) needed to be visibly SLOWER — doubled from ≈1590px to ≈3181px. `CARD_START` (when
+//    the steps-3-8 card starts flying in) is derived from this window's width inside
+//    machineScrollAnimation.ts (`zoomTimeAtHole`), so widening it pushes CARD_START later
+//    automatically — `cardEnd` was pushed later by that exact same amount so the card's OWN
+//    approach (`cardEnd - CARD_START`) keeps the scroll distance it already had, rather than
+//    getting compressed to make room. wordIn/plateIn/plateFull/wordOut/zoomStart (the wordmark
+//    phase, which ends exactly where the plate starts growing) are untouched in absolute px.
+export const MACHINE_PIN_SCROLL_DISTANCE = 16334;
 
 // Phase boundaries as fractions of that distance (tune live — see machineScrollAnimation.ts).
-// Rescaled 2026-09-20 (see the distance comment above) to keep every one of these at the SAME
-// absolute px it was at 8800: multiply each old fraction by 10000/16000 = 0.625.
+// Rescaled 2026-09-20 (see the distance comment above): wordIn/plateIn/plateFull/wordOut/zoomStart
+// keep the SAME absolute px they had at 16000 (140.8 / 649.6 / 1009.6 / 1009.6 / 1009.6); zoomEnd
+// and cardEnd both moved out to fit the doubled [zoomStart, zoomEnd] window (≈3181px, was ≈1590px)
+// while preserving the card-approach's own absolute length (cardEnd - CARD_START ≈ 1609px, same as
+// before).
 export const MACHINE_PHASES = {
-  wordIn: 0.0088,
-  plateIn: 0.0406,
-  plateFull: 0.0631,
-  wordOut: 0.0631,
-  zoomStart: 0.0631, // the plate starts growing the moment the wordmark starts leaving
-  zoomEnd: 0.1625, // by here we're through the hatch
+  wordIn: 0.0086,
+  plateIn: 0.0398,
+  plateFull: 0.0618,
+  wordOut: 0.0618,
+  zoomStart: 0.0618, // the plate starts growing the moment the wordmark starts leaving
+  zoomEnd: 0.2566, // by here we're through the hatch — widened 2026-09-20, plate now grows ~2x slower
   cardAtHole: 0.9, // the card appears once the hatch is this far open (openness, NOT a fraction of
   // the pin — so this one did NOT get rescaled)
-  cardEnd: 0.261, // and has been flown all the way to full size by here (still exactly 4176px)
+  cardEnd: 0.3511, // and has been flown all the way to full size by here
 } as const;

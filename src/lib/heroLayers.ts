@@ -28,4 +28,9 @@ export const HERO_STACK_GAP_OPEN_PX = 140;
 // added at the end so the fully-open stack stays put for ~280px of scroll before the pin releases
 // and InfrastructureSection comes up. The earlier phases therefore need exactly the same scroll
 // distance they always did.
-export const HERO_PIN_SCROLL_DISTANCE = 1260;
+//
+// Raised 1260 -> 1680 on 2026-09-20: DISASSEMBLE_DURATION (heroScrollAnimation.ts) doubled 1.8 ->
+// 3.6 per explicit instruction to slow down only the server's own disassembly — this is exactly
+// that doubled unit's worth of extra px (1.8 units * 233.33px/unit = 420px) added on top, so the
+// text fade, scale/rise and end-hold phases still need exactly the scroll they always did.
+export const HERO_PIN_SCROLL_DISTANCE = 1680;

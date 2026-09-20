@@ -34,9 +34,12 @@ const SCALE_START = 0;
 // more scroll. PIN_SCROLL_DISTANCE was scaled by the same ratio the total timeline grew by, so
 // the OTHER phases kept needing exactly the scroll they did before.
 const CUBE_SCALE_DURATION = 2.4;
-// The layer stack pulls apart. Shortened from an initial 2.8 alongside an earlier
-// PIN_SCROLL_DISTANCE cut — unrelated to the CUBE_SCALE_DURATION doubling above.
-const DISASSEMBLE_DURATION = 1.8;
+// The layer stack pulls apart (the GLB's explode_sequence). Shortened from an initial 2.8 alongside
+// an earlier PIN_SCROLL_DISTANCE cut, then doubled again 1.8 -> 3.6 on 2026-09-20 — per explicit
+// instruction to slow down only the server's own disassembly, nothing else. PIN_SCROLL_DISTANCE was
+// grown by exactly the added 1.8 units' worth of px (420px, see heroLayers.ts), so the text fade,
+// scale/rise and end-hold keep exactly the scroll they already had.
+const DISASSEMBLE_DURATION = 3.6;
 // Dead time at the END of the timeline, with the server sitting fully open: the pin keeps holding
 // for this much more scroll before it releases and InfrastructureSection starts coming up, so the
 // finished exploded view gets a beat of its own instead of being pushed off the moment it lands.

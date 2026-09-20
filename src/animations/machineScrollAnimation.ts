@@ -27,8 +27,23 @@ const TOPSIDE_MAX_SCALE = 9;
 // The "machine" entrance follows scroll frame by frame instead of playing out on its own: stop
 // scrolling and it stops too. Everything below is a pure function of the pin's progress.
 // Windows as fractions of that progress: reveal, then (later) the fade-out under the growing plate.
-const WORD_REVEALED_AT = 0.1; // fully revealed by here (reveal starts at MACHINE_PHASES.wordIn)
-const WORD_GONE_AT = 0.2; // fully gone by here (fade-out starts at MACHINE_PHASES.wordOut)
+//
+// Real bug, found 2026-09-20 from a user report that the word was still visible while topside.svg
+// and its hole were growing: these two used to be hardcoded fractions of the WHOLE pin (0.1 / 0.2)
+// tuned against the pin distance that existed back when they were written. Every later increase to
+// MACHINE_PIN_SCROLL_DISTANCE rescaled `MACHINE_PHASES` (wordIn/wordOut/zoomStart/zoomEnd) to keep
+// THEIR absolute px unchanged, but nobody rescaled these two — so as the pin kept growing, "word
+// fully gone" kept landing relatively earlier and earlier... except it didn't shrink fast enough
+// relative to the also-growing gap before the hole appears, and by the time zoomEnd was pushed out
+// further still (see machineLayout.ts's 2026-09-20 entry), the fixed 0.2 no longer had any
+// reliable relationship to wordOut/zoomStart at all. Fixed by deriving both from `P.wordIn`/
+// `P.wordOut` plus a fixed PX offset (860 / 990 — the exact gaps the original 0.1/0.2 worked out to
+// against the pin distance they were tuned at) divided by the CURRENT `PIN_SCROLL_DISTANCE` — so
+// these stay correct forever, however many more times the total gets retuned.
+const WORD_REVEAL_PX = 860; // word fully revealed this many px after P.wordIn starts it
+const WORD_EXIT_LAG_PX = 990; // word fully gone this many px after P.wordOut starts fading it
+const WORD_REVEALED_AT = P.wordIn + WORD_REVEAL_PX / PIN_SCROLL_DISTANCE;
+const WORD_GONE_AT = P.wordOut + WORD_EXIT_LAG_PX / PIN_SCROLL_DISTANCE;
 const CHAR_STAGGER_SPAN = 0.55; // how much of the reveal window the per-character stagger spans
 const WORD_HIDDEN_BLUR_PX = 12;
 const WORD_HIDDEN_Y_PX = 8;
@@ -246,7 +261,13 @@ function getGapCenter(top: HTMLElement, bottom: HTMLElement, field: HTMLElement)
 // width those went by far too fast. The pin itself grew by exactly the added weight each time
 // (7200 -> 8000 -> 8400 -> 8800 -> 10000, see machineLayout.ts), so a weight unit is still the same
 // ~200px of scroll it always was and the entrance/flight/approach ahead of the steps never moved.
-const STEP_WEIGHTS = [5, 4, 5, 5, 5, 5];
+//
+// Step 8 (the last entry) cut back down to 2 on 2026-09-20 — per feedback it needed noticeably too
+// much scroll on its own. Brought back to the same "one ordinary step" baseline the others started
+// from, rather than removed entirely. `MACHINE_PIN_SCROLL_DISTANCE` was shrunk by exactly the px
+// this freed up (see machineLayout.ts's 2026-09-20 entry) so steps 3-7 didn't quietly get longer to
+// absorb it — only step 8 got shorter.
+const STEP_WEIGHTS = [5, 4, 5, 5, 5, 2];
 
 // Cumulative start fraction (of the post-approach [P.cardEnd, 1] range) for each step, plus a
 // lookup from a progress fraction back to the step index it falls in. Falls back to plain uniform
