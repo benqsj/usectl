@@ -141,8 +141,8 @@ function layoutSpace(root: HTMLElement) {
 
   // anchor on the server -> label on the right
   const callouts: { ax: number; ay: number; ly: number; side: "right" | "left" }[] = [
-    { ax: cx + hw * 0.78, ay: cy - hh * 0.62, ly: cy - hh * 1.0, side: "right" },
-    { ax: cx + hw * 0.98, ay: cy - hh * 0.26, ly: cy - hh * 0.72, side: "right" },
+    { ax: cx + hw * 0.95, ay: cy - hh * 0.62, ly: cy - hh * 1.0, side: "right" },
+    { ax: cx + hw * 1.15, ay: cy - hh * 0.26, ly: cy - hh * 0.72, side: "right" },
   ];
   callouts.forEach((c, i) => {
     const label = root.querySelector<HTMLElement>(`[data-space-label="${i}"]`);

@@ -59,7 +59,7 @@ function MaskWords({ text, line }: { text: string; line: number }) {
 // converted from its 1440 artboard to 1920 design px (x 4/3) and to the dark theme.
 // Trimmed on feedback the same day: only the two right-hand callouts are kept (no left-hand ones,
 // no "machine" dimension), and the copy is InfrastructureSection's step 1.
-const SPACE_CALLOUTS = [{ text: "access settings" }, { text: "your app — website · api · worker" }] as const;
+const SPACE_CALLOUTS = [{ text: "the server you saw" }, { text: "handled by usectl" }] as const;
 const SPACE_COPY = INFRASTRUCTURE_STEPS_INTRO[0];
 // Parked until the timeline brings them in (GSAP's autoAlpha takes over from these).
 const SPACE_HIDDEN: CSSProperties = { opacity: 0, visibility: "hidden" };
