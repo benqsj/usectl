@@ -11,7 +11,7 @@ import {
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
 import { HEADER_HEIGHT_PX, readScale } from "@/lib/grid";
 import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
-import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
+import type { HeroDive, HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -105,6 +105,8 @@ interface HeroScrollRefs {
   spaceRef?: RefObject<HTMLDivElement | null>;
   // The "02 — your stack" overlay (HeroSectionClient.tsx), which follows "01" in the same pin.
   stackRef?: RefObject<HTMLDivElement | null>;
+  // Full-viewport cover the dive into the cap ends on (HeroSectionClient.tsx).
+  diveVeilRef?: RefObject<HTMLDivElement | null>;
 }
 
 // "03 — isolated spaces" phase (closed-server timeline only), after the rise: the server moves right,
@@ -132,6 +134,34 @@ const SPACE_SPREAD = 0.32;
 // pin — see heroLayers.ts.
 export const STACK_MOVE_DURATION = 1.6;
 export const STACK_HOLD_DURATION = 1.4;
+
+// The dive, after "02" (replaces the machine screen, 2026-09-21 — "Top dive" in
+// public/demo-stack-dive.html): the services and the copy go, the server scans back from the line
+// drawing to its rendered self, the star on the cap goes a little darker, the stack closes, the
+// server turns a quarter and the view tips over until it looks straight down, then zooms into the
+// star until it fills the screen and the screen fades to the page background. Kept short on
+// purpose ("less scroll than the demo"): DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units (~640px).
+export const DIVE_LEAD = 0.55;
+export const DIVE_MOVE = 2.0;
+export const DIVE_END = 0.2;
+// How far the zoom goes (the star fills a 1920 screen well before this).
+const DIVE_ZOOM = 70;
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const inOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const span = (m: number, a: number, b: number) => clamp01((m - a) / (b - a));
+/** The dive's pose for m 0..1 (the "Top dive" curves from the approved demo). */
+function divePose(m: number, starDark: number): HeroDive {
+  const turn = inOut(span(m, 0.05, 0.55));
+  return {
+    turn: 90 * turn,
+    elev: 35 + (89.9 - 35) * turn,
+    focus: inOut(span(m, 0.3, 0.75)),
+    zoom: Math.exp(Math.log(DIVE_ZOOM) * Math.pow(span(m, 0.4, 1), 4)),
+    starDark,
+    hidden: m >= 1,
+  };
+}
 // On "02" the server ends up this much smaller than on "01", and this much further right (share of
 // the viewport width, on top of SPACE_SHIFT_X_VW). Kept small on purpose — "a touch", per feedback.
 const STACK_SCALE_RATIO = 0.9;
@@ -263,6 +293,7 @@ export function useHeroScrollAnimation({
   gridMarks,
   spaceRef,
   stackRef,
+  diveVeilRef,
 }: HeroScrollRefs) {
   useGSAP(
     () => {
@@ -349,6 +380,7 @@ export function useHeroScrollAnimation({
       // per-frame line tracker on cleanup.
       let syncStack: (() => void) | null = null;
       let removeTicker: (() => void) | null = null;
+      let applyDiveOnSync: (() => void) | null = null;
 
       const tl = gsap.timeline({
         scrollTrigger: {
@@ -393,6 +425,8 @@ export function useHeroScrollAnimation({
       // "02 — your stack": 0 = rendered server, 1 = line drawing (HeroServerModel.setBlueprint).
       const blueprint = { t: 0 };
       const stackHold = { t: 0 };
+      // the dive: `m` is its move (0..1), `star` how dark the star is
+      const dive = { m: 0, star: 0 };
 
       // 1. Text rises and fades out (not a plain in-place dissolve).
       tl.to(
@@ -610,11 +644,65 @@ export function useHeroScrollAnimation({
             modelRef.current?.setBlueprint(blueprint.t);
             revealed = time >= revealAt;
             reveal.pause().progress(revealed ? 1 : 0);
+            applyDiveOnSync?.();
           };
 
-          // Lines follow the server every frame while "02" is on screen.
+          // 6'. The dive into the cap (DIVE_* above).
+          const D = T + M + STACK_HOLD_DURATION;
+          const services = stack.querySelector<HTMLElement>("[data-stack-services]");
+          if (services) tl.to(services, { autoAlpha: 0, y: -12, duration: 0.35, ease: "power1.in" }, D);
+          if (stackText) {
+            tl.to(
+              [...stackText.children],
+              { autoAlpha: 0, y: -28, filter: "blur(8px)", duration: 0.32, ease: "power2.in", stagger: 0.06 },
+              D + 0.05,
+            );
+          }
+          // colour back: the same scan, running back up
+          tl.fromTo(
+            blueprint,
+            { t: 1 },
+            {
+              t: 0,
+              duration: 0.7,
+              ease: "power2.inOut",
+              immediateRender: false,
+              onUpdate: () => modelRef.current?.setBlueprint(blueprint.t),
+            },
+            D + 0.15,
+          );
+          // the stack closes as the turn starts
+          tl.fromTo(
+            disassemble,
+            { t: SPACE_SPREAD },
+            {
+              t: 0,
+              duration: 0.7,
+              ease: "power2.inOut",
+              immediateRender: false,
+              onUpdate: () => modelRef.current?.setProgress(disassemble.t),
+            },
+            D + DIVE_LEAD,
+          );
+          const applyDive = () => modelRef.current?.setDive(divePose(dive.m, dive.star));
+          tl.fromTo(dive, { star: 0 }, { star: 1, duration: 0.5, ease: "power1.inOut", immediateRender: false, onUpdate: applyDive }, D + 0.6);
+          tl.fromTo(dive, { m: 0 }, { m: 1, duration: DIVE_MOVE, ease: "none", immediateRender: false, onUpdate: applyDive }, D + DIVE_LEAD);
+          const veil = diveVeilRef?.current;
+          if (veil) {
+            tl.fromTo(
+              veil,
+              { opacity: 0 },
+              { opacity: 1, duration: DIVE_MOVE * 0.15, ease: "power1.in", immediateRender: false },
+              D + DIVE_LEAD + DIVE_MOVE * 0.85,
+            );
+          }
+          tl.to({}, { duration: DIVE_END }, D + DIVE_LEAD + DIVE_MOVE);
+          applyDiveOnSync = applyDive;
+
+          // Lines follow the server every frame while "02"'s services are on screen.
           const track = () => {
-            if (tl.time() < T) return;
+            const time = tl.time();
+            if (time < T || time > D + 0.4) return;
             trackStackLines(stack, modelRef.current);
           };
           gsap.ticker.add(track);

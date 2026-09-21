@@ -59,6 +59,26 @@ export interface HeroServerModelHandle {
    * layer's side wall — what a callout line attaches to.
    */
   projectAnchors: () => { right: { x: number; y: number }[]; left: { x: number; y: number }[] } | null;
+  /**
+   * The dive into the cap that follows "02" (heroScrollAnimation.ts, DIVE_*). Only meaningful while
+   * the pose is locked. `turn` is degrees added to the locked yaw, `elev` the camera elevation
+   * (35 = the usual 3/4 view, 90 = straight down), `focus` 0..1 moves the view's centre from the
+   * server's middle onto the star on the cap, `zoom` magnifies, `starDark` 0..1 takes the star from
+   * chrome to a dark finish. All zero/neutral ({turn 0, elev rest, focus 0, zoom 1, starDark 0})
+   * is exactly the normal view. While `zoom` is above 1 the canvas grows to cover the viewport, so
+   * the dive fills the screen instead of being cut off at the canvas's usual box.
+   */
+  setDive: (d: HeroDive) => void;
+}
+
+export interface HeroDive {
+  turn: number;
+  elev: number;
+  focus: number;
+  zoom: number;
+  starDark: number;
+  /** True once the dive has ended under the page-coloured veil: nothing to draw until it goes back. */
+  hidden?: boolean;
 }
 
 interface HeroServerModelProps {
@@ -214,12 +234,14 @@ export function HeroServerModel({
       // Orthographic, not perspective: the artwork this replaces is a flat isometric projection,
       // and an ortho camera is what keeps the silhouette matching it at every scale.
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+      /** What the camera looks at — the origin, except during the dive (setDive). */
+      const diveTarget = new THREE.Vector3();
       const baseElevation = HERO_MODEL_REST_ELEVATION_DEG;
       let elevation = baseElevation;
       const placeCamera = () => {
         const e = THREE.MathUtils.degToRad(elevation);
-        camera.position.set(0, Math.sin(e), Math.cos(e)).multiplyScalar(4);
-        camera.lookAt(0, 0, 0);
+        camera.position.set(0, Math.sin(e), Math.cos(e)).multiplyScalar(4).add(diveTarget);
+        camera.lookAt(diveTarget);
       };
       placeCamera();
 
@@ -227,7 +249,9 @@ export function HeroServerModel({
         light.position.set(x, y, z);
         scene.add(light);
       };
-      addLight(new THREE.DirectionalLight(0xffffff, 1.15), 2, 3.5, 2); // key
+      const KEY_LIGHT_INTENSITY = 1.15;
+      const keyLight = new THREE.DirectionalLight(0xffffff, KEY_LIGHT_INTENSITY);
+      addLight(keyLight, 2, 3.5, 2); // key
       addLight(new THREE.DirectionalLight(0xbfd8ff, 0.3), -3, 1.5, -1.5); // cool fill
       addLight(new THREE.DirectionalLight(0x8effb0, 0.45), -1.5, -0.5, -3); // green rim
       scene.add(new THREE.AmbientLight(0xffffff, 0.08));
@@ -250,6 +274,16 @@ export function HeroServerModel({
 
       // ---- "02 — your stack": blueprint look + locked pose ---------------------------------------
       let poseLocked = false;
+      /** The quarter-turn yaw the lock settles on, captured when the lock engages. */
+      let lockYaw: number | null = null;
+      // ---- the dive (setDive) ----
+      let dive: HeroDive | null = null;
+      let covering = false;
+      const starWorld = new THREE.Vector3();
+      let starMaterial: MeshStandardMaterial | null = null;
+      const starFrom = new THREE.Color();
+      /** The star's dark finish — "a little darker" than the titanium around it. */
+      const STAR_DARK = new THREE.Color(0.035, 0.038, 0.045);
       let blueprintT = 0;
       /** Built on first use (see buildBlueprint) — null until then. */
       let blueprint: {
@@ -576,6 +610,72 @@ export function HeroServerModel({
       const setPoseLock = (on: boolean) => {
         poseLocked = on;
         if (on) dragging = false;
+        if (!on) lockYaw = null;
+      };
+
+      /** Where the camera looks: the model's centre, sliding onto the star as `focus` goes to 1. */
+      const updateDiveTarget = () => {
+        const d = dive;
+        diveTarget.set(0, 0, 0);
+        if (d && d.focus > 0 && gltfRoot) {
+          const star = gltfRoot.getObjectByName("star_logo");
+          if (star) {
+            holder.updateMatrixWorld(true);
+            star.getWorldPosition(starWorld);
+            diveTarget.copy(starWorld).multiplyScalar(d.focus);
+          }
+        }
+      };
+
+      const applyDive = () => {
+        const d = dive;
+        updateDiveTarget();
+        camera.zoom = d ? Math.max(d.zoom, 0.01) : 1;
+        camera.updateProjectionMatrix();
+        // looking straight down, the key light lands flat on the cap and washes it out
+        const down = d ? smoothstep((d.elev - 45) / 45) : 0;
+        keyLight.intensity = KEY_LIGHT_INTENSITY * (1 - 0.52 * down);
+        const cover = !!d && d.zoom > 1.001;
+        // Once the dive has ended under its veil the canvas is hidden outright, not just left
+        // un-rendered: its last (full-viewport, zoomed) frame would otherwise stay on it and show
+        // below the veil as the hero scrolls away.
+        stage.style.visibility = d?.hidden ? "hidden" : "";
+        if (cover !== covering) {
+          covering = cover;
+          resize();
+        }
+        placeCamera();
+      };
+
+      const setDive = (d: HeroDive) => {
+        dive = d;
+        if (introStart >= 0) finishIntro();
+        // the star gets a material of its own the first time it is asked to darken
+        if (d.starDark > 0 && !starMaterial && gltfRoot) {
+          const star = gltfRoot.getObjectByName("star_logo");
+          const spokes: Mesh[] = [];
+          star?.traverse((o) => {
+            const mesh = o as Mesh;
+            if (mesh.isMesh && !mesh.userData.blueprintPart && /spoke/.test(mesh.name)) spokes.push(mesh);
+          });
+          if (spokes.length) {
+            const copy = (spokes[0].material as MeshStandardMaterial).clone();
+            replacedMaterials.add(copy);
+            for (const mesh of spokes) mesh.material = copy;
+            starMaterial = copy;
+            starFrom.copy(copy.color);
+            copy.userData.metalness = copy.metalness;
+            copy.userData.roughness = copy.roughness;
+            blueprint?.solids.push({ material: copy, transparent: false, opacity: 1, depthWrite: true });
+          }
+        }
+        if (starMaterial) {
+          const k = clamp01(d.starDark);
+          starMaterial.color.copy(starFrom).lerp(STAR_DARK, k);
+          starMaterial.metalness = THREE.MathUtils.lerp(starMaterial.userData.metalness ?? 1, 0.6, k);
+          starMaterial.roughness = THREE.MathUtils.lerp(starMaterial.userData.roughness ?? 0.25, 0.45, k);
+        }
+        applyDive();
       };
 
       const measureAnchorBoxes = () => {
@@ -633,8 +733,24 @@ export function HeroServerModel({
       const resize = () => {
         const wrapperWidth = wrapper.clientWidth;
         if (!wrapperWidth) return;
-        const width = Math.round(wrapperWidth * HERO_STAGE_WIDTH_RATIO);
-        const height = Math.round(wrapperWidth * HERO_STAGE_HEIGHT_RATIO);
+        let width = Math.round(wrapperWidth * HERO_STAGE_WIDTH_RATIO);
+        let height = Math.round(wrapperWidth * HERO_STAGE_HEIGHT_RATIO);
+        const anchorTop = (3 * HERO_STACK_GAP_CLOSED_PX * readScale() + wrapperWidth * HERO_CORE_HEIGHT_RATIO) / 2;
+        if (covering) {
+          // Grow (never shrink) the stage until it reaches every edge of the viewport, measured from
+          // where its centre is on screen right now. The frustum below is derived from the size at
+          // the same px-per-unit, so the model itself does not move or change size.
+          const rect = wrapper.getBoundingClientRect();
+          const k = rect.width / wrapperWidth || 1;
+          // Clamped to the viewport: measured while the hero is scrolled away (a refresh deep in the
+          // page re-syncs the dive), the raw centre can be thousands of px off-screen, which would
+          // ask for an enormous canvas. Pinned — the only time it is seen — it is always on screen.
+          const sx = Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth);
+          const sy = Math.min(Math.max(rect.top + anchorTop * k, 0), window.innerHeight);
+          const margin = 40;
+          width = Math.max(width, Math.ceil((2 * (Math.max(sx, window.innerWidth - sx) + margin)) / k));
+          height = Math.max(height, Math.ceil((2 * (Math.max(sy, window.innerHeight - sy) + margin)) / k));
+        }
         stage.style.width = `${width}px`;
         stage.style.height = `${height}px`;
         // Anchored to the wrapper's CLOSED centre, which is a constant — the wrapper's own height
@@ -642,7 +758,7 @@ export function HeroServerModel({
         // The gap is a design px like any other and the wrapper around it is now fluid, so it has
         // to be scaled here too — otherwise the anchor drifts as the viewport narrows. resize()
         // re-runs on every window resize, so readScale() is always current.
-        stage.style.top = `${(3 * HERO_STACK_GAP_CLOSED_PX * readScale() + wrapperWidth * HERO_CORE_HEIGHT_RATIO) / 2}px`;
+        stage.style.top = `${anchorTop}px`;
 
         renderer.setSize(width, height, false);
         const pxPerUnit = HERO_MODEL_PX_PER_UNIT * (wrapperWidth / HERO_MODEL_BASE_WIDTH_PX);
@@ -716,6 +832,12 @@ export function HeroServerModel({
       grab.addEventListener("pointercancel", endDrag);
       grab.addEventListener("lostpointercapture", endDrag);
 
+      let onScreen = true;
+      const visibility = new IntersectionObserver(([entry]) => {
+        onScreen = entry.isIntersecting;
+      });
+      visibility.observe(stage);
+
       const onResize = () => resize();
       window.addEventListener("resize", onResize);
       resize();
@@ -727,13 +849,26 @@ export function HeroServerModel({
         const dt = Math.min(clock.getDelta(), 0.05);
         if (turntable && poseLocked) {
           // Settle on the nearest 45° + k·90° — the pose the reference is drawn in — and hold it.
+          // The dive's turn is added on top; scroll already eases it (the timeline scrubs), so once
+          // the lock has settled the turn is applied as it comes.
           omega = 0;
           const quarter = Math.PI / 2;
           const offset = THREE.MathUtils.degToRad(HERO_MODEL_START_YAW_DEG);
-          const target = Math.round((turntable.rotation.y - offset) / quarter) * quarter + offset;
-          turntable.rotation.y += (target - turntable.rotation.y) * (1 - Math.exp(-dt / 0.35));
-          if (Math.abs(elevation - baseElevation) > 0.01) {
-            elevation += (baseElevation - elevation) * (1 - Math.exp(-dt / HERO_MODEL_RESUME_TAU_S));
+          if (lockYaw === null) {
+            lockYaw = Math.round((turntable.rotation.y - offset) / quarter) * quarter + offset;
+          }
+          const target = lockYaw + THREE.MathUtils.degToRad(dive?.turn ?? 0);
+          const tau = dive && dive.turn !== 0 ? 0.08 : 0.35;
+          turntable.rotation.y += (target - turntable.rotation.y) * (1 - Math.exp(-dt / tau));
+          const wantElev = dive ? dive.elev : baseElevation;
+          if (Math.abs(elevation - wantElev) > 0.01) {
+            const eTau = dive && dive.elev !== baseElevation ? 0.08 : HERO_MODEL_RESUME_TAU_S;
+            elevation += (wantElev - elevation) * (1 - Math.exp(-dt / eTau));
+            placeCamera();
+          }
+          // the star moves with the turn, so the camera keeps re-aiming at it
+          if (dive && dive.focus > 0) {
+            updateDiveTarget();
             placeCamera();
           }
         } else if (turntable && !dragging) {
@@ -751,6 +886,9 @@ export function HeroServerModel({
           if (t >= introEnd()) finishIntro();
           else applyIntro(t);
         }
+        // Nothing to draw once the dive has ended under its veil, or while the canvas is off screen
+        // — at the dive's full-viewport size that would otherwise be real work for nothing.
+        if (dive?.hidden || !onScreen) return;
         renderer.render(scene, camera);
       });
 
@@ -805,7 +943,7 @@ export function HeroServerModel({
           else setGlow(1, 1);
         }
         ready = true;
-        apiRef.current = { setProgress, setBlueprint, setPoseLock, projectAnchors };
+        apiRef.current = { setProgress, setBlueprint, setPoseLock, projectAnchors, setDive };
         onReadyRef.current?.();
         if (intro) onIntroRef.current?.(introStart >= 0);
       });
@@ -813,6 +951,7 @@ export function HeroServerModel({
       teardown = () => {
         renderer.setAnimationLoop(null);
         window.removeEventListener("resize", onResize);
+        visibility.disconnect();
         grab.removeEventListener("pointerdown", onPointerDown);
         grab.removeEventListener("pointermove", onPointerMove);
         grab.removeEventListener("pointerup", endDrag);

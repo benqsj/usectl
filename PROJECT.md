@@ -1145,6 +1145,54 @@ becomes a line drawing (wireframe), not just an exploded render; the old Infrast
   solid spinning server; `tsc` and `eslint` clean. Not verified on a real GPU (headless SwiftShader ran
   at <1 fps, so timings were checked by driving the timeline directly).
 
+## Hero ends with a dive into the cap; machine screen taken off the page (2026-09-21)
+
+Picked "1 · Top dive" from `public/demo-stack-dive.html` (four versions were shown), with less
+scroll than the demo. After "02 — your stack", still inside the hero's pin
+(`heroScrollAnimation.ts`, `DIVE_*`, `divePose()`):
+
+- the services (now one `[data-stack-services]` box, so the scrubbed exit doesn't fight the reveal
+  timeline) fade up and out, and "02"'s copy lifts and blurs away line by line;
+- the same scan runs back up — line drawing -> rendered server;
+- the star on the cap goes a little darker (its spokes get their own material on first use);
+- the stack closes, turns a quarter and the camera tips from 35° to straight down, then the view
+  homes in on the star and zooms x70 into it; a page-coloured veil (`diveVeilRef`) fades in over the
+  last 15%, and the pin releases onto the pricing section.
+- Scroll: DIVE_LEAD 0.55 + DIVE_MOVE 2.0 + DIVE_END 0.2 = 2.75 units; `HERO_PIN_SCROLL_DISTANCE`
+  1820 -> 2462.
+- `HeroServerModel.setDive({turn, elev, focus, zoom, starDark, hidden})`. While zoom > 1 the canvas
+  grows to cover the viewport (same px-per-unit, so the model doesn't move); the size is computed with
+  the on-screen centre clamped to the viewport, because a refresh deep in the page re-syncs the dive
+  while the hero is scrolled away. The render loop now skips frames when the canvas is off screen
+  (IntersectionObserver) or the dive has ended under the veil.
+- `page.tsx`: `MachineSection` removed from the page — restored later the same evening with
+  `skipIntro` (see the next entry).
+- Verified with Playwright (headless SwiftShader, so poses were checked by driving the timeline, not
+  by real-time scrolling): copy/services out, colour back, top-down star, full-screen zoom, veil,
+  pricing arriving after the pin. `tsc`/`eslint` clean.
+
+## Pricing section off the page; steps 3-8 back, entered from the dive (2026-09-21)
+
+- `page.tsx`: `PricingCalculatorSection` ("Know your hosting bill before you launch.") removed from the
+  page (files untouched). `MachineSection` is back, as `<MachineSection skipIntro />`.
+- `skipIntro` (machineLayout.ts `MACHINE_SKIP_INTRO_FROM` = `zoomEnd`,
+  `MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE` = 16334 x (1 - zoomEnd) = 12143): the machine pin starts
+  where the old topside fly-through ended — the wordmark and topside are already gone — so the first
+  thing after the hero's dive is the steps 3-8 card flying in from the depth (its approach now starts
+  at the pin's start instead of `CARD_START`), then steps 3-8 exactly as before. The pin's own
+  progress is mapped onto the full sequence in `applySmoothed` (`fromPin`), so everything downstream
+  (step boundaries, step 3/4 server + icons, the diagrams, the bar) is unchanged. Without the prop the
+  section behaves exactly as it did.
+- Follow-up (feedback with screenshots): (1) a strip of the zoomed star showed below the veil as the
+  hero scrolled away — skipping renders left the last full-viewport frame on the canvas; the stage is
+  now `visibility: hidden` once the dive has ended. (2) The machine screen scrolled up from below
+  after the dive; it should just appear. With `skipIntro` the section is now pulled up by the hero
+  section's own height (`[data-hero-section]`, re-measured in `onRefreshInit`), so its pin starts on
+  the exact scroll the hero's pin ends on (checked: both 1738 at 1280x720) and the card appears in
+  place. Until then the (transparent, empty) machine screen passes over the pinned hero.
+- Verified with Playwright: hero dive -> dark screen -> card flies in -> "Give every project its own
+  space." -> "Run each part independently.". `tsc`/`eslint` clean.
+
 ## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - ~~`BuildSectionClient.tsx` — the 4 corner "+" crosses...~~ — **done, 2026-09-21**, see the "Grid-mark fixes" entry above. The Infrastructure card's own four are still missing — same `useGridMarks(ref, {gapX, gapY})` pattern, one call. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.

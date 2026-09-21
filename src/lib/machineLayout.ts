@@ -64,3 +64,12 @@ export const MACHINE_PHASES = {
   // the pin — so this one did NOT get rescaled)
   cardEnd: 0.3511, // and has been flown all the way to full size by here
 } as const;
+
+// "Skip intro" mode (2026-09-21): the hero now ends by diving into the server's own cap, which does
+// the job the wordmark + topside fly-through used to do — so the machine screen can start straight
+// at the card flying in from the depth. The pin then only covers [zoomEnd, 1] of the full sequence
+// (the card's approach, then steps 3-8 exactly as before); everything before it is skipped.
+export const MACHINE_SKIP_INTRO_FROM = MACHINE_PHASES.zoomEnd;
+export const MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE = Math.round(
+  MACHINE_PIN_SCROLL_DISTANCE * (1 - MACHINE_SKIP_INTRO_FROM),
+);

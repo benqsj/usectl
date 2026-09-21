@@ -48,4 +48,7 @@ export const HERO_EXPLODE_ON_SCROLL = false;
 // swaps, the server turns into a line drawing, the services come in around it. It adds
 // STACK_MOVE_DURATION + STACK_HOLD_DURATION = 3 units:
 // 1120 + 3 * 233.33 = 1820.
-export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 1820;
+//
+// Then the dive into the cap that replaces the machine screen (heroScrollAnimation.ts, DIVE_*):
+// DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units: 1820 + 2.75 * 233.33 = 2462.
+export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 2462;

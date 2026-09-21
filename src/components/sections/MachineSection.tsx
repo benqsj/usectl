@@ -9,9 +9,10 @@ import { readMachineServerParts } from "@/lib/machineServerParts";
 // 2026-09-18 for the same 2-part titanium server the intro uses: step 3 now separates it and
 // reveals the server-icons in the gap, step 4 fades the top half + icons into the "machine"
 // wordmark (see machineScrollAnimation.ts's "step 3 -> step 4" block) — approved via demo first.
-export function MachineSection() {
+export function MachineSection({ skipIntro = false }: { skipIntro?: boolean }) {
   return (
     <MachineSectionClient
+      skipIntro={skipIntro}
       steps={INFRASTRUCTURE_STEPS_AFTER_MACHINE}
       machineServer={readMachineServerParts("machine-inside")}
     />

@@ -2,7 +2,12 @@ import type { RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
-import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
+import {
+  MACHINE_PHASES,
+  MACHINE_PIN_SCROLL_DISTANCE,
+  MACHINE_SKIP_INTRO_FROM,
+  MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE,
+} from "@/lib/machineLayout";
 import { gridMetrics, readScale } from "@/lib/grid";
 import type { AnchorBox, GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import { createStepSwap } from "@/animations/stepSwap";
@@ -431,6 +436,9 @@ interface MachineScrollRefs {
   fillRef: RefObject<HTMLElement | null>;
   stepCount: number;
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
+  // Start at the card's approach, skipping the wordmark + topside fly-through (machineLayout.ts,
+  // MACHINE_SKIP_INTRO_*). The rest of the sequence is untouched.
+  skipIntro?: boolean;
 }
 
 // ONE pin for the whole "machine" sequence (per the approved demo):
@@ -466,6 +474,7 @@ export function useMachineScrollAnimation({
   fillRef,
   stepCount,
   ssrScrollReserveRef,
+  skipIntro = false,
 }: MachineScrollRefs) {
   useGSAP(
     (_context, contextSafe) => {
@@ -618,7 +627,7 @@ export function useMachineScrollAnimation({
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // No pin, no motion: the wordmark and the content are simply there, the plate is not.
-        applyWordmark(WORD_REVEALED_AT);
+        applyWordmark(skipIntro ? 1 : WORD_REVEALED_AT);
         // …but no corner marks. They are drawn in VIEWPORT space by the background grid, which is
         // only ever right while this screen is pinned (i.e. also standing still in the viewport).
         // With the pin gone the wordmark scrolls and they would stay behind, floating on their own.
@@ -661,7 +670,9 @@ export function useMachineScrollAnimation({
         });
 
         // 4) the card: already there when the hatch is ~90% open, then flown towards, slowly
-        const approachRaw = clamp01((progress - CARD_START) / (P.cardEnd - CARD_START));
+        // (skipping the intro, the card starts its approach right at the start of the pin)
+        const cardStart = skipIntro ? MACHINE_SKIP_INTRO_FROM : CARD_START;
+        const approachRaw = clamp01((progress - cardStart) / (P.cardEnd - cardStart));
         const approach = easeCardIn(approachRaw);
         // blur only while it's still small — a blur filter on a full-size card is expensive
         const cardBlur = Math.max(0, 1 - approachRaw * 3) * 10;
@@ -849,7 +860,10 @@ export function useMachineScrollAnimation({
       // a new aim replaces the old one rather than queueing behind it, so it always converges on
       // where the scroll actually is, and lands exactly there when the reader stops.
       const smoothed = { p: 0 };
-      const applySmoothed = contextSafe!((target: number, forceInstant: boolean) => {
+      // The pin's own progress -> the full sequence's progress (identity unless skipping the intro).
+      const fromPin = (p: number) => (skipIntro ? MACHINE_SKIP_INTRO_FROM + p * (1 - MACHINE_SKIP_INTRO_FROM) : p);
+      const applySmoothed = contextSafe!((rawTarget: number, forceInstant: boolean) => {
+        const target = fromPin(rawTarget);
         if (forceInstant) {
           gsap.killTweensOf(smoothed);
           smoothed.p = target;
@@ -865,10 +879,22 @@ export function useMachineScrollAnimation({
         });
       });
 
+      // Skipping the intro, this screen takes over from the hero's dive IN PLACE: it is pulled up by
+      // the hero's own height so that its pin starts on the exact scroll position the hero's pin
+      // ends on — the card then appears where the dive left off instead of the whole screen
+      // scrolling up from below. (Until then it passes, empty and transparent, over the pinned
+      // hero.) Re-measured on every refresh, since the hero's height follows the viewport.
+      const hero = skipIntro ? document.querySelector<HTMLElement>("[data-hero-section]") : null;
+      const alignToHero = () => {
+        if (hero && section) section.style.marginTop = `${-hero.offsetHeight}px`;
+      };
+      alignToHero();
+
       const machineTrigger = ScrollTrigger.create({
+        onRefreshInit: alignToHero,
         trigger: section,
         start: "top top",
-        end: () => `+=${PIN_SCROLL_DISTANCE * readScale()}`,
+        end: () => `+=${(skipIntro ? MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE : PIN_SCROLL_DISTANCE) * readScale()}`,
         scrub: true,
         pin: true,
         pinSpacing: true,
@@ -910,6 +936,6 @@ export function useMachineScrollAnimation({
       window.addEventListener(SCROLL_RESTORED_EVENT, onScrollRestored);
       return () => window.removeEventListener(SCROLL_RESTORED_EVENT, onScrollRestored);
     },
-    { scope: sectionRef, dependencies: [stepCount] },
+    { scope: sectionRef, dependencies: [stepCount, skipIntro] },
   );
 }

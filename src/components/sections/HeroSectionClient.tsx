@@ -131,6 +131,7 @@ export function HeroSectionClient() {
   const glowRef = useRef<HTMLDivElement>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
   const stackRef = useRef<HTMLDivElement>(null);
+  const diveVeilRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
@@ -170,6 +171,7 @@ export function HeroSectionClient() {
     gridMarks,
     spaceRef,
     stackRef,
+    diveVeilRef,
   });
 
   // The GLB arrives well after the timeline is built, always starting at its closed pose. This
@@ -204,6 +206,7 @@ export function HeroSectionClient() {
   return (
     <section
       ref={sectionRef}
+      data-hero-section=""
       className="relative flex flex-col items-center px-6 pt-16 pb-28 text-center md:pb-36"
     >
       <div ref={contentRef}>
@@ -365,21 +368,6 @@ export function HeroSectionClient() {
         className="pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-screen text-left md:block"
         style={SPACE_HIDDEN}
       >
-        <svg data-stack-svg className="absolute inset-0 h-full w-full" fill="none">
-          {STACK_CHIPS.map((c, i) => (
-            <g key={c.label} data-stack-line={i}>
-              <path
-                pathLength={1}
-                strokeDasharray="1"
-                strokeDashoffset="1"
-                stroke="rgba(255,255,255,0.55)"
-                strokeWidth="1"
-              />
-              <circle r="3.5" fill="var(--brand)" opacity="0" />
-            </g>
-          ))}
-        </svg>
-
         <div
           data-stack-text
           className="absolute left-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex w-[calc(var(--s)*627)] flex-col gap-[calc(var(--s)*24)]"
@@ -394,36 +382,65 @@ export function HeroSectionClient() {
           </p>
         </div>
 
-        <div
-          data-stack-label
-          className="absolute right-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex items-center gap-[calc(var(--s)*13)] font-mono text-[calc(var(--s)*17)] text-brand"
-          style={SPACE_HIDDEN}
-        >
-          <span className="block h-px w-[calc(var(--s)*37)] bg-brand" />
-          your project — {STACK_CHIPS.length} services
-        </div>
+        {/* The services (lines, chips, label) in one box, so the dive can take them away together
+            without fighting the reveal timeline that brings each of them in. */}
+        <div data-stack-services className="absolute inset-0">
+          <svg data-stack-svg className="absolute inset-0 h-full w-full" fill="none">
+            {STACK_CHIPS.map((c, i) => (
+              <g key={c.label} data-stack-line={i}>
+                <path
+                  pathLength={1}
+                  strokeDasharray="1"
+                  strokeDashoffset="1"
+                  stroke="rgba(255,255,255,0.55)"
+                  strokeWidth="1"
+                />
+                <circle r="3.5" fill="var(--brand)" opacity="0" />
+              </g>
+            ))}
+          </svg>
 
-        {STACK_CHIPS.map((c, i) => (
           <div
-            key={c.label}
-            data-stack-chip={i}
-            data-side={c.side}
-            data-layer={c.layer}
-            className="absolute flex h-[calc(var(--s)*45)] items-center gap-[calc(var(--s)*11)] rounded-[calc(var(--s)*8)] border border-white/40 bg-background px-[calc(var(--s)*16)] font-mono text-[calc(var(--s)*17)] whitespace-nowrap text-white/85"
+            data-stack-label
+            className="absolute right-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex items-center gap-[calc(var(--s)*13)] font-mono text-[calc(var(--s)*17)] text-brand"
             style={SPACE_HIDDEN}
           >
-            <Image
-              src={`/infrastructur/server-icons/${c.icon}.svg`}
-              alt=""
-              width={68}
-              height={68}
-              className="h-[calc(var(--s)*24)] w-[calc(var(--s)*24)] object-contain"
-              style={{ filter: "brightness(2.6)" }}
-            />
-            <span>{c.label}</span>
+            <span className="block h-px w-[calc(var(--s)*37)] bg-brand" />
+            your project — {STACK_CHIPS.length} services
           </div>
-        ))}
+
+          {STACK_CHIPS.map((c, i) => (
+            <div
+              key={c.label}
+              data-stack-chip={i}
+              data-side={c.side}
+              data-layer={c.layer}
+              className="absolute flex h-[calc(var(--s)*45)] items-center gap-[calc(var(--s)*11)] rounded-[calc(var(--s)*8)] border border-white/40 bg-background px-[calc(var(--s)*16)] font-mono text-[calc(var(--s)*17)] whitespace-nowrap text-white/85"
+              style={SPACE_HIDDEN}
+            >
+              <Image
+                src={`/infrastructur/server-icons/${c.icon}.svg`}
+                alt=""
+                width={68}
+                height={68}
+                className="h-[calc(var(--s)*24)] w-[calc(var(--s)*24)] object-contain"
+                style={{ filter: "brightness(2.6)" }}
+              />
+              <span>{c.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* The end of the dive into the cap: the view fades out to the page background while still
+          pinned, so the next section comes up out of a clean screen. Opacity driven by
+          heroScrollAnimation.ts (DIVE_*). */}
+      <div
+        ref={diveVeilRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 hidden h-screen bg-background md:block"
+        style={{ opacity: 0 }}
+      />
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
           (see heroScrollAnimation.ts, where it's collapsed to 0 right before that real pin-spacer

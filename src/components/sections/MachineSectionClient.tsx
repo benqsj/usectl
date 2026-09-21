@@ -14,7 +14,7 @@ import {
   measureDiagramBox,
   TOPSIDE_HIDDEN_SCALE,
 } from "@/animations/machineScrollAnimation";
-import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
+import { MACHINE_PIN_SCROLL_DISTANCE, MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
 import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
 import { vw, s, HEADER_HEIGHT_PX } from "@/lib/grid";
 
@@ -56,11 +56,13 @@ interface MachineSectionClientProps {
   // server-icons in the gap), step 4 fades it into the "machine" wordmark. Same asset/component the
   // intro (steps 1-2) uses; see machineScrollAnimation.ts's "step 3 -> step 4" block.
   machineServer: MachineServerParts;
+  // Start at the card flying in, without the wordmark + topside fly-through (machineLayout.ts).
+  skipIntro?: boolean;
 }
 
 const TOPSIDE_RASTER_WIDTH = 1376; // 2x topside.svg's own 688 — see useRasterizedSvg
 
-export function MachineSectionClient({ steps, machineServer }: MachineSectionClientProps) {
+export function MachineSectionClient({ steps, machineServer, skipIntro = false }: MachineSectionClientProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLDivElement>(null);
@@ -145,6 +147,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
     fillRef,
     stepCount: steps.length,
     ssrScrollReserveRef,
+    skipIntro,
   });
 
   return (
@@ -263,7 +266,11 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
           and after client JS runs, and so the collapse-before-pin-capture sequencing described
           above works out to exactly a full-viewport pin snapshot. Mirrors Hero/Infrastructure's
           identical fix for an identical bug (see PROJECT.md). */}
-      <div ref={ssrScrollReserveRef} aria-hidden="true" style={{ height: s(MACHINE_PIN_SCROLL_DISTANCE) }} />
+      <div
+        ref={ssrScrollReserveRef}
+        aria-hidden="true"
+        style={{ height: s(skipIntro ? MACHINE_SKIP_INTRO_PIN_SCROLL_DISTANCE : MACHINE_PIN_SCROLL_DISTANCE) }}
+      />
     </section>
   );
 }
