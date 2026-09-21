@@ -4,10 +4,18 @@ import Link from "next/link";
 import { useCallback, useRef, type CSSProperties } from "react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
-import { useBuildScrollAnimation } from "@/animations/buildScrollAnimation";
+import { useBuildScrollAnimation, LIFT_ON_CLOSE_PX } from "@/animations/buildScrollAnimation";
 import { HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
-import { HEADER_HEIGHT_PX, s } from "@/lib/grid";
+import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
+import { HEADER_HEIGHT_PX, readScale, s } from "@/lib/grid";
 import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
+import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
+
+// Same relationship the hero's own corner crosses use around its identically-sized (480px) cube —
+// see HeroSectionClient.tsx. gapY: 0 = the row nearest each edge, not pushed away.
+const BUILD_MODEL_WIDTH_PX = 480;
+const BUILD_MARK_GAP_X_PX = 129;
+const BUILD_MARK_GAP_Y_PX = 0;
 
 // Built from a user-supplied screenshot (see PROJECT.md), 2026-09-18. Heading/paragraph/button
 // typography and the two button boxes' exact px dimensions are all explicit spec, not eyeballed.
@@ -33,8 +41,51 @@ export function BuildSectionClient() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
+  // Written by useBuildScrollAnimation's own ScrollTrigger callbacks — see its doc comment and
+  // markBox's own below for why this, not getComputedStyle, is the right signal.
+  const isPinnedRef = useRef(false);
 
-  useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrScrollReserveRef });
+  // The box the marks snap around — only meaningful while genuinely pinned; see `isPinnedRef`'s own
+  // doc comment for why that, not `getComputedStyle`, is the signal to branch on.
+  //
+  // The wrapper's live rect isn't usable directly while pinned (its height shrinks via --stack-gap
+  // and it rises via a transform as the server closes — see buildScrollAnimation.ts), so this uses
+  // offsetTop/offsetWidth instead — layout-only, unaffected by either, and equal to the viewport
+  // position while pinned (`start: "top top"`). The bottom edge is the model's own core height
+  // (~330px) rather than its full open (~750px) or closed (~465px) extent — tuned live per feedback
+  // 2026-09-21: both of those, added to the ~700px the heading/paragraph/buttons above already
+  // consume, landed the bottom pair past the fold on a typical 900-1080px-tall viewport; the core
+  // height alone lands it at ~1036, on-screen with real margin, while still relating to the model's
+  // actual footprint rather than being a made-up number. Computed once at onEnter and held stable
+  // for the whole close animation — this frame doesn't need to track the split moment to moment the
+  // way the machine screen's own server frame does.
+  //
+  // Returns null once unpinned — a "live-track the server" variant was tried instead, but per
+  // feedback that read as "the crosses are following me", not the desired "they stay put". Once
+  // unpinned, `refreshAnchor()` is simply never called again (see buildScrollAnimation.ts's own
+  // `onScroll`, which only ever touches opacity), so this branch existing only matters if something
+  // else forces a refresh (e.g. a window resize) — returning null there means the marks' position is
+  // left exactly as it was, not silently recomputed from a now-meaningless `offsetTop` read.
+  const markBox = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el || !isPinnedRef.current) return null;
+    const k = readScale();
+    const coreHeight = BUILD_MODEL_WIDTH_PX * HERO_CORE_HEIGHT_RATIO * k;
+    return {
+      left: el.offsetLeft,
+      right: el.offsetLeft + el.offsetWidth,
+      top: el.offsetTop - LIFT_ON_CLOSE_PX * k,
+      bottom: el.offsetTop + coreHeight,
+    };
+  }, []);
+
+  const gridMarks = useGridMarks(wrapperRef, {
+    gapX: BUILD_MARK_GAP_X_PX,
+    gapY: BUILD_MARK_GAP_Y_PX,
+    box: markBox,
+  });
+
+  useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrScrollReserveRef, gridMarks, isPinnedRef });
 
   // The GLB arrives well after the scroll trigger is built — refreshing re-applies the current
   // scroll position to the model once it's ready, same pattern as HeroSectionClient.

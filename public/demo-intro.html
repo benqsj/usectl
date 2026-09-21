@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ka">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>usectl — hero intro demo</title>
+<!--
+  DEMO ONLY — nothing in src/ uses this file.
+  On load, the four pieces of server.glb fall bottom -> top and stack into the closed
+  assembly while the usual 24s idle turn keeps running. Approved values: hero-intro-animation.md. Open at /demo-intro.html while
+  `npm run dev` is running. The panel (bottom-right) tunes it live; "Copy settings" puts the
+  chosen numbers on the clipboard so they can be moved into HeroServerModel.tsx.
+-->
+<style>
+  :root { --background:#1e1d1d; --foreground:#ededed; --brand:#11a32a;
+          --s: max(0.66667px, calc(100vw / 1920)); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--background); color:var(--foreground); min-height:100vh;
+         font-family:"Space Grotesk",system-ui,-apple-system,Segoe UI,sans-serif; overflow-x:hidden; }
+
+  /* ---- hero: same values as HeroSectionClient.tsx ---- */
+  .hero { position:relative; display:flex; flex-direction:column; align-items:center;
+          padding:64px 24px 112px; text-align:center; }
+  .eyebrow-row { display:flex; align-items:center; justify-content:center; gap:12px; }
+  .eyebrow { font-size:calc(var(--s)*22); line-height:1; font-weight:300; letter-spacing:-.02em; color:rgba(255,255,255,.7); }
+  h1 { margin:4px 0 0; font-size:calc(var(--s)*98); line-height:1.05; font-weight:700; }
+  @media (min-width:640px) { h1 { white-space:nowrap; } }
+  h1 .brand { color:var(--brand); }
+  .sub { max-width:calc(var(--s)*1080); margin:8px auto 0; font-size:calc(var(--s)*28); color:rgba(255,255,255,.7); }
+  .btns { margin-top:calc(var(--s)*35); display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:center; }
+  .btn { border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:14px 28px; font-size:18px;
+         color:#fff; text-decoration:none; }
+  .btn.primary { background:var(--brand); border-color:var(--brand); }
+
+  /* ---- the cube wrapper: same box as the real one ---- */
+  #cubeWrapper { position:relative; margin:calc(var(--s)*84) auto 0; width:calc(var(--s)*480);
+                 --core-height:calc(var(--s)*330.32); --stack-gap:calc(var(--s)*45);
+                 height:calc(3 * var(--stack-gap) + var(--core-height)); }
+  #glow { position:absolute; left:50%; width:170%; height:calc(var(--s)*130);
+          border-radius:50%; filter:blur(24px); pointer-events:none; opacity:0;
+          top:calc(3 * var(--stack-gap) + var(--core-height) - 45px);
+          transform:translateX(-50%);
+          background:radial-gradient(ellipse at center, rgba(72,144,72,.55) 0%, rgba(72,144,72,0) 70%); }
+  #stage { position:absolute; left:50%; transform:translate(-50%,-50%); pointer-events:none; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* ---- tuning panel ---- */
+  #panel { position:fixed; right:16px; bottom:16px; z-index:50; width:280px; max-width:calc(100vw - 32px);
+           font:12px/1.4 ui-sans-serif,system-ui,sans-serif; color:rgba(255,255,255,.85);
+           background:rgba(18,18,18,.88); border:1px solid rgba(255,255,255,.12); border-radius:12px;
+           padding:12px 14px; backdrop-filter:blur(8px); }
+  #panel.min .body { display:none; }
+  #panel .top { display:flex; align-items:center; gap:8px; }
+  #panel .top b { flex:1; font-size:13px; }
+  #panel button { font:inherit; color:#fff; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
+                  border-radius:8px; padding:5px 10px; cursor:pointer; }
+  #panel button.primary { background:var(--brand); border-color:var(--brand); }
+  #panel .body { margin-top:10px; display:grid; gap:7px; }
+  #panel label { display:grid; grid-template-columns:1fr 44px; gap:2px 8px; align-items:center; }
+  #panel label > span:first-child { grid-column:1 / -1; color:rgba(255,255,255,.6); }
+  #panel label output { text-align:right; font-variant-numeric:tabular-nums; }
+  #panel input[type=range] { width:100%; accent-color:var(--brand); }
+  #panel select { font:inherit; width:100%; color:#fff; background:#222; border:1px solid rgba(255,255,255,.18);
+                  border-radius:8px; padding:5px 6px; }
+  #panel .check { display:flex; gap:8px; align-items:center; }
+  #panel .row { display:flex; gap:8px; }
+  #panel .row button { flex:1; }
+  #panel .speed { margin-top:10px; padding:10px; border-radius:10px; background:rgba(17,163,42,.12);
+                   border:1px solid rgba(17,163,42,.35); }
+  #panel .speed .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  #panel .speed .head span { color:rgba(255,255,255,.75); }
+  #panel .speed .head b { font-size:18px; font-variant-numeric:tabular-nums; }
+  #panel .speed .bar { display:flex; gap:6px; align-items:center; }
+  #panel .speed .bar button { width:30px; padding:4px 0; font-size:15px; }
+  #panel .speed .chips { display:flex; gap:6px; margin-top:8px; }
+  #panel .speed .chips button { flex:1; padding:4px 0; }
+  #panel .speed .chips button.on { background:var(--brand); border-color:var(--brand); }
+  #grab { position:absolute; inset:-4% -12%; z-index:5; cursor:grab; touch-action:pan-y; user-select:none; }
+  #hud { position:fixed; left:12px; bottom:12px; z-index:50; font:12px/1.5 ui-monospace,monospace;
+         color:rgba(255,255,255,.55); }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div id="content">
+      <div class="eyebrow-row">
+        <img src="/herosection/Subtract.svg" alt="" width="58" height="26" aria-hidden="true" />
+        <span class="eyebrow">Managed Kubernetes &amp; AI Agent Infrastructure</span>
+      </div>
+      <h1>One server. <span class="brand">Unlimited</span> machines.</h1>
+      <p class="sub">Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
+        without a DevOps team. Build it. Launch it.</p>
+      <div class="btns"><a class="btn primary" href="#">Create Machine</a><a class="btn" href="#">See how it works</a></div>
+    </div>
+    <div id="cubeWrapper" aria-hidden="true">
+      <div id="glow"></div>
+      <div id="stage"></div>
+      <div id="grab"></div>
+    </div>
+  </section>
+</main>
+
+<div id="panel">
+  <div class="top">
+    <b>Server intro — demo</b>
+    <button id="replay" class="primary" title="R">↻ თავიდან</button>
+    <button id="toggle" title="ჩაკეცვა">–</button>
+  </div>
+  <div class="speed">
+    <div class="head"><span>ანიმაციის სიჩქარე</span><b id="speedVal">1.00×</b></div>
+    <div class="bar">
+      <button id="slower" title="ნელა">−</button>
+      <input type="range" id="speedRange" min="0.25" max="2" step="0.05" style="flex:1" />
+      <button id="faster" title="სწრაფად">+</button>
+    </div>
+    <div class="chips">
+      <button data-s="0.5">0.5×</button><button data-s="0.75">0.75×</button>
+      <button data-s="1">1×</button><button data-s="1.5">1.5×</button>
+    </div>
+  </div>
+  <div class="body">
+    <div id="sliders"></div>
+    <label class="check"><input type="checkbox" id="ring" /> კონტურის ხაზი საერთოდ დამალე</label>
+    <label class="check"><input type="checkbox" id="text" checked /> ტექსტის გამოჩენაც ანიმაციით</label>
+    <button id="reset">ნაგულისხმევზე დაბრუნება</button>
+    <button id="copy">Copy settings</button>
+    <div style="color:rgba(255,255,255,.5)">სერვერი მაუსით გადაატრიალე: აქეთ-იქით და ზემოთ-ქვემოთ.</div>
+  </div>
+</div>
+<div id="hud">loading…</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+/* ===== same constants as src/lib/heroModel.ts ========================================== */
+const MODEL_URL = '/herosection/3D/server.glb';
+const BASE_WIDTH_PX = 400, PX_PER_UNIT = 1045;
+const STAGE_W = 1.7, STAGE_H = 2.75;
+const START_YAW_DEG = 45, REST_ELEVATION_DEG = 35;
+const ROTATION_SECONDS = 24, RESUME_TAU_S = 0.9;
+
+/* bottom -> top: the four pieces that fall, in the order they land. */
+const LAYER_NAMES = ['04_base', '03_core', '02_core', '01_cap'];
+/* The neon outline under the base. It does not fall: it fades in the moment the base lands
+   (or stays hidden altogether with the checkbox). */
+const RING_NAME = '05_accent_ring';
+
+/* ===== tunables (all editable from the panel) ===========================================
+   speed  — plays the whole intro faster/slower
+   height — how far above its resting place each piece starts (world units; 1 ≈ 1045px @400)
+   dur    — seconds one piece takes to fall
+   gap    — seconds between one piece starting and the next. Smaller than `dur` means the next
+            one is already falling before the previous lands, so they chase each other down.
+   twist  — degrees a piece turns while falling, 0 on landing (0 = no extra turning)
+   wobble — degrees a piece rocks while falling, straightening out exactly as it lands
+   squash — how much a piece squashes on landing (1 - squash tall for a moment). It squashes
+            DOWN into what's under it, so nothing ever moves up after landing.               */
+// approved 2026-09-21 — see hero-intro-animation.md
+const DEFAULTS = { speed: 1, height: 0.5, dur: 0.62, gap: 0.4, wobble: 10, squash: 0.08, twist: 0, delay: 0.25, fade: 0.3 };
+const SLIDERS = [
+  ['dur',    'ერთი დეტალის ვარდნის დრო (წმ)',      0.12, 1.2, 0.01],
+  ['gap',    'ინტერვალი დეტალებს შორის (წმ)',      0.03, 0.8, 0.01],
+  ['height', 'საიდან ვარდება (სიმაღლე)',           0.1,  0.9, 0.01],
+  ['wobble', 'რხევა ვარდნისას (°)',               0,    25,  1],
+  ['squash', 'დაჯდომისას ჩაჯდომა (რბილი დარტყმა)', 0,    0.2, 0.01],
+  ['twist',  'ტრიალი ვარდნისას (°)',              0,    180, 5],
+];
+
+const Q = new URLSearchParams(location.search);
+const P = { ...DEFAULTS };
+for (const [k] of SLIDERS) if (Q.has(k)) P[k] = Number(Q.get(k));
+
+const wrapper = document.getElementById('cubeWrapper');
+const stage = document.getElementById('stage');
+const glow = document.getElementById('glow');
+const content = document.getElementById('content');
+const hud = document.getElementById('hud');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ===== three: identical to HeroServerModel.tsx ========================================== */
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.3;
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+let elevation = REST_ELEVATION_DEG;
+const placeCamera = () => {
+  const e = THREE.MathUtils.degToRad(elevation);
+  camera.position.set(0, Math.sin(e), Math.cos(e)).multiplyScalar(4); camera.lookAt(0, 0, 0);
+};
+placeCamera();
+
+const addLight = (l, x, y, z) => { l.position.set(x, y, z); scene.add(l); return l; };
+addLight(new THREE.DirectionalLight(0xffffff, 1.15), 2, 3.5, 2);
+addLight(new THREE.DirectionalLight(0xbfd8ff, 0.3), -3, 1.5, -1.5);
+addLight(new THREE.DirectionalLight(0x8effb0, 0.45), -1.5, -0.5, -3);
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+const ringLight = addLight(new THREE.PointLight(0x11ff4a, 1.2, 2, 2), 0, -0.05, 0);
+const RING_LIGHT_BASE = 1.2;
+
+const holder = new THREE.Group();
+scene.add(holder);
+
+let turntable = null, mixer = null, explode = null, explodeDur = 1, cap = null;
+let capClosedY = 0, closedCentreY = 0, ready = false;
+const layers = [];        // { node, baseY, explodedOff, mats:[{m, opacity, emissive}] }
+
+function setProgress(p) {
+  if (!explode) return;
+  explode.time = explodeDur * THREE.MathUtils.clamp(p, 0, 1);
+  mixer.update(0);
+  for (const L of layers) L.baseY = L.node.position.y;   // intro offsets are added on top
+  const growth = cap ? cap.position.y - capClosedY : 0;
+  holder.position.y = -closedCentreY - growth / 2;
+}
+
+function resize() {
+  const w = wrapper.clientWidth; if (!w) return;
+  const sw = Math.round(w * STAGE_W), sh = Math.round(w * STAGE_H);
+  stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
+  stage.style.top = wrapper.clientHeight / 2 + 'px';
+  renderer.setSize(sw, sh, false);
+  const ppu = PX_PER_UNIT * (w / BASE_WIDTH_PX);
+  camera.left = -sw / ppu / 2; camera.right = sw / ppu / 2;
+  camera.top = sh / ppu / 2; camera.bottom = -sh / ppu / 2;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ===== the intro ======================================================================== */
+const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+const smooth = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+const EASE = {
+  in:    (u) => u * u,                                        // gravity: slow start, fast landing
+  out:   (u) => 1 - Math.pow(1 - u, 4),                       // decelerates onto the stack
+  inout: (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2),
+};
+const easeOutCubic = (u) => 1 - Math.pow(1 - u, 3);
+const flashCurve = (tau) => (tau < 0 ? 0 : Math.exp(-tau / 0.28) * smooth(tau / 0.03));
+
+let introT0 = 0, introOn = false, forcedT = null, ring = null;
+
+/* ---- pointer: sideways spins (with a throw), up/down tilts — copied from HeroServerModel ---- */
+const ELEV_MIN = 4, ELEV_MAX = 78, ELEV_DEG_PER_PX = 0.25, MAX_THROW = 14;
+const grab = document.getElementById('grab');
+let omega = (Math.PI * 2) / ROTATION_SECONDS, dragging = false, lastX = 0, lastY = 0, lastT = 0, dragOmega = 0;
+const dragRadPerPx = () => (Math.PI * 2) / Math.max(stage.clientWidth * 1.2, 1);
+grab.addEventListener('pointerdown', (e) => {
+  if (!ready) return;
+  dragging = true; dragOmega = 0; lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
+  grab.setPointerCapture(e.pointerId); grab.style.cursor = 'grabbing'; e.preventDefault();
+});
+grab.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const now = performance.now(), dt = Math.max((now - lastT) / 1000, 1 / 240);
+  const dTheta = (e.clientX - lastX) * dragRadPerPx();
+  turntable.rotation.y += dTheta;
+  dragOmega = dragOmega * 0.6 + (dTheta / dt) * 0.4;
+  elevation = THREE.MathUtils.clamp(elevation + (e.clientY - lastY) * ELEV_DEG_PER_PX, ELEV_MIN, ELEV_MAX);
+  placeCamera();
+  lastX = e.clientX; lastY = e.clientY; lastT = now;
+});
+const endDrag = (e) => {
+  if (!dragging) return;
+  dragging = false; grab.style.cursor = '';
+  if (grab.hasPointerCapture(e.pointerId)) grab.releasePointerCapture(e.pointerId);
+  omega = performance.now() - lastT > 120 ? 0 : THREE.MathUtils.clamp(dragOmega, -MAX_THROW, MAX_THROW);
+};
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => grab.addEventListener(ev, endDrag));
+const restingOmega = () => (reduced ? 0 : (Math.PI * 2) / ROTATION_SECONDS);
+const ringHidden = () => document.getElementById('ring').checked;
+
+const startOf = (i) => P.delay + i * P.gap;
+const landOf = (i) => startOf(i) + P.dur;
+const introLength = () => landOf(LAYER_NAMES.length - 1) + 0.8;
+
+function setMaterialsTransparent(on) {
+  for (const L of [...layers, ring]) for (const e of L.mats) {
+    if (e.m.transparent !== on) { e.m.transparent = on; e.m.needsUpdate = true; }
+    if (!on) e.m.opacity = e.opacity;
+  }
+}
+
+function playIntro() {
+  if (!ready) return;
+  if (reduced) { finishIntro(); return; }
+  introT0 = performance.now(); introOn = true;
+  // the turn itself is untouched: the same 24s turn the live site has, never reset or sped up
+  setMaterialsTransparent(true);
+  content.getAnimations().forEach((a) => a.cancel());
+  if (document.getElementById('text').checked) {
+    content.animate(
+      [{ opacity: 0, transform: 'translateY(24px)', filter: 'blur(6px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+      { duration: 900 / P.speed, delay: 80 / P.speed, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'both' });
+  }
+}
+
+function finishIntro() {
+  introOn = false;
+  for (const L of layers) { L.node.position.y = L.baseY; L.node.rotation.set(0, 0, 0); L.node.scale.set(1, 1, 1); L.node.visible = true; }
+  ring.node.visible = !ringHidden();
+  setMaterialsTransparent(false);
+  for (const L of [...layers, ring]) for (const e of L.mats) if (e.emissive != null) e.m.emissiveIntensity = e.emissive;
+  ringLight.intensity = ringHidden() ? 0 : RING_LIGHT_BASE;
+  glow.style.opacity = 1; glow.style.transform = 'translateX(-50%)';
+}
+
+function applyIntro(t) {
+  const n = layers.length;
+  let flash = 0, landed = 0;
+  for (let i = 0; i < n; i++) {
+    const L = layers[i];
+    const u = (t - startOf(i)) / P.dur;
+    let off = 0, alpha = 1, twist = 0, tx = 0, tz = 0, sy = 1, sxz = 1;
+    if (u < 1) {
+      const uu = clamp01(u);
+      off = P.height * (1 - uu * uu);                      // gravity: speeds up into the landing
+      const settle = 1 - easeOutCubic(uu);                 // 1 at the top -> 0 on landing
+      const dir = i % 2 ? 1 : -1;
+      twist = THREE.MathUtils.degToRad(P.twist) * dir * settle;
+      // rocks like it's swinging on the way down, and is perfectly level when it touches
+      const w = THREE.MathUtils.degToRad(P.wobble) * settle;
+      tx = w * Math.sin(uu * Math.PI * 2.2 + i);
+      tz = w * dir * Math.cos(uu * Math.PI * 1.7 + i * 0.7);
+      alpha = smooth(u / P.fade);
+    } else {
+      landed++;
+      const tau = (u - 1) * P.dur;
+      // soft landing: squashes into the stack and settles, never lifting off it
+      const k = tau < 0.32 ? Math.sin((tau / 0.32) * Math.PI) * Math.exp(-tau / 0.16) : 0;
+      sy = 1 - P.squash * k;
+      sxz = 1 + P.squash * 0.45 * k;
+      // stays exactly where it landed; only a short light pulse marks the landing
+      flash += flashCurve((u - 1) * P.dur) * (i === n - 1 ? 1.6 : 0.7);
+    }
+    L.node.position.y = L.baseY + off;
+    L.node.rotation.set(tx, twist, tz);
+    L.node.scale.set(sxz, sy, sxz);
+    L.node.visible = alpha > 0.002;
+    for (const e of L.mats) e.m.opacity = e.opacity * alpha;
+  }
+  // the outline doesn't fall: it lights up under the base as the base lands
+  const ra = ringHidden() ? 0 : smooth((t - landOf(0)) / 0.25);
+  ring.node.visible = ra > 0.002;
+  for (const e of ring.mats) e.m.opacity = e.opacity * ra;
+
+  ringLight.intensity = (ringHidden() ? 0 : RING_LIGHT_BASE * ra) + 3.2 * flash;
+  for (const L of [...layers, ring]) for (const e of L.mats) if (e.emissive != null) e.m.emissiveIntensity = e.emissive * (1 + 0.8 * flash);
+  const g = landed ? 0.25 + 0.75 * (landed / n) : 0;
+  glow.style.opacity = Math.min(1, g + 0.35 * flash).toFixed(3);
+  glow.style.transform = `translateX(-50%) scale(${(0.75 + 0.25 * (landed / n) + 0.06 * flash).toFixed(3)})`;
+  return landed;
+}
+
+/* ===== loop =============================================================================== */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (!ready) return;
+  if (forcedT == null && turntable && !dragging) {
+    // relax the VELOCITY toward the idle turn, so a throw slows down and hands back smoothly
+    omega += (restingOmega() - omega) * (1 - Math.exp(-dt / RESUME_TAU_S));
+    turntable.rotation.y += omega * dt;
+    if (Math.abs(elevation - REST_ELEVATION_DEG) > 0.01) {
+      elevation += (REST_ELEVATION_DEG - elevation) * (1 - Math.exp(-dt / RESUME_TAU_S));
+      placeCamera();
+    }
+  }
+  if (introOn) {
+    const t = forcedT ?? ((performance.now() - introT0) / 1000) * P.speed;
+    const landed = applyIntro(t);
+    hud.textContent = `t = ${t.toFixed(2)}s · landed ${landed}/4`;
+    if (t >= introLength() && forcedT == null) { finishIntro(); hud.textContent = 'done — R ან ↻ თავიდან სანახავად'; }
+  }
+  renderer.render(scene, camera);
+});
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(MODEL_URL, (gltf) => {
+  const root = gltf.scene;
+  holder.add(root);
+  turntable = root.getObjectByName('turntable') ?? root;
+  turntable.rotation.y = THREE.MathUtils.degToRad(START_YAW_DEG);
+  cap = root.getObjectByName('01_cap');
+
+  const clip = gltf.animations.find((a) => a.name === 'explode_sequence') ?? gltf.animations[0];
+  mixer = new THREE.AnimationMixer(root);
+  explode = mixer.clipAction(clip);
+  explode.play(); explode.paused = true; explodeDur = clip.duration;
+
+  // Per-layer materials: the GLB shares materials between layers, and each layer has to fade on
+  // its own. Cloned once here; the real component would dispose them with everything else.
+  for (const name of [...LAYER_NAMES, RING_NAME]) {
+    const node = root.getObjectByName(name);
+    const mats = [], seen = new Map();
+    node.traverse((o) => {
+      if (!o.isMesh) return;
+      const list = Array.isArray(o.material) ? o.material : [o.material];
+      const cloned = list.map((m) => {
+        if (!seen.has(m)) {
+          const c = m.clone(); seen.set(m, c);
+          const lit = c.emissive && c.emissive.getHex() !== 0;
+          mats.push({ m: c, opacity: c.opacity, emissive: lit ? c.emissiveIntensity : null });
+        }
+        return seen.get(m);
+      });
+      o.material = Array.isArray(o.material) ? cloned : cloned[0];
+    });
+    layers.push({ node, baseY: 0, mats });
+  }
+  ring = layers.pop();
+
+  capClosedY = cap ? cap.position.y : 0;
+  holder.position.y = 0; holder.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  closedCentreY = (box.max.y + box.min.y) / 2;
+  setProgress(0);
+  resize();
+  ready = true;
+  hud.textContent = 'ready';
+  // hide everything before the first frame so nothing flashes closed first
+  for (const L of [...layers, ring]) L.node.visible = false;
+  if (!Q.has('paused')) playIntro();
+});
+
+/* ===== panel ============================================================================== */
+const slidersEl = document.getElementById('sliders');
+const inputs = {};
+for (const [k, label, min, max, step] of SLIDERS) {
+  const l = document.createElement('label');
+  l.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+  const input = l.querySelector('input'), out = l.querySelector('output');
+  input.addEventListener('input', () => { P[k] = Number(input.value); out.textContent = input.value; });
+  input.addEventListener('change', playIntro);
+  inputs[k] = { input, out };
+  slidersEl.appendChild(l);
+}
+const syncPanel = () => { for (const k in inputs) { inputs[k].input.value = P[k]; inputs[k].out.textContent = P[k]; } };
+document.getElementById('reset').onclick = () => { Object.assign(P, DEFAULTS); syncPanel(); setSpeed(1, false); playIntro(); };
+document.getElementById('ring').onchange = playIntro;
+syncPanel();
+document.getElementById('replay').onclick = playIntro;
+// on narrow screens start with only the speed bar open, so the panel doesn't cover the server
+if (innerWidth < 1000) { document.getElementById('panel').classList.add('min'); document.getElementById('toggle').textContent = '+'; }
+document.getElementById('toggle').onclick = (e) => {
+  const p = document.getElementById('panel'); p.classList.toggle('min');
+  e.target.textContent = p.classList.contains('min') ? '+' : '–';
+};
+const speedRange = document.getElementById('speedRange'), speedVal = document.getElementById('speedVal');
+const chips = [...document.querySelectorAll('.speed .chips button')];
+function setSpeed(v, replay = true) {
+  // keep the intro where it is on screen instead of jumping when the speed changes mid-play
+  const now = performance.now();
+  if (introOn && forcedT == null) introT0 = now - ((now - introT0) * P.speed) / v;
+  P.speed = Math.round(Math.min(Math.max(v, 0.25), 2) * 100) / 100;
+  speedRange.value = P.speed; speedVal.textContent = P.speed.toFixed(2) + '×';
+  chips.forEach((c) => c.classList.toggle('on', Number(c.dataset.s) === P.speed));
+  if (replay && !introOn) playIntro();
+}
+speedRange.addEventListener('input', () => setSpeed(Number(speedRange.value), false));
+speedRange.addEventListener('change', () => { if (!introOn) playIntro(); });
+document.getElementById('slower').onclick = () => setSpeed(P.speed - 0.1);
+document.getElementById('faster').onclick = () => setSpeed(P.speed + 0.1);
+chips.forEach((c) => (c.onclick = () => setSpeed(Number(c.dataset.s))));
+setSpeed(P.speed, false);
+document.getElementById('copy').onclick = async (e) => {
+  const clean = { ...P };
+  const txt = JSON.stringify({ ...clean, hideRing: ringHidden() });
+  try { await navigator.clipboard.writeText(txt); e.target.textContent = 'Copied ✓'; }
+  catch { prompt('Settings:', txt); }
+  setTimeout(() => (e.target.textContent = 'Copy settings'), 1500);
+};
+addEventListener('keydown', (e) => { if (e.key === 'r' || e.key === 'R') playIntro(); });
+
+// deterministic hook for frame captures: __seek(seconds)
+window.__seek = (t) => {
+  if (!introOn) playIntro();
+  forcedT = t; if (turntable) turntable.rotation.y = THREE.MathUtils.degToRad(START_YAW_DEG) + restingOmega() * t / P.speed;
+};
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef } from "react";
 import type { RefObject } from "react";
+import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
   NUM_COLUMNS,
@@ -56,6 +57,16 @@ export interface GridMarksOptions {
    * (grid-trail.md §7) — e.g. a diagram sitting in a card's own column, not the page centre.
    */
   fit?: "edge" | "center";
+  /**
+   * `fit: "center"` only, default true. After finding the tightest enclosing pair, `fitCenterAxis`
+   * tries widening either edge by one more line for a more visually equal gap on both sides. That's
+   * worth it for ordinary content, but it can occasionally blow up A LOT: if grid-pitch quantization
+   * happens to force one edge a full extra row out (bad luck, not a real need for clearance there),
+   * the balance step then widens the OTHER edge to match, which can push a mark off the edge of the
+   * viewport entirely for content that isn't small relative to the pin. Set false to skip that step
+   * and always keep the tightest pair each axis found on its own.
+   */
+  balance?: boolean;
 }
 
 export interface GridMarksHandle {
@@ -134,6 +145,10 @@ export function useGridMarks(
   const appearanceRef = useRef({ opacity: 0, scale: 1 });
   const cellsRef = useRef<{ col: number; row: number }[]>([]);
   const regionCellsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
+  // The last SNAPPED (integer) grid indices actually reached, and the tween currently chasing a new
+  // target — see the smoothing block in refreshAnchor below.
+  const settledRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
+  const tweenRef = useRef<gsap.core.Tween | null>(null);
 
   const publish = useCallback(() => {
     const { opacity, scale } = appearanceRef.current;
@@ -143,9 +158,27 @@ export function useGridMarks(
     setMarks(ownerId, marks, region);
   }, [ownerId]);
 
+  // Writes cellsRef/regionCellsRef from a (possibly fractional, mid-tween) {left,right,top,bottom}
+  // and publishes. `columnCenterX`/`rowTopY` (GridCanvas.tsx) are plain arithmetic against these
+  // indices, so a fractional value draws at the correctly-interpolated pixel position — no special
+  // canvas support needed for the tween below.
+  const applyCells = useCallback(
+    (v: { left: number; right: number; top: number; bottom: number }, trail: boolean) => {
+      cellsRef.current = [
+        { col: v.left, row: v.top },
+        { col: v.right, row: v.top },
+        { col: v.left, row: v.bottom },
+        { col: v.right, row: v.bottom },
+      ];
+      regionCellsRef.current = trail ? { ...v } : null;
+      publish();
+    },
+    [publish],
+  );
+
   const refreshAnchor = useCallback(() => {
     const el = anchorRef.current;
-    const { gapX, gapY, minGap = DEFAULT_MIN_GAP, box, trail = true, fit = "edge" } = optionsRef.current;
+    const { gapX, gapY, minGap = DEFAULT_MIN_GAP, box, trail = true, fit = "edge", balance = true } = optionsRef.current;
     const rect = box ? box() : el?.getBoundingClientRect();
     if (!rect) return;
     if (rect.right - rect.left === 0 && rect.bottom - rect.top === 0) return;
@@ -170,7 +203,9 @@ export function useGridMarks(
       while (l0 > 1 && columnCenterX(l0, m) > rect.left - mg) l0 -= 1;
       let r0 = nearestColumn(rect.right, m);
       while (r0 < NUM_COLUMNS && columnCenterX(r0, m) < rect.right + mg) r0 += 1;
-      const cols = fitCenterAxis(l0, r0, 1, NUM_COLUMNS, (i) => columnCenterX(i, m), rect.left, rect.right);
+      const cols = balance
+        ? fitCenterAxis(l0, r0, 1, NUM_COLUMNS, (i) => columnCenterX(i, m), rect.left, rect.right)
+        : { lo: l0, hi: r0 };
       left = cols.lo;
       right = cols.hi;
 
@@ -178,7 +213,9 @@ export function useGridMarks(
       while (t0 > 1 && rowTopY(t0, m) > rect.top - mg) t0 -= 1;
       let b0 = nearestRow(rect.bottom, m);
       while (rowTopY(b0, m) < rect.bottom + mg) b0 += 1;
-      const rows = fitCenterAxis(t0, b0, 1, Infinity, (j) => rowTopY(j, m), rect.top, rect.bottom);
+      const rows = balance
+        ? fitCenterAxis(t0, b0, 1, Infinity, (j) => rowTopY(j, m), rect.top, rect.bottom)
+        : { lo: t0, hi: b0 };
       top = rows.lo;
       bottom = rows.hi;
     } else {
@@ -206,15 +243,44 @@ export function useGridMarks(
       if (gy > 0) while (rowTopY(bottom, m) < rect.bottom + mg) bottom += 1;
     }
 
-    cellsRef.current = [
-      { col: left, row: top },
-      { col: right, row: top },
-      { col: left, row: bottom },
-      { col: right, row: bottom },
-    ];
-    regionCellsRef.current = trail ? { left, right, top, bottom } : null;
-    publish();
-  }, [anchorRef, publish]);
+    const target = { left, right, top, bottom };
+    const prev = settledRef.current;
+    settledRef.current = target;
+
+    if (!prev) {
+      // First snap ever (mount) — no "fly in from nowhere" animation, just land on it.
+      tweenRef.current?.kill();
+      applyCells(target, trail);
+      return;
+    }
+
+    if (prev.left === left && prev.right === right && prev.top === top && prev.bottom === bottom) {
+      // Nothing moved — still re-publish (appearance/trail flag might differ), no tween needed.
+      applyCells(target, trail);
+      return;
+    }
+
+    // Per feedback 2026-09-21 ("the crosses jump roughly between grid lines, animate it if you
+    // can"): ease the visible position from wherever it currently is to the new snapped target
+    // instead of jumping there instantly. `columnCenterX`/`rowTopY` don't care that these are
+    // fractional mid-tween — see applyCells's own comment. Read the still-running tween's own
+    // in-flight values (not the old settled target) as the start point, so a target that keeps
+    // changing (e.g. serverMarks re-snapping every frame while the split is moving) eases smoothly
+    // from wherever it currently visually is, rather than restarting from its last fully-settled
+    // position on every re-aim.
+    const startFrom = (tweenRef.current?.targets()[0] as typeof prev | undefined) ?? prev;
+    tweenRef.current?.kill();
+    const proxy = { ...startFrom };
+    tweenRef.current = gsap.to(proxy, {
+      left,
+      right,
+      top,
+      bottom,
+      duration: 0.35,
+      ease: "power2.out",
+      onUpdate: () => applyCells(proxy, trail),
+    });
+  }, [anchorRef, applyCells]);
 
   const setAppearance = useCallback(
     ({ opacity, scale }: { opacity: number; scale?: number }) => {
@@ -238,6 +304,7 @@ export function useGridMarks(
     return () => {
       window.removeEventListener("resize", onResize);
       ScrollTrigger.removeEventListener("refresh", refreshAnchor);
+      tweenRef.current?.kill();
       clearMarks(ownerId);
     };
   }, [refreshAnchor, ownerId]);

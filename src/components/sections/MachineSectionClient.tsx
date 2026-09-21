@@ -71,6 +71,10 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
   const fillRef = useRef<HTMLDivElement>(null);
   const cardServerRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
+  // How open the server is (0 closed .. 1 fully split) — written every frame the split is moving,
+  // read by `serverBox` below, so the server's own grid marks open/close WITH it instead of sitting
+  // pre-expanded the whole time (per feedback 2026-09-21).
+  const serverSepFractionRef = useRef(0);
 
   const topsideRaster = useRasterizedSvg("/infrastructur/topside.svg", TOPSIDE_RASTER_WIDTH);
 
@@ -91,7 +95,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
     const server = cardServerRef.current;
     const card = cardRef.current;
     if (!stage || !server || !card) return null;
-    return measureServerBox(stage, server, card);
+    return measureServerBox(stage, server, card, serverSepFractionRef.current);
   }, []);
   const infraBox = useCallback(() => {
     const stage = stageRef.current;
@@ -112,7 +116,15 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
     return measureDiagramBox(stage, card, 4);
   }, []);
 
-  const serverMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: serverBox });
+  // `balance: false`: the closed server's own top edge happens to sit only ~9px from a grid line —
+  // just inside the "too close, push out" threshold — so the tightest enclosing pair already has a
+  // full extra row's worth of top clearance (~105px) before any balancing runs at all. "center"'s
+  // default equal-gap step then widened the BOTTOM edge by a further row too, trying to match that
+  // (already-inflated) top gap — which pushed the bottom pair off the bottom of a 1080-tall viewport
+  // entirely (confirmed by re-running at a taller viewport: it reappears at ~y=1122). Skipping the
+  // balance step keeps both edges at the tightest pair that clears the box by minGap independently —
+  // both pairs stay on screen, which is what "visible even before it starts splitting" needs.
+  const serverMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", balance: false, box: serverBox });
   const infraMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: infraBox });
   const deployMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: deployBox });
   const agentMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: agentBox });
@@ -126,6 +138,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
     infraMarks,
     deployMarks,
     agentMarks,
+    serverSepFractionRef,
     topsideRef,
     tintRef,
     cardRef,

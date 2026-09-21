@@ -3,7 +3,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
-import { readScale } from "@/lib/grid";
+import { gridMetrics, readScale } from "@/lib/grid";
 import type { AnchorBox, GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import { createStepSwap } from "@/animations/stepSwap";
 
@@ -158,8 +158,6 @@ const easeDiagram = gsap.parseEase("power1.inOut");
 // "machine" wordmark leave, so they are gone before the text reaches step 5.
 const STEP4_EXIT_START = 0.7;
 const STEP4_EXIT_DRIFT_PX = 40;
-// How much of the PIN's progress the card's outline cross-fades over at the step 5 -> 6 boundary.
-const CARD_OUTLINE_FADE = 0.012;
 // Catch-up smoothing. Raw scroll tracks 1:1, so one flick of the wheel can cross three step
 // boundaries inside a single frame; easing the progress we RENDER toward the progress the scroll
 // asks for turns that into a glide through the steps instead of a teleport, which is most of what
@@ -339,25 +337,62 @@ function measureCardAnchor(stage: HTMLElement, card: HTMLElement, anchor: HTMLEl
  */
 export function measureDiagramBox(stage: HTMLElement, card: HTMLElement, step: number): AnchorBox | null {
   const wrapper = card.querySelector<HTMLElement>(`[data-diagram-step="${step}"]`);
-  const anchor = wrapper?.firstElementChild;
-  if (!(anchor instanceof HTMLElement)) return null;
-  return measureCardAnchor(stage, card, anchor);
+  const root = wrapper?.firstElementChild;
+  if (!(root instanceof HTMLElement)) return null;
+  if (step !== 3) return measureCardAnchor(stage, card, root);
+
+  // Step 6 (deploy) only: its root spans the WHOLE composition (108% wide) including the Github
+  // card, which deliberately hangs off to the left of the "Machine frame" a viewer actually reads
+  // as the diagram (see MachineDeployDiagram.tsx's own comment on why it's widened) — anchoring to
+  // the root pulled the crosses a full grid column further left than steps 5/7. Anchoring to the
+  // frame border alone (first `[data-diagram-border]` in DOM order, always "the Machine frame")
+  // overshot the other way — one column further RIGHT than steps 5/7, per follow-up feedback.
+  // Splitting the difference (midpoint between the root's own left edge and the frame's left edge,
+  // frame's right/top/bottom otherwise) lands the same grid column steps 5/7 land on (verified: 13,
+  // same as step 5's own snap) without hand-picking a magic px offset.
+  const frameBorder = root.querySelector<HTMLElement>("[data-diagram-border]");
+  if (!frameBorder) return measureCardAnchor(stage, card, root);
+  const rootBox = measureCardAnchor(stage, card, root);
+  const frameBox = measureCardAnchor(stage, card, frameBorder);
+  return { ...frameBox, left: (rootBox.left + frameBox.left) / 2 };
 }
 
 /**
- * The server column, expanded to the extent it occupies at FULL separation — top pulled up by
- * `SEPARATION_YPERCENT` of the column's own height, bottom pushed down by `BASE_GAP_PERCENT +
- * SEPARATION_YPERCENT` — so the frame contains the server in both its closed AND fully-split
- * poses (steps 3-4), and the crosses never move between them.
+ * The server column, expanded by `sepFraction` (0 = closed, 1 = fully split) of the separation the
+ * two halves actually travel. Per feedback 2026-09-21: only the TOP edge tracks the split (pulled up
+ * by `SEPARATION_YPERCENT` of the column's own height) — the BOTTOM stays at wherever it sat before
+ * any separation started, not pushed further down. Called every frame while the split is actually
+ * moving (see `applySepFraction` below), so the top cross opens WITH it instead of sitting
+ * pre-expanded the whole time.
+ *
+ * A same-day follow-up tried adding one MORE grid line of push on top of this, SCALED BY
+ * `sepFraction` (reasoning: "match how far server.svg itself visually shifts") — reverted right
+ * away on further feedback: with two separate additive terms both growing as `sepFraction` climbs,
+ * the row snap had two distinct thresholds to cross instead of one, producing a visible DOUBLE jump
+ * (+1 line, then +2) instead of a single clean move.
+ *
+ * A later, different follow-up asked for something that only sounds similar: not extra travel WHILE
+ * opening, but the whole thing — including where it first appears, closed, before any opening starts
+ * — one line higher than before. That's a CONSTANT offset, not one scaled by `sepFraction`: subtracting
+ * a fixed `rowPitch` shifts the entire closed→open range up by the same one line everywhere, so the
+ * single continuous transition the box above this comment already produces stays single (still just
+ * one threshold to cross, now one row higher throughout) — it doesn't reintroduce the double-jump the
+ * earlier, sepFraction-scaled attempt caused.
  */
-export function measureServerBox(stage: HTMLElement, server: HTMLElement, card: HTMLElement): AnchorBox {
+export function measureServerBox(
+  stage: HTMLElement,
+  server: HTMLElement,
+  card: HTMLElement,
+  sepFraction: number,
+): AnchorBox {
   const box = measureCardAnchor(stage, card, server);
   const height = box.bottom - box.top;
+  const rowPitch = gridMetrics(undefined, readScale()).rowPitch;
   return {
     left: box.left,
     right: box.right,
-    top: box.top - (SEPARATION_YPERCENT / 100) * height,
-    bottom: box.bottom + ((BASE_GAP_PERCENT + SEPARATION_YPERCENT) / 100) * height,
+    top: box.top - rowPitch - (SEPARATION_YPERCENT / 100) * height * sepFraction,
+    bottom: box.bottom,
   };
 }
 
@@ -378,6 +413,11 @@ interface MachineScrollRefs {
   infraMarks: GridMarksHandle;
   deployMarks: GridMarksHandle;
   agentMarks: GridMarksHandle;
+  // Written every frame the split is actually moving, read by MachineSectionClient.tsx's own
+  // box() callback for `serverMarks` (see `measureServerBox`'s `sepFraction` param) — a plain ref,
+  // not state, since it only ever needs to be read at the exact moment `serverMarks.refreshAnchor()`
+  // runs, never to trigger a render.
+  serverSepFractionRef: RefObject<number>;
   // topside.svg — grows continuously, then fades out (opacity) right at the end, as if we'd flown
   // straight into it. No hole/aperture cut into it any more (removed 2026-09-21).
   topsideRef: RefObject<HTMLElement | null>;
@@ -411,6 +451,7 @@ export function useMachineScrollAnimation({
   infraMarks,
   deployMarks,
   agentMarks,
+  serverSepFractionRef,
   topsideRef,
   tintRef,
   cardRef,
@@ -473,10 +514,9 @@ export function useMachineScrollAnimation({
       // wrapper says which step index it belongs to; its pieces are revealed one at a time in DOM
       // order, each as a border + contents pair. Queried once, like everything else above, and the
       // whole feature is a no-op when the card carries none of them.
-      // The card's own outline. Steps 6-8 (indices 3-5) drop it entirely: those steps' diagrams are
-      // wider than the column they sit in and were crossing the border, which read as broken.
+      // The card's own outline/chamfer accent — permanently hidden for the whole embedded steps
+      // 3-8 sequence now (see the initial gsap.set below), per feedback 2026-09-21.
       const cardDiagonal = card.querySelector<HTMLElement>("[data-card-diagonal]");
-      const BORDERLESS_FROM_STEP = 3;
 
       const stepSpan = (i: number) => {
         const from = P.cardEnd + (stepStarts[i] ?? 1) * (1 - P.cardEnd);
@@ -553,7 +593,11 @@ export function useMachineScrollAnimation({
       deployMarks.setAppearance({ opacity: 0 });
       agentMarks.setAppearance({ opacity: 0 });
       gsap.set(topside, { opacity: 0, scale: TOPSIDE_HIDDEN_SCALE });
-      gsap.set(card, { opacity: 0, scale: 0.52 });
+      // Per feedback 2026-09-21: none of steps 3-8 should show the card's own border/chamfer inside
+      // the machine screen (it used to fade out from step 6 on, since those diagrams are wider than
+      // the column and crossed it — now off for the whole embedded sequence, steps 3-5 included).
+      gsap.set(card, { opacity: 0, scale: 0.52, borderColor: "rgba(255,255,255,0)" });
+      if (cardDiagonal) gsap.set(cardDiagonal, { opacity: 0 });
       if (tint) gsap.set(tint, { opacity: 0 });
       steps.jumpToStep(0);
       if (hasStep34Visual) {
@@ -590,6 +634,10 @@ export function useMachineScrollAnimation({
       gsap.set(fill, { clipPath: "inset(0% 100% 0% 0%)" });
 
       let currentStep = 0;
+      // The last sepFraction the server's grid marks were actually re-measured at — only re-runs
+      // useGridMarks's (layout-forcing) refreshAnchor() when this has genuinely changed, so once the
+      // split settles at 0 or 1 it stops paying for it every frame.
+      let lastServerSepFraction = -1;
       const instantUntil = performance.now() + 250;
 
       const applyProgress = contextSafe!((progress: number, forceInstant: boolean) => {
@@ -696,27 +744,30 @@ export function useMachineScrollAnimation({
           gsap.set(serverBottom!, { opacity: 1 - exit, y: exit * STEP4_EXIT_DRIFT_PX });
           gsap.set(machineWord!, { opacity: wordRamp * (1 - exit) });
 
-          // F-server (grid-trail.md §7): fades in over the LAST 20% of the card's approach, so it
-          // is already fully there the instant the card lands — server still closed — rather than
-          // only appearing once step 3 starts splitting it open. Holds through the split and step
-          // 4, fades out with the exact same `exit` that takes the bottom half + wordmark away.
-          const serverCrossIn = clamp01((approachRaw - 0.8) / 0.2);
+          // F-server (grid-trail.md §7, widened per feedback 2026-09-21 — the old [0.8, 1] window
+          // fully appeared only once the split had already started, reading as "invisible until it
+          // opens"): fades in over the card's own approach, well before it has finished landing, so
+          // there's real lead time before step 3 starts splitting it open. Holds through the split
+          // and step 4, fades out with the exact same `exit` that takes the bottom half + wordmark
+          // away.
+          const serverCrossIn = clamp01((approachRaw - 0.5) / 0.35);
           serverMarks.setAppearance({
             opacity: serverCrossIn * (1 - exit),
             scale: CROSS_HIDDEN_SCALE + (1 - CROSS_HIDDEN_SCALE) * serverCrossIn,
           });
+
+          // The frame itself OPENS AND CLOSES WITH the split (per feedback 2026-09-21) rather than
+          // sitting pre-expanded the whole time: `serverSepFractionRef` feeds the live value into
+          // `measureServerBox` (via MachineSectionClient.tsx's own box() callback), and
+          // refreshAnchor() re-snaps against it — only while it has actually changed since the last
+          // frame, so once fully closed or fully open this goes back to costing nothing.
+          if (sepFraction !== lastServerSepFraction) {
+            lastServerSepFraction = sepFraction;
+            serverSepFractionRef.current = sepFraction;
+            serverMarks.refreshAnchor();
+          }
         } else {
           serverMarks.setAppearance({ opacity: 0 });
-        }
-
-        // 7) the card's own outline: on for steps 3-5, off for 6-8 (those diagrams are wider than
-        // the column and crossed it). Derived from progress with a short cross-fade either side of
-        // the boundary, so it reverses with everything else.
-        {
-          const { from: borderlessAt } = stepSpan(BORDERLESS_FROM_STEP);
-          const off = clamp01((progress - borderlessAt + CARD_OUTLINE_FADE / 2) / CARD_OUTLINE_FADE);
-          gsap.set(card, { borderColor: `rgba(255,255,255,${0.1 * (1 - off)})` });
-          if (cardDiagonal) gsap.set(cardDiagonal, { opacity: 1 - off });
         }
 
         // 8) steps 5+: each diagram assembles itself piece by piece across its own step range —
@@ -827,11 +878,25 @@ export function useMachineScrollAnimation({
         // leaves a stale step showing once you come back.
         onLeave: () => applySmoothed(1, true),
         onLeaveBack: () => applySmoothed(0, true),
-        // The moment the pin engages is the moment the wordmark stops moving relative to the
-        // viewport, which is the only frame of reference the grid marks have. One rect read here,
-        // never in the scroll loop.
+        // The moment the pin engages is the moment the wordmark (and the card behind it) stop
+        // moving relative to the viewport, which is the only frame of reference any of these grid
+        // marks have. One rect read here, never in the scroll loop — except serverMarks, which also
+        // re-reads live while the split itself is moving (see the sepFraction block above).
+        //
+        // Real bug, found via measurement: infraMarks/deployMarks/agentMarks were framing almost the
+        // whole viewport instead of their own small diagram — because nothing was ever calling their
+        // refreshAnchor() beyond the hook's own mount-time effect, and at mount the embedded card
+        // hasn't necessarily settled into its final pinned layout yet (its own effects can still be
+        // running). serverMarks was already fine — it gets its own explicit refresh whenever
+        // sepFraction changes — these three just never got the same treatment.
         onToggle: (self) => {
-          if (self.isActive) gridMarks.refreshAnchor();
+          if (self.isActive) {
+            gridMarks.refreshAnchor();
+            serverMarks.refreshAnchor();
+            infraMarks.refreshAnchor();
+            deployMarks.refreshAnchor();
+            agentMarks.refreshAnchor();
+          }
         },
       });
 
