@@ -8,6 +8,7 @@ import { CUBE_SCALE_TARGET, useHeroScrollAnimation } from "@/animations/heroScro
 import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO, HERO_INTRO_TEXT, heroIntroTextStartSeconds } from "@/lib/heroModel";
 import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
+import { INFRASTRUCTURE_STEPS_INTRO } from "@/lib/infrastructureSteps";
 import { HEADER_HEIGHT_PX, readScale, s } from "@/lib/grid";
 
 // The 4 corner "+" marks around the server, restored 2026-09-20 — as grid marks this time, not
@@ -50,6 +51,18 @@ function MaskWords({ text, line }: { text: string; line: number }) {
     </>
   );
 }
+
+// ---- "03 — isolated spaces" overlay -----------------------------------------------------------------
+// Comes in over the pinned hero once the server has risen (heroScrollAnimation.ts, SPACE_* and
+// layoutSpace(), which positions the callouts and the other machines around the server).
+// Copy and structure from the design reference public/sources/Variant C, "03 — isolated spaces",
+// converted from its 1440 artboard to 1920 design px (x 4/3) and to the dark theme.
+// Trimmed on feedback the same day: only the two right-hand callouts are kept (no left-hand ones,
+// no "machine" dimension), and the copy is InfrastructureSection's step 1.
+const SPACE_CALLOUTS = [{ text: "access settings" }, { text: "your app — website · api · worker" }] as const;
+const SPACE_COPY = INFRASTRUCTURE_STEPS_INTRO[0];
+// Parked until the timeline brings them in (GSAP's autoAlpha takes over from these).
+const SPACE_HIDDEN: CSSProperties = { opacity: 0, visibility: "hidden" };
 
 /** Seconds to wait for the model to say whether the intro plays before revealing the copy anyway. */
 const TEXT_FALLBACK_SECONDS = 4;
@@ -98,6 +111,7 @@ export function HeroSectionClient() {
   const contentRef = useRef<HTMLDivElement>(null);
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
+  const spaceRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
@@ -135,6 +149,7 @@ export function HeroSectionClient() {
     modelSyncRef,
     ssrScrollReserveRef,
     gridMarks,
+    spaceRef,
   });
 
   // The GLB arrives well after the timeline is built, always starting at its closed pose. This
@@ -255,6 +270,70 @@ export function HeroSectionClient() {
           onIntro={handleIntro}
           pixelRatioBoost={CUBE_SCALE_TARGET}
         />
+      </div>
+
+      {/* "03 — isolated spaces": spans the viewport from the section's top, which IS the viewport top
+          while the section is pinned. Desktop only — at phone width there is no room beside the
+          server. Positions of everything but the copy are set by layoutSpace(). */}
+      <div
+        ref={spaceRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-screen text-left md:block"
+      >
+        <svg data-space-svg className="absolute inset-0 h-full w-full" fill="none">
+          {SPACE_CALLOUTS.map((c, i) => (
+            <g key={c.text} data-space-line={i} style={SPACE_HIDDEN}>
+              <path stroke="rgba(255,255,255,0.55)" strokeWidth="1" />
+              <circle r="3" fill="rgba(255,255,255,0.9)" />
+            </g>
+          ))}
+        </svg>
+
+        {/* Same copy as InfrastructureSection's step 1 (lib/infrastructureSteps.ts). */}
+        <div
+          data-space-text
+          className="absolute left-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex w-[calc(var(--s)*627)] flex-col gap-[calc(var(--s)*24)]"
+          style={SPACE_HIDDEN}
+        >
+          <div className="font-mono text-[calc(var(--s)*17)] tracking-[0.02em] text-brand">{SPACE_COPY.eyebrow}</div>
+          <h2 className="m-0 font-heading text-[calc(var(--s)*72)] leading-[1.02] font-normal tracking-[-0.025em] text-white">
+            {SPACE_COPY.heading}
+          </h2>
+          <p className="m-0 w-[calc(var(--s)*533)] text-[calc(var(--s)*23)] leading-[1.5] text-white/70">
+            {SPACE_COPY.paragraph}
+          </p>
+        </div>
+
+        {SPACE_CALLOUTS.map((c, i) => (
+          <div
+            key={c.text}
+            data-space-label={i}
+            className="absolute right-[calc(var(--s)*85)] whitespace-nowrap font-mono text-[calc(var(--s)*16)] leading-[1.5] text-white/80"
+            style={SPACE_HIDDEN}
+          >
+            {c.text}
+          </div>
+        ))}
+
+        {[0, 1].map((i) => (
+          <Image
+            key={i}
+            data-space-other
+            src="/herosection/for-animation.png"
+            alt=""
+            width={500}
+            height={444}
+            className="absolute h-auto"
+            style={SPACE_HIDDEN}
+          />
+        ))}
+        <div
+          data-space-caption
+          className="absolute right-[calc(var(--s)*85)] font-mono text-[calc(var(--s)*15)] text-white/50"
+          style={SPACE_HIDDEN}
+        >
+          other projects · their own machines
+        </div>
       </div>
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add

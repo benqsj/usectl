@@ -1071,6 +1071,32 @@ the whole viewport, so the bigger server doesn't crowd the header on shorter scr
 Verified in a production build: the hero server stays closed through the whole pin, the Build
 section's server is closed on arrival, zero console errors. `tsc` and `eslint` clean.
 
+## Hero: "03 — isolated spaces" phase (2026-09-21)
+
+(Replaced a same-day "02 — your stack" attempt, which was reverted on request.) Built into the hero's
+pinned scroll (closed-server timeline), after the rise/scale: the server slides 10vw right, the
+"03 — isolated spaces / Give every project its own space." copy comes in on the left, four callouts
+draw out to the server ("access settings", "your app — website · api · worker" on the right;
+"services — database · storage", "own resources — cpu · memory · storage" on the left), a green
+"machine" dimension line appears under it ("one project space"), and two dimmed machines slide in
+beside it with "other projects · their own machines". Copy/structure from `public/sources/Variant C`
+("03 — isolated spaces"), 1440 artboard -> 1920 design px (x4/3), dark theme; the other machines
+use `public/herosection/for-animation.png`.
+
+- Markup: `HeroSectionClient.tsx` (`SPACE_CALLOUTS`, the `spaceRef` overlay; hidden below `md`).
+- Motion + placement: `heroScrollAnimation.ts` (`SPACE_*`, `layoutSpace()` — computes the risen
+  server's centre/size and places lines, labels, dimension and machines around it; re-run on every
+  refresh via onRefreshInit).
+- Pin: `HERO_PIN_SCROLL_DISTANCE` 840 -> 1120 (the added 1.2 units * 233.33px); the text fade and
+  rise keep exactly the scroll they had.
+- Trimmed on feedback the same day: the two left-hand callouts and the "machine / one project space"
+  dimension were removed, the two dimmed machines were spaced further from the main server and from
+  each other, and the copy was swapped for InfrastructureSection's step 1 ("Infrastructure Freedom /
+  You came here to build.", read from `INFRASTRUCTURE_STEPS_INTRO[0]` so there is one source).
+- Then: once that copy is in, the main server's layers ease slightly apart as scrolling continues —
+  `SPACE_SPREAD` (0.32 of the GLB's explode_sequence; first 0.22), driven through the same `disassemble` proxy
+  so `syncModelToTimeline` keeps the model in step on refresh.
+
 ## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - ~~`BuildSectionClient.tsx` — the 4 corner "+" crosses...~~ — **done, 2026-09-21**, see the "Grid-mark fixes" entry above. The Infrastructure card's own four are still missing — same `useGridMarks(ref, {gapX, gapY})` pattern, one call. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.

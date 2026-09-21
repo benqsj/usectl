@@ -39,4 +39,8 @@ export const HERO_STACK_GAP_OPEN_PX = 140;
 // disassemble phase at all (3.6 of its 7.2 units), so the pin is exactly that much shorter:
 // 1680 - 3.6 * 233.33 = 840. Flip the flag back to true to restore the old behaviour as it was.
 export const HERO_EXPLODE_ON_SCROLL = false;
-export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 840;
+//
+// Later the same day the closed-server timeline gained the "03 — isolated spaces" phase (copy,
+// callouts, the "machine" dimension and the other projects' machines — heroScrollAnimation.ts,
+// SPACE_*). It adds 1.2 units before the end hold: 840 + 1.2 * 233.33 = 1120.
+export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 1120;

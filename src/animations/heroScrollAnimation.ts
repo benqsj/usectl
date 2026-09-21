@@ -100,6 +100,77 @@ interface HeroScrollRefs {
   // The 4 corner "+" marks around the server — drawn by the background grid, not by elements in
   // this section (see lib/gridEffect/useGridMarks.ts). This only drives how visible they are.
   gridMarks: GridMarksHandle;
+  // The "03 — isolated spaces" overlay (HeroSectionClient.tsx). Only used while
+  // HERO_EXPLODE_ON_SCROLL is off.
+  spaceRef?: RefObject<HTMLDivElement | null>;
+}
+
+// "03 — isolated spaces" phase (closed-server timeline only), after the rise: the server moves right,
+// the copy (InfrastructureSection's step 1, "You came here to build.") comes in on the left, two
+// callouts draw out to the server's parts on the right, and two dimmed machines ("other projects ·
+// their own machines") slide in beside it. Reference: public/sources/Variant C, section "03 — isolated spaces". It starts 0.4 units before
+// the rise/scale ends and the end hold follows: 2.0 + 1.6 + 1.2 = 4.8 units vs. 3.6 before, and
+// heroLayers.ts's HERO_PIN_SCROLL_DISTANCE grows by exactly those 1.2 units (280px).
+const SPACE_START = 2.0;
+const SPACE_PHASE_DURATION = 1.6;
+// Share of the viewport width the server moves right so the copy has the left side.
+const SPACE_SHIFT_X_VW = 0.1;
+// While the copy is up, the layers ease slightly apart: this share of the GLB's explode_sequence
+// (0 = closed, 1 = fully exploded). Requested 2026-09-21 — "just a little apart", not the old
+// full disassembly (HERO_EXPLODE_ON_SCROLL stays off).
+const SPACE_SPREAD = 0.32;
+
+/**
+ * Places the callouts, dimension, other machines and caption around where the risen server is
+ * (its centre and size are computed, not read, for the same reason recenterY is). Re-run on every
+ * refresh, so it follows the viewport.
+ */
+function layoutSpace(root: HTMLElement) {
+  const k = readScale();
+  const W = root.offsetWidth;
+  const H = window.innerHeight;
+  const cx = W / 2 + window.innerWidth * SPACE_SHIFT_X_VW;
+  const cy = (H + HEADER_HEIGHT_PX) / 2;
+  const hw = (MODEL_WIDTH_PX * k * CUBE_SCALE_TARGET) / 2;
+  const hh = ((3 * STACK_GAP_CLOSED_PX * k + coreHeightPx()) * CUBE_SCALE_TARGET) / 2;
+  const margin = 85 * k;
+  const gap = 12;
+
+  const svg = root.querySelector<SVGSVGElement>("[data-space-svg]");
+  svg?.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  // anchor on the server -> label on the right
+  const callouts: { ax: number; ay: number; ly: number; side: "right" | "left" }[] = [
+    { ax: cx + hw * 0.78, ay: cy - hh * 0.62, ly: cy - hh * 1.0, side: "right" },
+    { ax: cx + hw * 0.98, ay: cy - hh * 0.26, ly: cy - hh * 0.72, side: "right" },
+  ];
+  callouts.forEach((c, i) => {
+    const label = root.querySelector<HTMLElement>(`[data-space-label="${i}"]`);
+    const path = root.querySelector<SVGPathElement>(`[data-space-line="${i}"] path`);
+    const dot = root.querySelector<SVGCircleElement>(`[data-space-line="${i}"] circle`);
+    if (!label || !path || !dot) return;
+    label.style.top = `${c.ly - label.offsetHeight / 2}px`;
+    const edge = c.side === "right" ? W - margin - label.offsetWidth - gap : margin + label.offsetWidth + gap;
+    const elbowX = c.ax + (edge - c.ax) * 0.35;
+    path.setAttribute("d", `M${c.ax} ${c.ay} L${elbowX} ${c.ly} H${edge}`);
+    const len = path.getTotalLength();
+    path.style.strokeDasharray = `${len}`;
+    path.dataset.len = `${len}`;
+    dot.setAttribute("cx", `${c.ax}`);
+    dot.setAttribute("cy", `${c.ay}`);
+  });
+
+  // the other projects' machines, smaller and dimmed, to the right of and below the main one
+  const others = [...root.querySelectorAll<HTMLElement>("[data-space-other]")];
+  // (spaced a little further from the main server and from each other on feedback, 2026-09-21)
+  others.forEach((img, i) => {
+    const w = hw * 0.85;
+    img.style.width = `${w}px`;
+    img.style.left = `${cx + hw * 1.25 + i * hw * 0.5}px`;
+    img.style.top = `${cy - hh * 0.1 + i * hh * 0.45}px`;
+  });
+  const caption = root.querySelector<HTMLElement>("[data-space-caption]");
+  if (caption) caption.style.top = `${cy + hh * 1.15 - caption.offsetHeight / 2}px`;
 }
 
 export function useHeroScrollAnimation({
@@ -110,6 +181,7 @@ export function useHeroScrollAnimation({
   modelSyncRef,
   ssrScrollReserveRef,
   gridMarks,
+  spaceRef,
 }: HeroScrollRefs) {
   useGSAP(
     () => {
@@ -205,7 +277,10 @@ export function useHeroScrollAnimation({
           // extra scroll distance is reserved and the pin never actually holds.
           pinSpacing: true,
           invalidateOnRefresh: true,
-          onRefreshInit: measureRecenterY,
+          onRefreshInit: () => {
+            measureRecenterY();
+            if (!HERO_EXPLODE_ON_SCROLL && spaceRef?.current) layoutSpace(spaceRef.current);
+          },
           // THE FIX for "the hero's server is closed after the build section closed its own".
           //
           // Nothing is shared between the two 3D servers — each HeroServerModel instance builds its
@@ -284,9 +359,56 @@ export function useHeroScrollAnimation({
           // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
           .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
       } else {
-        // 4'. The server stays closed: after the scale/rise, the pin just holds for the same beat
-        //     the open server used to get, then releases.
-        tl.to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION);
+        // 3'. "03 — isolated spaces" (see SPACE_* above).
+        const space = spaceRef?.current;
+        if (space) {
+          layoutSpace(space);
+          const q = <T extends Element>(sel: string) => space.querySelector<T>(sel);
+          const text = q<HTMLElement>("[data-space-text]");
+          const others = [...space.querySelectorAll<HTMLElement>("[data-space-other]")];
+          const caption = q<HTMLElement>("[data-space-caption]");
+          const S = SPACE_START;
+
+          tl.to(cubeWrapper, { x: () => window.innerWidth * SPACE_SHIFT_X_VW, duration: 1.0, ease: "power2.inOut" }, S);
+          if (text) tl.fromTo(text, { autoAlpha: 0, y: 40 }, { autoAlpha: 1, y: 0, duration: 0.8, ease: "power2.out" }, S + 0.1);
+          // the layers ease a little apart once the copy is in (through the same `disassemble`
+          // proxy the full explode used, so syncModelToTimeline keeps the model in step with it)
+          tl.fromTo(
+            disassemble,
+            { t: 0 },
+            {
+              t: SPACE_SPREAD,
+              duration: 1.1,
+              ease: "power2.inOut",
+              onUpdate: () => modelRef.current?.setProgress(disassemble.t),
+            },
+            S + 0.4,
+          );
+
+          for (let i = 0; i < 2; i++) {
+            const line = q<SVGGElement>(`[data-space-line="${i}"]`);
+            const path = line?.querySelector("path");
+            const label = q<HTMLElement>(`[data-space-label="${i}"]`);
+            const at = S + 0.35 + i * 0.15;
+            if (line) tl.fromTo(line, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.1 }, at);
+            if (path) {
+              tl.fromTo(
+                path,
+                { strokeDashoffset: () => Number(path.dataset.len ?? 0) },
+                { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" },
+                at,
+              );
+            }
+            if (label) tl.fromTo(label, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.35, ease: "power2.out" }, at + 0.25);
+          }
+
+          others.forEach((img, i) => {
+            tl.fromTo(img, { autoAlpha: 0, x: 80 }, { autoAlpha: 0.35, x: 0, duration: 0.6, ease: "power3.out" }, S + 1.0 + i * 0.12);
+          });
+          if (caption) tl.fromTo(caption, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, S + 1.3);
+        }
+        // 4'. Then the pin holds for the same beat the open server used to get, and releases.
+        tl.to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SPACE_START + SPACE_PHASE_DURATION);
       }
 
       // The GLB loads asynchronously and arrives well after this timeline (and its ScrollTrigger)

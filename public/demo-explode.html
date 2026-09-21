@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="ka">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>usectl Server Scatter</title>
+<!--
+  DEMO ONLY — nothing in src/ uses this file.
+  Scroll down: the hero server breaks into its parts and throws them out to the sides. Everything
+  is driven by scroll progress (scrub), so scrolling back up puts it together again. The panel
+  (bottom-right) changes the style, the direction, distances, spin, timing and easing live.
+-->
+<style>
+  :root { --background:#1e1d1d; --foreground:#ededed; --brand:#11a32a;
+          --s: max(0.66667px, calc(100vw / 1920)); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--background); color:var(--foreground);
+         font-family:"Space Grotesk",system-ui,-apple-system,Segoe UI,sans-serif; overflow-x:hidden; }
+
+  /* grid, like the site's background */
+  body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image:linear-gradient(to right, rgba(255,255,255,.035) 1px, transparent 1px),
+                     linear-gradient(to bottom, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size:calc(var(--s)*82) calc(var(--s)*114); }
+
+  /* hero: tall section, sticky screen inside it; the extra height is the scroll the explode uses */
+  #hero { position:relative; z-index:1; }
+  #screen { position:sticky; top:0; height:100vh; overflow:hidden; }
+  #stage { position:absolute; inset:0; pointer-events:none; }
+  #stage canvas { display:block; width:100%; height:100%; }
+
+  .copy { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center;
+          padding:calc(var(--s)*64 + 24px) 24px 0; text-align:center; will-change:opacity,transform; }
+  .eyebrow { font-size:calc(var(--s)*22); line-height:1; font-weight:300; letter-spacing:-.02em; color:rgba(255,255,255,.7); }
+  h1 { margin:4px 0 0; font-size:calc(var(--s)*98); line-height:1.05; font-weight:700; text-wrap:balance; }
+  h1 .brand { color:var(--brand); }
+  .sub { max-width:calc(var(--s)*1080); margin:8px auto 0; font-size:calc(var(--s)*28); color:rgba(255,255,255,.7); }
+  .btns { margin-top:calc(var(--s)*35); display:flex; flex-wrap:wrap; gap:16px; justify-content:center; }
+  .btn { border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:12px 24px; font-size:15px; color:#fff; text-decoration:none; }
+  .btn.primary { background:var(--brand); border-color:var(--brand); }
+  /* where the server sits at rest — same box as the site's cube wrapper */
+  #slot { margin:calc(var(--s)*84) auto 0; width:calc(var(--s)*480); height:calc(var(--s)*465.32); }
+  #glow { position:absolute; left:50%; width:calc(var(--s)*820); height:calc(var(--s)*130); border-radius:50%;
+          filter:blur(24px); transform:translate(-50%,-50%); pointer-events:none; z-index:0;
+          background:radial-gradient(ellipse at center, rgba(72,144,72,.55) 0%, rgba(72,144,72,0) 70%); }
+
+  .next { position:relative; z-index:1; min-height:90vh; display:grid; place-items:center; text-align:center;
+          color:rgba(255,255,255,.55); font-size:18px; border-top:1px solid rgba(255,255,255,.08); }
+  .next b { display:block; color:#fff; font-size:40px; margin-bottom:8px; }
+
+  /* progress readout */
+  #prog { position:fixed; left:12px; bottom:12px; z-index:50; font:12px/1.5 ui-monospace,monospace; color:rgba(255,255,255,.6);
+          background:rgba(0,0,0,.35); padding:6px 10px; border-radius:8px; }
+  #prog i { display:block; height:3px; margin-top:4px; background:var(--brand); width:0; border-radius:2px; }
+
+  /* ---- panel ---- */
+  #panel { position:fixed; right:16px; bottom:16px; z-index:60; width:300px; max-width:calc(100vw - 32px);
+           max-height:calc(100vh - 32px); overflow-y:auto; overscroll-behavior:contain;
+           font:12px/1.4 ui-sans-serif,system-ui,sans-serif; color:rgba(255,255,255,.85);
+           background:rgba(18,18,18,.9); border:1px solid rgba(255,255,255,.12); border-radius:12px;
+           padding:12px 14px; backdrop-filter:blur(8px); }
+  #panel.min .body { display:none; }
+  #panel .top { display:flex; align-items:center; gap:8px; }
+  #panel .top b { flex:1; font-size:13px; }
+  #panel button { font:inherit; color:#fff; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
+                  border-radius:8px; padding:5px 10px; cursor:pointer; }
+  #panel button.primary { background:var(--brand); border-color:var(--brand); }
+  #panel button:focus-visible, #panel select:focus-visible, #panel input:focus-visible { outline:2px solid #6dff8a; outline-offset:2px; }
+  #panel .body { margin-top:10px; display:grid; gap:7px; }
+  #panel h4 { margin:10px 0 0; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:#8ee89c; }
+  #panel label { display:grid; grid-template-columns:1fr 44px; gap:2px 8px; align-items:center; }
+  #panel label > span:first-child { grid-column:1 / -1; color:rgba(255,255,255,.6); }
+  #panel label output { text-align:right; font-variant-numeric:tabular-nums; }
+  #panel input[type=range] { width:100%; accent-color:var(--brand); }
+  #panel select { grid-column:1 / -1; font:inherit; width:100%; color:#fff; background:#222; border:1px solid rgba(255,255,255,.18);
+                  border-radius:8px; padding:5px 6px; }
+  #panel .check { display:flex; gap:8px; align-items:center; }
+  #panel .row { display:flex; gap:8px; } #panel .row button { flex:1; }
+  #panel .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  #panel .chips button { flex:1 1 calc(50% - 6px); padding:6px 4px; }
+  #panel .chips button.on { background:var(--brand); border-color:var(--brand); }
+  #panel .hint { color:rgba(255,255,255,.5); }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<section id="hero">
+  <div id="screen">
+    <div id="glow"></div>
+    <div id="stage"></div>
+    <div class="copy" id="copy">
+      <div class="eyebrow">Managed Kubernetes &amp; AI Agent Infrastructure</div>
+      <h1>One server. <span class="brand">Unlimited</span> machines.</h1>
+      <p class="sub">Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
+        without a DevOps team. Build it. Launch it.</p>
+      <div class="btns"><a class="btn primary" href="#">Create Machine</a><a class="btn" href="#">See how it works</a></div>
+      <div id="slot" aria-hidden="true"></div>
+    </div>
+  </div>
+</section>
+<section class="next"><div><b>შემდეგი სექცია</b>ზემოთ დაბრუნდი — სერვერი ისევ აიწყობა.</div></section>
+
+<div id="prog">scroll: 0%<i></i></div>
+
+<div id="panel">
+  <div class="top">
+    <b>Server scatter — demo</b>
+    <button id="auto" class="primary" title="თვითონ ჩამოსქროლავს და ამოსქროლავს">▶ ავტო</button>
+    <button id="toggle" title="ჩაკეცვა">–</button>
+  </div>
+  <div class="body">
+    <h4>მზა ვარიანტები</h4>
+    <div class="chips" id="presets"></div>
+
+    <h4>სტილი</h4>
+    <label><span>როგორ დაიშალოს</span>
+      <select id="style">
+        <option value="sides">გვერდებზე — მარცხნივ / მარჯვნივ მონაცვლეობით</option>
+        <option value="arc">რკალით სროლა გვერდებზე</option>
+        <option value="fan">მარაოსავით გაშლა</option>
+        <option value="scatter">აფეთქება — ყველა მიმართულებით</option>
+        <option value="spiral">სპირალურად გარშემო</option>
+        <option value="liftThrow">ჯერ ზემოთ დაიშალოს, მერე გვერდებზე</option>
+      </select>
+    </label>
+    <label><span>თანმიმდევრობა</span>
+      <select id="order">
+        <option value="together">ყველა ერთად</option>
+        <option value="bottom">ქვემოდან ზემოთ</option>
+        <option value="top">ზემოდან ქვემოთ (ჯერ cap)</option>
+        <option value="middle">შუიდან გარეთ</option>
+      </select>
+    </label>
+    <label><span>მოძრაობის ხასიათი (easing)</span>
+      <select id="ease">
+        <option value="inout">რბილი დაწყება და დასრულება</option>
+        <option value="out">სწრაფი დაწყება, რბილი ბოლო</option>
+        <option value="back">გადაცილებით (back)</option>
+        <option value="expo">ძლიერი დამუხრუჭება (expo)</option>
+        <option value="linear">თანაბარი</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="parts" /> შიდა დეტალებიც გაიფანტოს (ჩიპები, რადიატორები, მეხსიერება…)</label>
+    <label class="check"><input type="checkbox" id="rise" checked /> სქროლისას სერვერი ცენტრში ავიდეს</label>
+    <label class="check"><input type="checkbox" id="fadeText" checked /> ტექსტი გაქრეს სქროლისას</label>
+
+    <h4>მანძილი და მიმართულება</h4>
+    <div id="s-dist"></div>
+    <h4>ტრიალი</h4>
+    <div id="s-rot"></div>
+    <h4>დრო და სქროლი</h4>
+    <div id="s-time"></div>
+
+    <div class="row"><button id="reset">ნაგულისხმევი</button><button id="copy">Copy settings</button></div>
+    <div class="hint">სქროლი ქვემოთ — იშლება, ზემოთ — ისევ იწყობა. სერვერი ტრიალებს ისე, როგორც საიტზე.</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+const MODEL_URL = '/herosection/3D/server.glb';
+const PX_PER_UNIT_AT_400 = 1045, ROTATION_SECONDS = 24, START_YAW_DEG = 45, ELEV_DEG = 35;
+const LAYERS = ['04_base', '03_core', '02_core', '01_cap'];          // bottom -> top
+const RING = '05_accent_ring';
+const PART_NAMES = /^(heatsink_A|heatsink_B|cpu_package|cpu_die|memory_\d|capacitor_\d|power_ic_\d|connector|controller_ic|star_logo|neon_traces)$/;
+
+/* ===== settings ========================================================================== */
+const DEFAULTS = {
+  style: 'sides', order: 'bottom', ease: 'inout', parts: false, rise: true, fadeText: true,
+  dist: 0.6,       // how far out to the sides, as a share of half the screen width
+  vspread: 0.3,    // vertical spread between pieces, as a share of half the screen height
+  depth: 0.15,     // toward / away from the camera (world units)
+  arc: 0.3,        // extra height in the middle of the throw, share of half the screen height
+  partsDist: 0.18, // how far the small parts fly from their layer (world units)
+  tumble: 35,      // tilt while flying (deg)
+  spin: 90,        // turn around its own vertical axis (deg)
+  spinSlow: 0.3,   // how much the idle turn keeps going while apart (1 = unchanged, 0 = stops)
+  scaleEnd: 0.9,   // size of the pieces when fully apart
+  fadeEnd: 0,      // 0 = stay visible, 1 = fade out completely at the end
+  zoomOut: 0.35,   // camera pulls back so the thrown pieces stay on screen
+  stagger: 0.12,   // share of the scroll between one piece starting and the next
+  startAt: 0.15,   // scroll share where the break-up starts (before it: only rise + text)
+  scrollLen: 180,  // extra scroll, in % of the screen height
+  smooth: 0.12,    // scroll smoothing (0 = raw, higher = floatier)
+};
+const SLIDERS = {
+  's-dist': [
+    ['dist',     'გვერდებზე გასროლის მანძილი (ეკრანის წილი)', 0, 1.2, 0.01],
+    ['vspread',  'ვერტიკალური გაშლა',                0, 1, 0.01],
+    ['depth',    'სიღრმე (კამერისკენ / უკან)',         0, 1,   0.01],
+    ['arc',      'რკალის სიმაღლე',                    0, 1,   0.01],
+    ['partsDist','შიდა დეტალების მანძილი',            0, 0.6, 0.01],
+    ['zoomOut',  'კამერის დაშორება',                  0, 1.2, 0.01],
+  ],
+  's-rot': [
+    ['tumble',   'გადაყირავება ფრენისას (°)',          0, 180, 1],
+    ['spin',     'საკუთარ ღერძზე ბრუნვა (°)',          0, 720, 5],
+    ['spinSlow', 'საერთო ბრუნვა დაშლისას (1 = როგორც იყო)', 0, 3, 0.05],
+    ['scaleEnd', 'ზომა ბოლოს',                        0.3, 1.6, 0.01],
+    ['fadeEnd',  'გაქრობა ბოლოს',                     0, 1, 0.01],
+  ],
+  's-time': [
+    ['startAt',  'საიდან იწყება დაშლა (სქროლის წილი)', 0, 0.8, 0.01],
+    ['stagger',  'დაყოვნება დეტალებს შორის',           0, 0.3, 0.005],
+    ['scrollLen','სქროლის სიგრძე (% ეკრანის)',          60, 500, 10],
+    ['smooth',   'სქროლის სირბილე',                   0, 0.9, 0.01],
+  ],
+};
+const PRESETS = [
+  ['გვერდებზე',        { style: 'sides', order: 'bottom', ease: 'inout', dist: 0.6, vspread: 0.3, tumble: 35, spin: 90, stagger: 0.12 }],
+  ['რკალით სროლა',     { style: 'arc', order: 'top', ease: 'out', dist: 0.7, vspread: 0.25, arc: 0.35, tumble: 70, spin: 180, stagger: 0.1 }],
+  ['მარაო',            { style: 'fan', order: 'middle', ease: 'back', dist: 0.55, vspread: 0.35, tumble: 20, spin: 45, stagger: 0.06 }],
+  ['აფეთქება',         { style: 'scatter', order: 'together', ease: 'expo', dist: 0.6, vspread: 0.32, depth: 0.4, tumble: 120, spin: 360, stagger: 0, parts: true, partsDist: 0.3 }],
+  ['სპირალი',          { style: 'spiral', order: 'bottom', ease: 'inout', dist: 0.55, vspread: 0.35, tumble: 25, spin: 270, stagger: 0.1 }],
+  ['ზემოთ → გვერდებზე', { style: 'liftThrow', order: 'bottom', ease: 'inout', dist: 0.65, vspread: 0.3, arc: 0.3, tumble: 30, spin: 90, stagger: 0.08 }],
+  ['დეტალებად დაშლა',  { style: 'sides', order: 'bottom', ease: 'out', dist: 0.5, vspread: 0.3, tumble: 25, spin: 60, stagger: 0.1, parts: true, partsDist: 0.22 }],
+  ['ნაზად, ახლოს',     { style: 'sides', order: 'together', ease: 'inout', dist: 0.35, vspread: 0.2, tumble: 12, spin: 30, stagger: 0.04, zoomOut: 0.1 }],
+];
+const P = { ...DEFAULTS };
+
+/* ===== three ============================================================================= */
+const stage = document.getElementById('stage');
+const slot = document.getElementById('slot');
+const glow = document.getElementById('glow');
+const copy = document.getElementById('copy');
+const hero = document.getElementById('hero');
+const progEl = document.getElementById('prog');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.3;
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -20, 20);
+{ const e = THREE.MathUtils.degToRad(ELEV_DEG); camera.position.set(0, Math.sin(e), Math.cos(e)).multiplyScalar(6); camera.lookAt(0, 0, 0); }
+const addLight = (l, x, y, z) => { l.position.set(x, y, z); scene.add(l); return l; };
+addLight(new THREE.DirectionalLight(0xffffff, 1.15), 2, 3.5, 2);
+addLight(new THREE.DirectionalLight(0xbfd8ff, 0.3), -3, 1.5, -1.5);
+addLight(new THREE.DirectionalLight(0x8effb0, 0.45), -1.5, -0.5, -3);
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+addLight(new THREE.PointLight(0x11ff4a, 1.2, 2, 2), 0, -0.05, 0);
+
+const anchor = new THREE.Group();   // screen placement (moves with the slot / rise)
+scene.add(anchor);
+const holder = new THREE.Group();   // centres the closed stack on the anchor
+anchor.add(holder);
+
+let turntable = null, ready = false;
+const pieces = [];   // { node, rest: Vector3, i, mats:[{m, o}], parts:[{node, rest, dir}] }
+
+let ppu = 1, viewW = 1, viewH = 1;
+function resize() {
+  viewW = innerWidth; viewH = innerHeight;
+  renderer.setSize(viewW, viewH, false);
+  ppu = PX_PER_UNIT_AT_400 * (slot.clientWidth / 400);
+  camera.left = -viewW / ppu / 2; camera.right = viewW / ppu / 2;
+  camera.top = viewH / ppu / 2; camera.bottom = -viewH / ppu / 2;
+  camera.updateProjectionMatrix();
+  hero.style.height = `calc(100vh + ${P.scrollLen}vh)`;
+}
+addEventListener('resize', resize);
+
+/* ===== motion =========================================================================== */
+const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+const EASE = {
+  inout: (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2),
+  out: (u) => 1 - Math.pow(1 - u, 3),
+  back: (u) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); },
+  expo: (u) => (u >= 1 ? 1 : 1 - Math.pow(2, -10 * u)),
+  linear: (u) => u,
+};
+// deterministic "random" so a given setting always looks the same
+const rnd = (i, k) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+
+/** Where piece i ends up (world space, before the turntable's own turn is undone). */
+function target(i, n) {
+  const side = i % 2 === 0 ? -1 : 1;
+  const mid = (n - 1) / 2;
+  // screen-relative: 1 = half the screen width / height, in world units at the current zoom-out
+  const zoomK = 1 + P.zoomOut;
+  const halfW = (viewW / 2 / ppu) * zoomK, halfH = (viewH / 2 / ppu) * zoomK;
+  const D = P.dist * halfW, V = P.vspread * halfH;
+  const vy = ((i - mid) / Math.max(mid, 1)) * V;
+  switch (P.style) {
+    case 'sides':
+    case 'arc':
+    case 'liftThrow':
+      return new THREE.Vector3(side * D * (0.75 + 0.25 * (i / Math.max(n - 1, 1))), vy, (rnd(i, 1) - 0.5) * P.depth * 2);
+    case 'fan': {
+      const a = ((i - mid) / Math.max(mid, 1)) * 1.1;                 // -1.1 .. 1.1 rad
+      return new THREE.Vector3(Math.sin(a) * D, (Math.cos(a) - 0.6) * V + vy * 0.3, (rnd(i, 2) - 0.5) * P.depth);
+    }
+    case 'scatter': {
+      const a = rnd(i, 3) * Math.PI * 2;
+      const side2 = Math.cos(a) >= 0 ? 1 : -1;
+      return new THREE.Vector3(side2 * D * (0.55 + 0.45 * Math.abs(Math.cos(a))), (rnd(i, 5) - 0.5) * 2 * V, Math.sin(a) * P.depth * 2);
+    }
+    case 'spiral': {
+      const a = i * (Math.PI / 2) + Math.PI / 4;
+      return new THREE.Vector3(Math.cos(a) * D, vy, Math.sin(a) * D * P.depth * 1.5);
+    }
+  }
+}
+
+function orderIndex(i, n) {
+  switch (P.order) {
+    case 'together': return 0;
+    case 'bottom': return i;
+    case 'top': return n - 1 - i;
+    case 'middle': return Math.round(Math.abs(i - (n - 1) / 2));
+  }
+}
+
+const tmp = new THREE.Vector3();
+let spinAngle = THREE.MathUtils.degToRad(START_YAW_DEG);
+function apply(p, dt) {
+  const n = pieces.length;
+  const ease = EASE[P.ease];
+  // everything after startAt is the break-up; before it only the rise + text fade happen
+  const q = clamp01((p - P.startAt) / Math.max(1 - P.startAt, 0.001));
+  const maxOrder = Math.max(...pieces.map((pc) => orderIndex(pc.i, n)));
+  const span = Math.max(1 - maxOrder * P.stagger, 0.05);
+
+  // the idle turn, slowed (or sped up) while apart; pieces fly in SCREEN directions regardless
+  const spinRate = (reduced ? 0 : (Math.PI * 2) / ROTATION_SECONDS) * (1 + (P.spinSlow - 1) * EASE.inout(q));
+  spinAngle += spinRate * dt;
+  turntable.rotation.y = spinAngle;
+  const undo = -spinAngle;
+
+  let maxE = 0;
+  for (const pc of pieces) {
+    const oi = orderIndex(pc.i, n);
+    const t = clamp01((q - oi * P.stagger) / span);
+    const e = ease(t);
+    maxE = Math.max(maxE, e);
+    const T = target(pc.i, n);
+    let lift = 0;
+    const halfH = (viewH / 2 / ppu) * (1 + P.zoomOut);
+    if (P.style === 'arc') lift = P.arc * halfH * 4 * t * (1 - t);
+    let ex = e;
+    if (P.style === 'liftThrow') {
+      // first half: pull apart upward like the old explode; second half: out to the sides
+      const up = EASE.inout(clamp01(t / 0.45));
+      ex = ease(clamp01((t - 0.35) / 0.65));
+      lift = up * (pc.i * 0.12 + P.arc * halfH * 0.3) * (1 - 0.6 * ex);
+    }
+    tmp.set(T.x * ex, T.y * ex + lift, T.z * ex).applyAxisAngle(THREE.Object3D.DEFAULT_UP, undo);
+    pc.node.position.copy(pc.rest).add(tmp);
+    const dir = pc.i % 2 === 0 ? -1 : 1;
+    const tum = THREE.MathUtils.degToRad(P.tumble) * e;
+    pc.node.rotation.set(tum * 0.7 * (rnd(pc.i, 7) > 0.5 ? 1 : -1), THREE.MathUtils.degToRad(P.spin) * e * dir, tum * dir);
+    pc.node.scale.setScalar(1 + (P.scaleEnd - 1) * e);
+    const alpha = 1 - P.fadeEnd * clamp01((e - 0.6) / 0.4);
+    for (const m of pc.mats) m.m.opacity = m.o * alpha;
+    pc.node.visible = alpha > 0.01;
+
+    // small parts leave their layer a little later and fly further, in their own directions
+    for (const part of pc.parts) {
+      const pt = P.parts ? ease(clamp01((t - 0.15) / 0.85)) : 0;
+      part.node.position.copy(part.rest).addScaledVector(part.dir, pt * P.partsDist / Math.max(pc.node.scale.x, 0.01));
+      part.node.rotation.set(part.spin.x * pt, part.spin.y * pt, part.spin.z * pt);
+    }
+  }
+  const wantTransparent = P.fadeEnd > 0 && maxE > 0.6;
+  for (const pc of pieces) for (const m of pc.mats) if (m.m.transparent !== wantTransparent) { m.m.transparent = wantTransparent; m.m.needsUpdate = true; }
+
+  // camera pulls back as things fly out
+  camera.zoom = 1 / (1 + P.zoomOut * EASE.inout(q));
+  camera.updateProjectionMatrix();
+
+  // placement: from the slot (under the text) up to the middle of the screen
+  const r = slot.getBoundingClientRect();
+  const slotY = r.top + r.height / 2;
+  const riseE = P.rise ? EASE.inout(clamp01(p / Math.max(P.startAt + 0.15, 0.2))) : 0;
+  const screenY = slotY + (viewH / 2 - slotY) * riseE;
+  anchor.position.set(0, ((viewH / 2 - screenY) / ppu) / camera.zoom, 0);
+  glow.style.top = `${screenY + r.height * 0.42 * (1 / (1 + P.zoomOut * EASE.inout(q)))}px`;
+  glow.style.opacity = String(1 - 0.85 * EASE.inout(q));
+
+  // text
+  const tf = P.fadeText ? clamp01(p / Math.max(P.startAt * 0.9, 0.08)) : 0;
+  copy.style.opacity = String(1 - tf);
+  copy.style.transform = `translateY(${-60 * tf}px)`;
+  // the slot is inside the copy block: keep it where it is so the placement math above stays put
+  slot.style.transform = `translateY(${60 * tf}px)`;
+}
+
+/* ===== scroll ============================================================================ */
+let pSmooth = 0, forcedP = null;
+const rawP = () => clamp01(scrollY / Math.max(hero.offsetHeight - innerHeight, 1));
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (!ready) return;
+  const target = forcedP ?? rawP();
+  const k = P.smooth <= 0 ? 1 : 1 - Math.exp(-dt / (P.smooth * 0.35));
+  pSmooth += (target - pSmooth) * k;
+  if (forcedP != null) pSmooth = forcedP;
+  apply(pSmooth, dt);
+  progEl.firstChild.textContent = `scroll: ${Math.round(pSmooth * 100)}%`;
+  progEl.lastChild.style.width = `${pSmooth * 100}%`;
+  renderer.render(scene, camera);
+});
+
+/* ===== model ============================================================================= */
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(MODEL_URL, (gltf) => {
+  const root = gltf.scene;
+  holder.add(root);
+  turntable = root.getObjectByName('turntable') ?? root;
+  // closed pose: the GLB's own nodes are authored exploded; t=0 of explode_sequence is closed
+  const clip = gltf.animations.find((a) => a.name === 'explode_sequence');
+  // (applied once and never updated again — stopping the action would restore the exploded pose)
+  if (clip) { const mixer = new THREE.AnimationMixer(root); const a = mixer.clipAction(clip); a.play(); a.paused = true; a.time = 0; mixer.update(0); }
+  const box = new THREE.Box3().setFromObject(root);
+  holder.position.y = -(box.max.y + box.min.y) / 2;
+
+  const names = [...LAYERS, RING];
+  names.forEach((name, idx) => {
+    const node = root.getObjectByName(name); if (!node) return;
+    const mats = [], seen = new Map();
+    node.traverse((o) => {
+      if (!o.isMesh) return;
+      const swap = (m) => { if (!seen.has(m)) { const c = m.clone(); seen.set(m, c); mats.push({ m: c, o: c.opacity }); } return seen.get(m); };
+      o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+    });
+    // the ring travels with the base
+    const i = name === RING ? 0 : idx;
+    const parts = [];
+    node.children.forEach((c, ci) => {
+      if (!PART_NAMES.test(c.name)) return;
+      const out = new THREE.Vector3(c.position.x, 0, c.position.z);
+      if (out.lengthSq() < 1e-6) out.set(rnd(idx, ci) - 0.5, 0, rnd(ci, idx) - 0.5);
+      out.normalize();
+      const dir = new THREE.Vector3(out.x, 0.8 + rnd(idx + 9, ci) * 0.8, out.z).normalize();
+      parts.push({ node: c, rest: c.position.clone(), dir,
+        spin: new THREE.Vector3((rnd(ci, 1) - 0.5) * 6, (rnd(ci, 2) - 0.5) * 6, (rnd(ci, 3) - 0.5) * 6) });
+    });
+    pieces.push({ node, rest: node.position.clone(), i, mats, parts });
+  });
+  resize();
+  ready = true;
+});
+
+/* ===== panel ============================================================================= */
+const inputs = {};
+for (const [holderId, list] of Object.entries(SLIDERS)) {
+  const holderEl = document.getElementById(holderId);
+  for (const [k, label, min, max, step] of list) {
+    const l = document.createElement('label');
+    l.innerHTML = `<span>${label}</span><input type="range" id="r-${k}" min="${min}" max="${max}" step="${step}"><output></output>`;
+    const input = l.querySelector('input'), out = l.querySelector('output');
+    input.addEventListener('input', () => { P[k] = Number(input.value); out.textContent = input.value; if (k === 'scrollLen') resize(); clearPreset(); });
+    inputs[k] = { input, out };
+    holderEl.appendChild(l);
+  }
+}
+const SELECTS = ['style', 'order', 'ease'], CHECKS = ['parts', 'rise', 'fadeText'];
+SELECTS.forEach((k) => document.getElementById(k).addEventListener('change', (e) => { P[k] = e.target.value; clearPreset(); }));
+CHECKS.forEach((k) => document.getElementById(k).addEventListener('change', (e) => { P[k] = e.target.checked; clearPreset(); }));
+function sync() {
+  for (const k in inputs) { inputs[k].input.value = P[k]; inputs[k].out.textContent = P[k]; }
+  SELECTS.forEach((k) => (document.getElementById(k).value = P[k]));
+  CHECKS.forEach((k) => (document.getElementById(k).checked = P[k]));
+  resize();
+}
+const presetsEl = document.getElementById('presets');
+const chipEls = PRESETS.map(([name, o], idx) => {
+  const b = document.createElement('button'); b.textContent = name;
+  b.onclick = () => { Object.assign(P, DEFAULTS, o); sync(); chipEls.forEach((c, j) => c.classList.toggle('on', j === idx)); };
+  presetsEl.appendChild(b); return b;
+});
+function clearPreset() { chipEls.forEach((c) => c.classList.remove('on')); }
+chipEls[0].classList.add('on');
+sync();
+
+document.getElementById('reset').onclick = () => { Object.assign(P, DEFAULTS); sync(); clearPreset(); chipEls[0].classList.add('on'); };
+document.getElementById('toggle').onclick = (e) => {
+  const p = document.getElementById('panel'); p.classList.toggle('min');
+  e.target.textContent = p.classList.contains('min') ? '+' : '–';
+};
+if (innerWidth < 1000) { document.getElementById('panel').classList.add('min'); document.getElementById('toggle').textContent = '+'; }
+document.getElementById('copy').onclick = async (e) => {
+  const txt = JSON.stringify(P);
+  try { await navigator.clipboard.writeText(txt); e.target.textContent = 'Copied ✓'; }
+  catch {
+    let box = document.getElementById('copyBox');
+    if (!box) { box = document.createElement('textarea'); box.id = 'copyBox'; box.readOnly = true; box.rows = 3;
+      box.style.cssText = 'width:100%;font:11px ui-monospace,monospace;color:#fff;background:#111;border:1px solid rgba(255,255,255,.2);border-radius:6px';
+      e.target.parentElement.after(box); }
+    box.value = txt; box.select(); e.target.textContent = 'მონიშნულია — Cmd+C';
+  }
+  setTimeout(() => (e.target.textContent = 'Copy settings'), 1800);
+};
+// auto preview: scroll down through the whole break-up, pause, and back up
+let autoRun = null;
+document.getElementById('auto').onclick = (e) => {
+  if (autoRun) { cancelAnimationFrame(autoRun); autoRun = null; e.target.textContent = '▶ ავტო'; return; }
+  e.target.textContent = '■ გაჩერება';
+  const end = hero.offsetHeight - innerHeight, t0 = performance.now(), D = 3200, HOLD = 900;
+  const step = (now) => {
+    const t = now - t0;
+    let f;
+    if (t < D) f = EASE.inout(t / D);
+    else if (t < D + HOLD) f = 1;
+    else if (t < 2 * D + HOLD) f = 1 - EASE.inout((t - D - HOLD) / D);
+    else { autoRun = null; e.target.textContent = '▶ ავტო'; scrollTo(0, 0); return; }
+    scrollTo(0, f * end);
+    autoRun = requestAnimationFrame(step);
+  };
+  autoRun = requestAnimationFrame(step);
+};
+addEventListener('wheel', () => { if (autoRun) { cancelAnimationFrame(autoRun); autoRun = null; document.getElementById('auto').textContent = '▶ ავტო'; } }, { passive: true });
+
+// frame-capture hook
+window.__setP = (p, yawDeg = START_YAW_DEG) => { forcedP = p; spinAngle = THREE.MathUtils.degToRad(yawDeg); };
+</script>
+</body>
+</html>
