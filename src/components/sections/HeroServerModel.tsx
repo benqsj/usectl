@@ -5,6 +5,10 @@ import { useEffect, useRef, type RefObject } from "react";
 // isn't available in type position. These are erased at build time and add nothing to the bundle.
 import type {
   AnimationAction,
+  Box3,
+  LineBasicMaterial,
+  ShaderMaterial,
+  Vector3,
   AnimationMixer,
   Light,
   Material,
@@ -37,6 +41,24 @@ import {
 export interface HeroServerModelHandle {
   /** 0 = closed assembly, 1 = fully exploded. Driven by the hero's scroll timeline. */
   setProgress: (progress: number) => void;
+  /**
+   * 0 = the normal rendered server, 1 = the line-drawn "blueprint" server of "02 — your stack"
+   * (public/sources/Variant C). In between, the two cross-fade. The line geometry is only built the
+   * first time this is called with a value above 0.
+   */
+  setBlueprint: (t: number) => void;
+  /**
+   * While on, the spin stops and the server eases to the nearest isometric 3/4 pose (45° + k·90°)
+   * and holds it — the callout lines of "02 — your stack" are attached to its corners, so it has to
+   * stand still. Dragging is ignored while locked. Off hands it back to the normal spin.
+   */
+  setPoseLock: (on: boolean) => void;
+  /**
+   * Where the four layers' outer corners are on screen right now (viewport px), top to bottom:
+   * cap, core, core, base. `right`/`left` are the corners furthest to either side, halfway down the
+   * layer's side wall — what a callout line attaches to.
+   */
+  projectAnchors: () => { right: { x: number; y: number }[]; left: { x: number; y: number }[] } | null;
 }
 
 interface HeroServerModelProps {
@@ -80,6 +102,23 @@ interface IntroPiece {
   restY: number;
   materials: FadingMaterial[];
 }
+
+/** Layer nodes inside server.glb, top to bottom — what projectAnchors() reports on. */
+const ANCHOR_LAYERS = ["01_cap", "02_core", "03_core", "04_base"] as const;
+/**
+ * The layers are rounded squares; this is how far out along the diagonal their rounded corner
+ * actually reaches, as a share of the half-size of their bounding box (1 would be the sharp corner
+ * the rounding cuts off).
+ */
+const ANCHOR_CORNER_REACH = 0.9;
+/** Blueprint look: the fill is the page background (globals.css --background), the lines are light. */
+const BLUEPRINT_FILL = 0x1e1d1d;
+const BLUEPRINT_LINE = 0xe8e8e3;
+const BLUEPRINT_LINE_OPACITY = 0.7;
+/** The glowing band where the scan crosses the server — the brand green, a notch brighter. */
+const BLUEPRINT_SCAN = 0x22c23d;
+/** Faces meeting at more than this many degrees get a line. */
+const BLUEPRINT_EDGE_ANGLE_DEG = 28;
 
 const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
 const smoothstep = (x: number) => {
@@ -208,6 +247,20 @@ export function HeroServerModel({
       let capClosedY = 0;
       let closedCentreY = 0;
       let ready = false;
+
+      // ---- "02 — your stack": blueprint look + locked pose ---------------------------------------
+      let poseLocked = false;
+      let blueprintT = 0;
+      /** Built on first use (see buildBlueprint) — null until then. */
+      let blueprint: {
+        fills: Mesh[];
+        lineMaterial: LineBasicMaterial;
+        fillMaterial: ShaderMaterial;
+        solids: { material: Material; transparent: boolean; opacity: number; depthWrite: boolean }[];
+        meshes: Mesh[];
+      } | null = null;
+      /** Each layer's box in its own node space, measured once at the closed pose. */
+      let anchorBoxes: { node: Object3D; box: Box3 }[] = [];
 
       // ---- first-load intro -------------------------------------------------------------------
       // Everything the intro changes (piece offsets, rotation, scale, opacity, glow strength) is
@@ -371,6 +424,212 @@ export function HeroServerModel({
         holder.position.y = -closedCentreY - growth / 2;
       };
 
+      const rawColor = (hex: number) =>
+        new THREE.Color().setRGB(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255, THREE.LinearSRGBColorSpace);
+
+      // The change of look is a scan: a horizontal cut sweeps down the server, the line drawing
+      // above it and the rendered model below it, with a green band glowing where the cut crosses
+      // the surfaces. Both sides are clipped by the same plane (in world space, so the spin and the
+      // explode clip don't matter), which also means nothing is ever drawn half-transparent.
+      renderer.localClippingEnabled = true;
+      /** Keeps what is BELOW the cut (the rendered model). */
+      const solidClip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
+      /** Keeps what is ABOVE the cut (the drawing). */
+      const drawClip = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1e6);
+      const scanBox = new THREE.Box3();
+
+      const buildBlueprint = () => {
+        if (blueprint || !gltfRoot) return blueprint;
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: BLUEPRINT_LINE,
+          transparent: true,
+          opacity: BLUEPRINT_LINE_OPACITY,
+          depthWrite: false,
+          toneMapped: false,
+          clippingPlanes: [drawClip],
+        });
+        // The fill hides the lines behind it (so each layer reads as a solid drawn in outline, like
+        // the reference) and draws its own outline where the surface turns away from the camera —
+        // the rounded corners have no hard edge for EdgesGeometry to find, so without this their
+        // silhouettes would be missing. It also draws the scan's glowing band.
+        const fillMaterial = new THREE.ShaderMaterial({
+          clipping: true,
+          clippingPlanes: [drawClip],
+          uniforms: {
+            // Written straight to the canvas (no tone mapping or colour-space conversion in this
+            // shader), so the hex values are set as-is rather than converted to linear first —
+            // otherwise the fill comes out near-black instead of the page's own background.
+            uFill: { value: rawColor(BLUEPRINT_FILL) },
+            uLine: { value: rawColor(BLUEPRINT_LINE) },
+            uScan: { value: rawColor(BLUEPRINT_SCAN) },
+            uLineOpacity: { value: BLUEPRINT_LINE_OPACITY },
+            uCut: { value: -1e6 },
+            uBand: { value: 0.03 },
+            uScanStrength: { value: 0 },
+          },
+          vertexShader: `
+            #include <clipping_planes_pars_vertex>
+            varying vec3 vNormal;
+            varying float vWorldY;
+            void main() {
+              vNormal = normalize(normalMatrix * normal);
+              vWorldY = (modelMatrix * vec4(position, 1.0)).y;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              gl_Position = projectionMatrix * mvPosition;
+              #include <clipping_planes_vertex>
+            }`,
+          fragmentShader: `
+            #include <clipping_planes_pars_fragment>
+            uniform vec3 uFill;
+            uniform vec3 uLine;
+            uniform vec3 uScan;
+            uniform float uLineOpacity;
+            uniform float uCut;
+            uniform float uBand;
+            uniform float uScanStrength;
+            varying vec3 vNormal;
+            varying float vWorldY;
+            void main() {
+              #include <clipping_planes_fragment>
+              float rim = 1.0 - abs(normalize(vNormal).z);
+              float edge = smoothstep(0.9, 0.975, rim) * uLineOpacity;
+              vec3 col = mix(uFill, uLine, edge);
+              float band = (1.0 - smoothstep(0.0, uBand, vWorldY - uCut)) * uScanStrength;
+              gl_FragColor = vec4(mix(col, uScan, band * 0.85), 1.0);
+            }`,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+        const fills: Mesh[] = [];
+        const meshes: Mesh[] = [];
+        const seen = new Set<Material>();
+        const solids: { material: Material; transparent: boolean; opacity: number; depthWrite: boolean }[] = [];
+        gltfRoot.traverse((o) => {
+          const mesh = o as Mesh;
+          if (!mesh.isMesh || mesh.userData.blueprintPart) return;
+          meshes.push(mesh);
+          (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((m) => {
+            if (seen.has(m)) return;
+            seen.add(m);
+            solids.push({ material: m, transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite });
+            m.clippingPlanes = [solidClip];
+            m.needsUpdate = true;
+          });
+        });
+        for (const mesh of meshes) {
+          const fill = new THREE.Mesh(mesh.geometry, fillMaterial);
+          fill.userData.blueprintPart = true;
+          fill.visible = false;
+          const lines = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, BLUEPRINT_EDGE_ANGLE_DEG), lineMaterial);
+          lines.userData.blueprintPart = true;
+          lines.renderOrder = 2;
+          fill.add(lines);
+          // A child of the mesh, so the explode clip and the intro move it along with its piece.
+          mesh.add(fill);
+          fills.push(fill);
+        }
+        blueprint = { fills, lineMaterial, fillMaterial, solids, meshes };
+        return blueprint;
+      };
+
+      const setBlueprint = (t: number) => {
+        const v = clamp01(t);
+        if (v === blueprintT) return;
+        blueprintT = v;
+        if (v > 0 && introStart >= 0) finishIntro();
+        const bp = v > 0 ? buildBlueprint() : blueprint;
+        if (!bp || !gltfRoot) return;
+
+        // Where the cut is: from just above the server's top down to just below its bottom.
+        holder.updateMatrixWorld(true);
+        scanBox.makeEmpty();
+        for (const mesh of bp.meshes) scanBox.expandByObject(mesh, true);
+        const pad = (scanBox.max.y - scanBox.min.y) * 0.06;
+        const top = scanBox.max.y + pad;
+        const bottom = scanBox.min.y - pad;
+        const cut = v <= 0 ? top + 1e3 : v >= 1 ? bottom - 1e3 : top - (top - bottom) * v;
+        solidClip.constant = cut;
+        drawClip.constant = -cut;
+
+        const drawing = v > 0;
+        const solid = v < 1;
+        for (const fill of bp.fills) fill.visible = drawing;
+        for (const s of bp.solids) {
+          // colorWrite rather than hiding the meshes, which would hide their drawing children too.
+          s.material.colorWrite = solid;
+          s.material.depthWrite = solid ? s.depthWrite : false;
+        }
+        const u = bp.fillMaterial.uniforms;
+        u.uCut.value = cut;
+        u.uBand.value = (top - bottom) * 0.07;
+        // The band glows while the cut is on the server and fades at both ends.
+        u.uScanStrength.value = Math.sin(Math.PI * v);
+        const solidShare = 1 - smoothstep(v);
+        accentLight.intensity = ACCENT_LIGHT_INTENSITY * solidShare;
+        if (glow) {
+          glow.style.transition = "none";
+          glow.style.opacity = solidShare.toFixed(3);
+        }
+      };
+
+      const setPoseLock = (on: boolean) => {
+        poseLocked = on;
+        if (on) dragging = false;
+      };
+
+      const measureAnchorBoxes = () => {
+        if (!gltfRoot) return;
+        gltfRoot.updateMatrixWorld(true);
+        anchorBoxes = [];
+        for (const name of ANCHOR_LAYERS) {
+          const node = gltfRoot.getObjectByName(name);
+          if (!node) continue;
+          const inv = node.matrixWorld.clone().invert();
+          const box = new THREE.Box3();
+          const tmp = new THREE.Box3();
+          node.traverse((o) => {
+            const mesh = o as Mesh;
+            if (!mesh.isMesh || mesh.userData.blueprintPart) return;
+            if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+            tmp.copy(mesh.geometry.boundingBox!).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld));
+            box.union(tmp);
+          });
+          if (!box.isEmpty()) anchorBoxes.push({ node, box });
+        }
+      };
+
+      const projectAnchors = () => {
+        if (!anchorBoxes.length) return null;
+        holder.updateMatrixWorld(true);
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const v = new THREE.Vector3();
+        const toScreen = (p: Vector3) => ({
+          x: rect.left + ((p.x + 1) / 2) * rect.width,
+          y: rect.top + ((1 - p.y) / 2) * rect.height,
+        });
+        const right: { x: number; y: number }[] = [];
+        const left: { x: number; y: number }[] = [];
+        for (const { node, box } of anchorBoxes) {
+          const cx = (box.min.x + box.max.x) / 2;
+          const cz = (box.min.z + box.max.z) / 2;
+          const hx = ((box.max.x - box.min.x) / 2) * ANCHOR_CORNER_REACH;
+          const hz = ((box.max.z - box.min.z) / 2) * ANCHOR_CORNER_REACH;
+          const my = (box.min.y + box.max.y) / 2;
+          const corners = [
+            [cx + hx, cz + hz],
+            [cx + hx, cz - hz],
+            [cx - hx, cz + hz],
+            [cx - hx, cz - hz],
+          ].map(([x, z]) => toScreen(v.set(x, my, z).applyMatrix4(node.matrixWorld).project(camera)));
+          corners.sort((a, b) => a.x - b.x);
+          left.push(corners[0]);
+          right.push(corners[corners.length - 1]);
+        }
+        return { right, left };
+      };
+
       const resize = () => {
         const wrapperWidth = wrapper.clientWidth;
         if (!wrapperWidth) return;
@@ -406,7 +665,7 @@ export function HeroServerModel({
       let dragOmega = 0;
 
       const onPointerDown = (e: PointerEvent) => {
-        if (!ready || !turntable) return;
+        if (!ready || !turntable || poseLocked) return;
         dragging = true;
         dragOmega = 0;
         lastX = e.clientX;
@@ -466,7 +725,18 @@ export function HeroServerModel({
       renderer.setAnimationLoop(() => {
         if (!ready) return;
         const dt = Math.min(clock.getDelta(), 0.05);
-        if (turntable && !dragging) {
+        if (turntable && poseLocked) {
+          // Settle on the nearest 45° + k·90° — the pose the reference is drawn in — and hold it.
+          omega = 0;
+          const quarter = Math.PI / 2;
+          const offset = THREE.MathUtils.degToRad(HERO_MODEL_START_YAW_DEG);
+          const target = Math.round((turntable.rotation.y - offset) / quarter) * quarter + offset;
+          turntable.rotation.y += (target - turntable.rotation.y) * (1 - Math.exp(-dt / 0.35));
+          if (Math.abs(elevation - baseElevation) > 0.01) {
+            elevation += (baseElevation - elevation) * (1 - Math.exp(-dt / HERO_MODEL_RESUME_TAU_S));
+            placeCamera();
+          }
+        } else if (turntable && !dragging) {
           // Relaxing the VELOCITY (not the angle) toward the resting one is what makes a
           // backwards throw slow, stop and turn around instead of snapping.
           omega += (restingOmega() - omega) * (1 - Math.exp(-dt / HERO_MODEL_RESUME_TAU_S));
@@ -516,6 +786,7 @@ export function HeroServerModel({
           ring = collectIntroPart(HERO_INTRO_RING);
         }
         setProgress(0);
+        measureAnchorBoxes();
         resize();
 
         // Only when the page genuinely opens on the hero. Skipped for reduced motion, for a reload
@@ -534,7 +805,7 @@ export function HeroServerModel({
           else setGlow(1, 1);
         }
         ready = true;
-        apiRef.current = { setProgress };
+        apiRef.current = { setProgress, setBlueprint, setPoseLock, projectAnchors };
         onReadyRef.current?.();
         if (intro) onIntroRef.current?.(introStart >= 0);
       });
@@ -558,6 +829,11 @@ export function HeroServerModel({
           else material?.dispose();
         });
         replacedMaterials.forEach((m) => m.dispose());
+        if (blueprint) {
+          blueprint.fills.forEach((f) => f.children.forEach((c) => (c as Mesh).geometry?.dispose()));
+          blueprint.lineMaterial.dispose();
+          blueprint.fillMaterial.dispose();
+        }
         envRT.texture.dispose();
         pmrem.dispose();
         renderer.dispose();

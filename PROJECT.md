@@ -1097,6 +1097,54 @@ use `public/herosection/for-animation.png`.
   `SPACE_SPREAD` (0.32 of the GLB's explode_sequence; first 0.22), driven through the same `disassemble` proxy
   so `syncModelToTimeline` keeps the model in step on refresh.
 
+## Hero: "02 — your stack" follows "01" inside the same pin; InfrastructureSection intro removed (2026-09-21)
+
+Request: after "You came here to build." the 3D server should follow the reader down to "02 — your
+stack", taking the shape of the reference (public/sources/Variant C, section 02 — the exploded, line-drawn
+server with website / api / worker / database / storage wired to its layers). Answers to the three
+open questions: the move reads as scrolling DOWN to a new screen (not an in-place swap); the server
+becomes a line drawing (wireframe), not just an exploded render; the old InfrastructureSection card
+(steps 1-2 + titanium server) is removed from the page.
+
+- Built inside the hero's pin, after the "01" hold (`heroScrollAnimation.ts`, `STACK_*`). Revised the
+  same evening to happen entirely IN PLACE (a first version scrolled on down to a new screen, with the
+  server opening further and shrinking — turned down: "too thin", "keep it all in the same spot"): the
+  "01" copy, callouts and other machines fade out, the "02" copy fades in on the same spot, and the
+  server stays exactly as it is on "01" — same position, same `CUBE_SCALE_TARGET` size, same
+  `SPACE_SPREAD` — only cross-fading to the line drawing and settling into the reference's pose. Once
+  that is done, the services come in on their own clock (a paused timeline played forward on arrival,
+  reversed 2x on the way back) — chips staggered 0.14s, lines drawn, green dots, then "your project —
+  5 services". Pace deliberately quick (the reference's felt slow — approved in the section demo).
+- Transition polish, same evening ("make the change prettier; move it aside a little, a touch smaller"):
+  the look change is now a SCAN rather than a cross-fade — one horizontal world-space clipping plane
+  sweeps down the server, line drawing above it, rendered model below it, with a brand-green band
+  glowing on the drawing where the cut crosses it (`HeroServerModel` fill shader: `uCut`/`uBand`/
+  `uScanStrength`; `renderer.localClippingEnabled`). Nothing is drawn half-transparent any more (the
+  cross-fade showed every inner part through the shell mid-way). The copy swaps line by line with a
+  lift + blur, and the server steps a touch right (`STACK_SHIFT_X_VW` 2.5vw) and a touch smaller
+  (`STACK_SCALE_RATIO` 0.9) while it changes.
+- One pin, one canvas: done this way rather than moving the model into a second section because the
+  model, its scrub state and every refresh fix above already live on this pin.
+- Pin: `HERO_PIN_SCROLL_DISTANCE` 1120 -> 1820 (+1.6 swap +1.4 hold units x 233.33px).
+- `HeroServerModel` gained three handle methods, all no-ops unless called (BuildSection's server is
+  untouched): `setBlueprint(t)` — builds, on first use, an EdgesGeometry line copy + a background-
+  coloured fill (with a view-angle rim so rounded corners still get a silhouette) as children of every
+  mesh, and cross-fades them with the solid materials (the CSS glow and the accent light fade too);
+  `setPoseLock(on)` — stops the spin and eases to the nearest 45° + k·90° pose, drag ignored;
+  `projectAnchors()` — the screen position of each layer's left/right outer corner, which
+  `trackStackLines()` re-reads every frame (gsap.ticker) so the callout lines stay attached at any
+  size. The fill colours bypass colour management on purpose (raw sRGB) — converted, the page-bg fill
+  rendered near-black.
+- Copy: `INFRASTRUCTURE_STEPS_INTRO[1]` ("Your stacks, in one place."), like "01" reads step 1. Chip
+  icons are the existing `/infrastructur/server-icons/*` (worker -> workflow.svg). Overlay is `md`+
+  only, like "01".
+- `page.tsx`: the `InfrastructureSection` (infra-intro) is gone; the component itself stays — the
+  machine screen still embeds it for steps 3-8. `INFRASTRUCTURE_INTRO_PIN_SCROLL_DISTANCE` is now unused.
+- Verified in `next dev` with Playwright (1920x1080, 1440x810, 1280x720): the move, the cross-fade,
+  the final layout with all five lines attached to the right corners, scrolling back restores the
+  solid spinning server; `tsc` and `eslint` clean. Not verified on a real GPU (headless SwiftShader ran
+  at <1 fps, so timings were checked by driving the timeline directly).
+
 ## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - ~~`BuildSectionClient.tsx` — the 4 corner "+" crosses...~~ — **done, 2026-09-21**, see the "Grid-mark fixes" entry above. The Infrastructure card's own four are still missing — same `useGridMarks(ref, {gapX, gapY})` pattern, one call. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.

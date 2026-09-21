@@ -61,6 +61,24 @@ function MaskWords({ text, line }: { text: string; line: number }) {
 // no "machine" dimension), and the copy is InfrastructureSection's step 1.
 const SPACE_CALLOUTS = [{ text: "the server you saw" }, { text: "handled by usectl" }] as const;
 const SPACE_COPY = INFRASTRUCTURE_STEPS_INTRO[0];
+// ---- "02 — your stack" overlay -------------------------------------------------------------------
+// Takes over from "01" in place: "01" fades out, this copy fades in on the same spot, the server stays
+// exactly as it is but turns into the reference's line drawing, and the project's five services come
+// in around it, each wired to a layer.
+// Reference: public/sources/Variant C, "02 — your stack" (with its services sped up on feedback);
+// motion and placement in heroScrollAnimation.ts (STACK_*, layoutStack()). Copy is step 2 of
+// lib/infrastructureSteps.ts, like the "01" overlay above uses step 1.
+// `side` is which side of the server the chip sits on, `layer` which layer its line goes to
+// (0 = cap … 3 = base).
+const STACK_COPY = INFRASTRUCTURE_STEPS_INTRO[1];
+const STACK_CHIPS = [
+  { label: "website", icon: "website", side: "right", layer: 0 },
+  { label: "api", icon: "api", side: "right", layer: 1 },
+  { label: "worker", icon: "workflow", side: "right", layer: 2 },
+  { label: "database", icon: "database", side: "left", layer: 2 },
+  { label: "storage", icon: "storage", side: "left", layer: 3 },
+] as const;
+
 // Parked until the timeline brings them in (GSAP's autoAlpha takes over from these).
 const SPACE_HIDDEN: CSSProperties = { opacity: 0, visibility: "hidden" };
 
@@ -112,6 +130,7 @@ export function HeroSectionClient() {
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
+  const stackRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
@@ -150,6 +169,7 @@ export function HeroSectionClient() {
     ssrScrollReserveRef,
     gridMarks,
     spaceRef,
+    stackRef,
   });
 
   // The GLB arrives well after the timeline is built, always starting at its closed pose. This
@@ -334,6 +354,75 @@ export function HeroSectionClient() {
         >
           other projects · their own machines
         </div>
+      </div>
+
+      {/* "02 — your stack": same frame as the "01" overlay above. Chip positions and line paths are
+          set by layoutStack() / the line tracker in heroScrollAnimation.ts — the lines are
+          re-attached to the server's corners every frame while this is on screen. */}
+      <div
+        ref={stackRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-screen text-left md:block"
+        style={SPACE_HIDDEN}
+      >
+        <svg data-stack-svg className="absolute inset-0 h-full w-full" fill="none">
+          {STACK_CHIPS.map((c, i) => (
+            <g key={c.label} data-stack-line={i}>
+              <path
+                pathLength={1}
+                strokeDasharray="1"
+                strokeDashoffset="1"
+                stroke="rgba(255,255,255,0.55)"
+                strokeWidth="1"
+              />
+              <circle r="3.5" fill="var(--brand)" opacity="0" />
+            </g>
+          ))}
+        </svg>
+
+        <div
+          data-stack-text
+          className="absolute left-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex w-[calc(var(--s)*627)] flex-col gap-[calc(var(--s)*24)]"
+          style={SPACE_HIDDEN}
+        >
+          <div className="font-mono text-[calc(var(--s)*17)] tracking-[0.02em] text-brand">{STACK_COPY.eyebrow}</div>
+          <h2 className="m-0 font-heading text-[calc(var(--s)*72)] leading-[1.02] font-normal tracking-[-0.025em] text-white">
+            {STACK_COPY.heading}
+          </h2>
+          <p className="m-0 w-[calc(var(--s)*533)] text-[calc(var(--s)*23)] leading-[1.5] text-white/70">
+            {STACK_COPY.paragraph}
+          </p>
+        </div>
+
+        <div
+          data-stack-label
+          className="absolute right-[calc(var(--s)*85)] top-[calc(96px+var(--s)*60)] flex items-center gap-[calc(var(--s)*13)] font-mono text-[calc(var(--s)*17)] text-brand"
+          style={SPACE_HIDDEN}
+        >
+          <span className="block h-px w-[calc(var(--s)*37)] bg-brand" />
+          your project — {STACK_CHIPS.length} services
+        </div>
+
+        {STACK_CHIPS.map((c, i) => (
+          <div
+            key={c.label}
+            data-stack-chip={i}
+            data-side={c.side}
+            data-layer={c.layer}
+            className="absolute flex h-[calc(var(--s)*45)] items-center gap-[calc(var(--s)*11)] rounded-[calc(var(--s)*8)] border border-white/40 bg-background px-[calc(var(--s)*16)] font-mono text-[calc(var(--s)*17)] whitespace-nowrap text-white/85"
+            style={SPACE_HIDDEN}
+          >
+            <Image
+              src={`/infrastructur/server-icons/${c.icon}.svg`}
+              alt=""
+              width={68}
+              height={68}
+              className="h-[calc(var(--s)*24)] w-[calc(var(--s)*24)] object-contain"
+              style={{ filter: "brightness(2.6)" }}
+            />
+            <span>{c.label}</span>
+          </div>
+        ))}
       </div>
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add

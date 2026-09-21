@@ -43,4 +43,9 @@ export const HERO_EXPLODE_ON_SCROLL = false;
 // Later the same day the closed-server timeline gained the "03 — isolated spaces" phase (copy,
 // callouts, the "machine" dimension and the other projects' machines — heroScrollAnimation.ts,
 // SPACE_*). It adds 1.2 units before the end hold: 840 + 1.2 * 233.33 = 1120.
-export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 1120;
+//
+// Then "02 — your stack" (heroScrollAnimation.ts, STACK_*): in place, inside the same pin — the copy
+// swaps, the server turns into a line drawing, the services come in around it. It adds
+// STACK_MOVE_DURATION + STACK_HOLD_DURATION = 3 units:
+// 1120 + 3 * 233.33 = 1820.
+export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 1820;

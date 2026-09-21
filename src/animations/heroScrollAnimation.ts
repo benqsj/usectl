@@ -103,6 +103,8 @@ interface HeroScrollRefs {
   // The "03 — isolated spaces" overlay (HeroSectionClient.tsx). Only used while
   // HERO_EXPLODE_ON_SCROLL is off.
   spaceRef?: RefObject<HTMLDivElement | null>;
+  // The "02 — your stack" overlay (HeroSectionClient.tsx), which follows "01" in the same pin.
+  stackRef?: RefObject<HTMLDivElement | null>;
 }
 
 // "03 — isolated spaces" phase (closed-server timeline only), after the rise: the server moves right,
@@ -119,6 +121,84 @@ const SPACE_SHIFT_X_VW = 0.1;
 // (0 = closed, 1 = fully exploded). Requested 2026-09-21 — "just a little apart", not the old
 // full disassembly (HERO_EXPLODE_ON_SCROLL stays off).
 const SPACE_SPREAD = 0.32;
+
+// "02 — your stack" phase, after the "01" hold. Everything happens in place (revised 2026-09-21 — a
+// first version scrolled on down to a new screen, and was turned down): the "01" copy, callouts and
+// other machines fade out, the "02" copy fades in where "01"'s was, and the server stays exactly where
+// and as it is — same size, same spread — only turning into the reference's line drawing and settling
+// into the reference's pose. Once it has landed, the five services come in on their own clock (like the
+// section's step swaps elsewhere on the page, not scrubbed), wired to the layers. Reference:
+// public/sources/Variant C, "02 — your stack". Adds STACK_MOVE + STACK_HOLD = 3 units (700px) to the
+// pin — see heroLayers.ts.
+export const STACK_MOVE_DURATION = 1.6;
+export const STACK_HOLD_DURATION = 1.4;
+// On "02" the server ends up this much smaller than on "01", and this much further right (share of
+// the viewport width, on top of SPACE_SHIFT_X_VW). Kept small on purpose — "a touch", per feedback.
+const STACK_SCALE_RATIO = 0.9;
+const STACK_SHIFT_X_VW = 0.025;
+// Share of the move after which the services start coming in.
+const STACK_REVEAL_AT = 0.9;
+// The services' own reveal, in seconds (plays forward on arrival, backward twice as fast on the way
+// back up). Kept quick on purpose — the reference's pace read as far too slow.
+const CHIP_STAGGER = 0.14;
+const CHIP_IN = 0.4;
+const LINES_START = 0.45;
+const LINE_STAGGER = 0.1;
+const LINE_DRAW = 0.5;
+const STACK_LABEL_AT = 1.15;
+
+/** Where the chips sit (share of the viewport below the header), from the reference's 860px artboard. */
+const STACK_CHIP_Y = { right: [150 / 860, 204 / 860, 258 / 860], left: [604 / 860, 658 / 860] };
+
+/** Places the "02" chips; the lines are drawn to them live (see trackStackLines). */
+function layoutStack(root: HTMLElement) {
+  const k = readScale();
+  const W = root.offsetWidth;
+  const H = window.innerHeight;
+  const margin = 85 * k;
+  const svg = root.querySelector<SVGSVGElement>("[data-stack-svg]");
+  svg?.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const count = { right: 0, left: 0 };
+  root.querySelectorAll<HTMLElement>("[data-stack-chip]").forEach((chip) => {
+    const side = chip.dataset.side === "left" ? "left" : "right";
+    const y = HEADER_HEIGHT_PX + (H - HEADER_HEIGHT_PX) * STACK_CHIP_Y[side][count[side]++];
+    chip.style.top = `${y - chip.offsetHeight / 2}px`;
+    chip.style.left = side === "left" ? `${margin}px` : `${W - margin - chip.offsetWidth}px`;
+  });
+}
+
+/**
+ * Re-draws each chip's line to its layer's corner. The corners come from the model itself
+ * (HeroServerModel.projectAnchors), so the lines stay on the server however it has been scaled or
+ * shifted, and at any viewport size.
+ */
+function trackStackLines(root: HTMLElement, model: HeroServerModelHandle | null) {
+  const anchors = model?.projectAnchors();
+  if (!anchors) return;
+  const box = root.getBoundingClientRect();
+  const k = readScale();
+  root.querySelectorAll<HTMLElement>("[data-stack-chip]").forEach((chip) => {
+    const i = chip.dataset.stackChip;
+    const g = root.querySelector<SVGGElement>(`[data-stack-line="${i}"]`);
+    const path = g?.querySelector("path");
+    const dot = g?.querySelector("circle");
+    if (!path || !dot) return;
+    const left = chip.dataset.side === "left";
+    const a = (left ? anchors.left : anchors.right)[Number(chip.dataset.layer)];
+    if (!a) return;
+    const ax = a.x - box.left;
+    const ay = a.y - box.top;
+    const cy = chip.offsetTop + chip.offsetHeight / 2;
+    const edge = left ? chip.offsetLeft + chip.offsetWidth : chip.offsetLeft;
+    const run = Math.abs(cy - ay) * 0.9;
+    const elbow = left
+      ? Math.max(edge + 24 * k, Math.min(ax, ax - run))
+      : Math.min(edge - 24 * k, Math.max(ax, ax + run));
+    path.setAttribute("d", `M${edge} ${cy} H${elbow} L${ax} ${ay}`);
+    dot.setAttribute("cx", `${ax}`);
+    dot.setAttribute("cy", `${ay}`);
+  });
+}
 
 /**
  * Places the callouts, dimension, other machines and caption around where the risen server is
@@ -182,6 +262,7 @@ export function useHeroScrollAnimation({
   ssrScrollReserveRef,
   gridMarks,
   spaceRef,
+  stackRef,
 }: HeroScrollRefs) {
   useGSAP(
     () => {
@@ -264,6 +345,10 @@ export function useHeroScrollAnimation({
       // ScrollTrigger's own onRefresh below — which fires on creation too, hence the nullable
       // holder rather than a direct reference.
       let syncModelOnRefresh: (() => void) | null = null;
+      // Set by the "02" phase: re-applies the pose lock and blueprint after a resync, and removes its
+      // per-frame line tracker on cleanup.
+      let syncStack: (() => void) | null = null;
+      let removeTicker: (() => void) | null = null;
 
       const tl = gsap.timeline({
         scrollTrigger: {
@@ -280,6 +365,7 @@ export function useHeroScrollAnimation({
           onRefreshInit: () => {
             measureRecenterY();
             if (!HERO_EXPLODE_ON_SCROLL && spaceRef?.current) layoutSpace(spaceRef.current);
+            if (!HERO_EXPLODE_ON_SCROLL && stackRef?.current) layoutStack(stackRef.current);
           },
           // THE FIX for "the hero's server is closed after the build section closed its own".
           //
@@ -304,6 +390,9 @@ export function useHeroScrollAnimation({
       // `hold.t` exists purely to give the timeline its trailing dead time.
       const disassemble = { t: 0 };
       const hold = { t: 0 };
+      // "02 — your stack": 0 = rendered server, 1 = line drawing (HeroServerModel.setBlueprint).
+      const blueprint = { t: 0 };
+      const stackHold = { t: 0 };
 
       // 1. Text rises and fades out (not a plain in-place dissolve).
       tl.to(
@@ -407,8 +496,130 @@ export function useHeroScrollAnimation({
           });
           if (caption) tl.fromTo(caption, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, S + 1.3);
         }
-        // 4'. Then the pin holds for the same beat the open server used to get, and releases.
+        // 4'. Then the pin holds for the same beat the open server used to get…
         tl.to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SPACE_START + SPACE_PHASE_DURATION);
+
+        // 5'. …and scrolls on down to "02 — your stack" (see STACK_* above).
+        const stack = stackRef?.current;
+        if (space && stack) {
+          layoutStack(stack);
+          const T = SPACE_START + SPACE_PHASE_DURATION + HOLD_OPEN_DURATION;
+          const M = STACK_MOVE_DURATION;
+
+          // "01" out: its copy lifts and blurs away line by line, the callouts and other machines
+          // fade; then "02"'s copy rises into the same spot the same way.
+          const spaceText = space.querySelector<HTMLElement>("[data-space-text]");
+          const spaceRest = [...space.children].filter((el) => el !== spaceText);
+          if (spaceText) {
+            tl.to(
+              [...spaceText.children],
+              { autoAlpha: 0, y: -28, filter: "blur(8px)", duration: M * 0.3, ease: "power2.in", stagger: M * 0.05 },
+              T,
+            );
+          }
+          tl.to(spaceRest, { autoAlpha: 0, duration: M * 0.3, ease: "power1.in" }, T);
+          tl.set(stack, { autoAlpha: 1 }, T);
+          const stackText = stack.querySelector<HTMLElement>("[data-stack-text]");
+          if (stackText) {
+            tl.set(stackText, { autoAlpha: 1 }, T);
+            tl.fromTo(
+              [...stackText.children],
+              { autoAlpha: 0, y: 32, filter: "blur(8px)" },
+              {
+                autoAlpha: 1,
+                y: 0,
+                filter: "blur(0px)",
+                duration: M * 0.35,
+                ease: "power3.out",
+                stagger: M * 0.06,
+              },
+              T + M * 0.38,
+            );
+          }
+
+          // The server: steps a little aside and back while it changes — a touch smaller and a touch
+          // further from the copy — so the change reads as a move rather than a flicker in place.
+          tl.to(
+            cubeWrapper,
+            {
+              scale: CUBE_SCALE_TARGET * STACK_SCALE_RATIO,
+              x: () => window.innerWidth * (SPACE_SHIFT_X_VW + STACK_SHIFT_X_VW),
+              duration: M * 0.9,
+              ease: "power2.inOut",
+            },
+            T,
+          );
+          tl.fromTo(
+            blueprint,
+            { t: 0 },
+            {
+              t: 1,
+              duration: M * 0.75,
+              ease: "power2.inOut",
+              immediateRender: false,
+              onUpdate: () => modelRef.current?.setBlueprint(blueprint.t),
+            },
+            T + M * 0.1,
+          );
+          tl.to(stackHold, { t: 1, duration: STACK_HOLD_DURATION }, T + M);
+
+          // The services: their own timeline, played on arrival and reversed on the way back.
+          const q = <E extends Element>(sel: string) => [...stack.querySelectorAll<E>(sel)];
+          const chips = q<HTMLElement>("[data-stack-chip]");
+          const reveal = gsap.timeline({ paused: true });
+          chips.forEach((chip, i) => {
+            reveal.fromTo(
+              chip,
+              { autoAlpha: 0, y: 8 },
+              { autoAlpha: 1, y: 0, duration: CHIP_IN, ease: "power2.out" },
+              i * CHIP_STAGGER,
+            );
+            const g = stack.querySelector(`[data-stack-line="${chip.dataset.stackChip}"]`);
+            const path = g?.querySelector("path");
+            const dot = g?.querySelector("circle");
+            const at = LINES_START + i * LINE_STAGGER;
+            if (path) reveal.fromTo(path, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: LINE_DRAW, ease: "power2.out" }, at);
+            if (dot) reveal.fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.15 }, at + LINE_DRAW - 0.1);
+          });
+          const label = stack.querySelector<HTMLElement>("[data-stack-label]");
+          if (label) reveal.fromTo(label, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: CHIP_IN, ease: "power2.out" }, STACK_LABEL_AT);
+
+          const revealAt = T + M * STACK_REVEAL_AT;
+          let revealed = false;
+          let locked = false;
+          const onTimeline = () => {
+            const time = tl.time();
+            const lock = time >= T + M * 0.05;
+            if (lock !== locked) {
+              locked = lock;
+              modelRef.current?.setPoseLock(lock);
+            }
+            const show = time >= revealAt;
+            if (show !== revealed) {
+              revealed = show;
+              if (show) reveal.timeScale(1).play();
+              else reveal.timeScale(2).reverse();
+            }
+          };
+          tl.eventCallback("onUpdate", onTimeline);
+          // After a refresh / late model: land on the right state instantly, no animation.
+          syncStack = () => {
+            const time = tl.time();
+            locked = time >= T + M * 0.05;
+            modelRef.current?.setPoseLock(locked);
+            modelRef.current?.setBlueprint(blueprint.t);
+            revealed = time >= revealAt;
+            reveal.pause().progress(revealed ? 1 : 0);
+          };
+
+          // Lines follow the server every frame while "02" is on screen.
+          const track = () => {
+            if (tl.time() < T) return;
+            trackStackLines(stack, modelRef.current);
+          };
+          gsap.ticker.add(track);
+          removeTicker = () => gsap.ticker.remove(track);
+        }
       }
 
       // The GLB loads asynchronously and arrives well after this timeline (and its ScrollTrigger)
@@ -464,6 +675,7 @@ export function useHeroScrollAnimation({
         const st = tl.scrollTrigger;
         if (st) tl.progress(st.progress);
         modelRef.current?.setProgress(disassemble.t);
+        syncStack?.();
       };
       syncModelOnRefresh = syncModelToTimeline;
 
@@ -486,6 +698,8 @@ export function useHeroScrollAnimation({
         requestAnimationFrame(syncModelToTimeline);
         setTimeout(syncModelToTimeline, 300);
       };
+
+      return () => removeTicker?.();
     },
     { scope: sectionRef },
   );
