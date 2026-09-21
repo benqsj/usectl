@@ -1,6 +1,12 @@
 # Grid glow inside the cross marks (plan)
 
-Status: **plan final 2026-09-21, not started.** Written against commit `3b048fe`, where the grid is
+Status: **SUPERSEDED 2026-09-21 by `grid-trail.md`.** The glow described here WAS built (it is in the
+working tree at the time of writing) and then dropped: after seeing a demo the user asked for a
+pen-like TRAIL in `#11a32a` instead of a glow. This file is kept only as the record of where the
+region machinery (`GridRegion`, `getRegions()`) came from — `grid-trail.md` reuses it. Do not
+implement anything from here.
+
+Original status: Written against commit `3b048fe`, where the grid is
 already a WebGL2 canvas with grid-drawn crosses (see `background-line-animations.md` §10 for how
 that was built and measured). This file changes what the pointer does; it does not rebuild the grid.
 

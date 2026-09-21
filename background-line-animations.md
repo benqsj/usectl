@@ -1,6 +1,6 @@
 # Background grid — mouse deformation + grid-drawn cross marks
 
-Status: **the mouse deformation is being REMOVED (user decision 2026-09-21) — see `grid-glow.md`, which replaces the pointer behaviour with a glow inside the cross marks. The grid canvas, the CSS fallback and the grid-drawn crosses described here all stay.** Originally implemented 2026-09-20 (stages 0, A, B, C, D, E all done — see §10 for what was
+Status: **the mouse deformation is being REMOVED (user decision 2026-09-21) — see `grid-trail.md`, which replaces the pointer behaviour with a pen-like trail inside the cross marks. The grid canvas, the CSS fallback and the grid-drawn crosses described here all stay.** Originally implemented 2026-09-20 (stages 0, A, B, C, D, E all done — see §10 for what was
 measured and what is still open). The plan below is kept as written, because every decision in it
 still describes the shipped code; §10 records where reality differed.
 

@@ -12,7 +12,7 @@ import {
   readScale,
   rowTopY,
 } from "@/lib/grid";
-import { clearMarks, setMarks, type GridMark } from "./marks";
+import { clearMarks, setMarks, type GridMark, type GridRegionInput } from "./marks";
 
 export interface AnchorBox {
   left: number;
@@ -41,6 +41,11 @@ export interface GridMarksOptions {
    * most of its pin and whose section is position:fixed while pinned.
    */
   box?: () => AnchorBox | null;
+  /**
+   * Publish the rectangle spanned by these 4 crosses as a glow region too (grid-glow.md §3).
+   * Default true — every existing caller gets the glow with no changes of its own.
+   */
+  glow?: boolean;
 }
 
 export interface GridMarksHandle {
@@ -82,16 +87,19 @@ export function useGridMarks(
 
   const appearanceRef = useRef({ opacity: 0, scale: 1 });
   const cellsRef = useRef<{ col: number; row: number }[]>([]);
+  const regionCellsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
 
   const publish = useCallback(() => {
     const { opacity, scale } = appearanceRef.current;
     const marks: GridMark[] = cellsRef.current.map((cell) => ({ ...cell, opacity, scale }));
-    setMarks(ownerId, marks);
+    const cells = regionCellsRef.current;
+    const region: GridRegionInput | null = cells ? { ...cells, opacity } : null;
+    setMarks(ownerId, marks, region);
   }, [ownerId]);
 
   const refreshAnchor = useCallback(() => {
     const el = anchorRef.current;
-    const { gapX, gapY, minGap = DEFAULT_MIN_GAP, box } = optionsRef.current;
+    const { gapX, gapY, minGap = DEFAULT_MIN_GAP, box, glow = true } = optionsRef.current;
     const rect = box ? box() : el?.getBoundingClientRect();
     if (!rect) return;
     if (rect.right - rect.left === 0 && rect.bottom - rect.top === 0) return;
@@ -131,6 +139,7 @@ export function useGridMarks(
       { col: left, row: bottom },
       { col: right, row: bottom },
     ];
+    regionCellsRef.current = glow ? { left, right, top, bottom } : null;
     publish();
   }, [anchorRef, publish]);
 
