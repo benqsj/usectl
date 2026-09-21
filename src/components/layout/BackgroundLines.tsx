@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { GridCanvas } from "@/components/layout/GridCanvas";
+import { GridTrail } from "@/components/layout/GridTrail";
 import {
   INSET_VW,
   COLUMN_PITCH,
@@ -165,12 +166,14 @@ export function BackgroundLines() {
         }}
       />
       <CssGridLines />
-      {/* The same grid again, on a WebGL2 canvas that bends it around the cursor. It hides the CSS
-          layers above only once it has drawn a frame (see GridCanvas.tsx / globals.css), so a
-          browser without WebGL2 — or a failed context — simply keeps the page exactly as it is
-          today. Values are GRID_EFFECT_DEFAULTS, picked in /lab/lines (pull, radius 220,
-          strength 16, easing 0.12). */}
+      {/* The same grid again, on a static WebGL2 canvas (no pointer input at all — see
+          GridCanvas.tsx). It hides the CSS layers above only once it has drawn a frame (see
+          globals.css), so a browser without WebGL2 — or a failed context — simply keeps the page
+          exactly as it is today. */}
       <GridCanvas />
+      {/* The pointer trail: a separate 2D canvas painted on top, so it can come and go without ever
+          touching the grid's own measured-to-the-grey-level rest state (grid-trail.md). */}
+      <GridTrail />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
 import { readScale } from "@/lib/grid";
-import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
+import type { AnchorBox, GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import { createStepSwap } from "@/animations/stepSwap";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -112,8 +112,10 @@ const ICON_OFFSET_PCT: Record<IconKey, { dx: number; dy: number }> = {
 const SEP_PROGRESS_END = 0.25;
 const ICON_RANGE_START = SEP_PROGRESS_END;
 const ICON_SLICE = (1 - ICON_RANGE_START) / REVEAL_ITEMS.length;
-const BASE_GAP_PERCENT = 1.5; // yPercent -- a small built-in gap even fully "closed"
-const SEPARATION_YPERCENT = 31.36; // yPercent each half travels (of its OWN height) at full separation
+// Exported: createServerAnchorBox (below) needs these to expand the server's frame to the fully-
+// split extent, so the crosses sit in the SAME place whether the server is open or closed.
+export const BASE_GAP_PERCENT = 1.5; // yPercent -- a small built-in gap even fully "closed"
+export const SEPARATION_YPERCENT = 31.36; // yPercent each half travels (of its OWN height) at full separation
 // Step 4's own timeline (fractions of p2): 0-0.35 top half + icons fade out while the bottom half
 // holds at full opacity throughout; the wordmark ramps in over WORD_RAMP_START-WORD_RAMP_END and
 // then holds for the rest of step 4 — per feedback, bottom + "machine" do NOT fade out here; that
@@ -292,6 +294,73 @@ const zoomTimeAtCardTrigger = (v: number) =>
   CARD_TRIGGER_AT + Math.pow(v, 1 / CARD_TRIGGER_CURVE) * (1 - CARD_TRIGGER_AT);
 const CARD_START = P.zoomStart + zoomTimeAtCardTrigger(P.cardAtHole) * (P.zoomEnd - P.zoomStart);
 
+// --- steps 3-8 cross frames: box() measurements for useGridMarks (grid-trail.md §7) -------------
+// Every one of these anchors — the server column, and each diagram wrapper — is a DESCENDANT of
+// `cardRef`, which always carries its own approach `scale` (0.52 -> 1, see "4) the card" below).
+// Reading a rect while that's still mid-tween would measure a shrunk box. So every measurement here
+// reads the anchor relative to the pinned stage (exactly the viewport while pinned, and moves as a
+// rigid unit with the anchor even when NOT pinned — see below), with the card's scale forced to 1
+// for the instant of the read: the result is always "as it will be once the card has landed",
+// correct at ANY time — on mount, before the pin has even engaged — not just once progress has
+// already reached `P.cardEnd`.
+//
+// Plain functions taking ELEMENTS, not refs: `useGridMarks`'s `box` option wants a closure with no
+// arguments, and the caller (MachineSectionClient.tsx) builds that closure itself via useCallback
+// reading `ref.current` in its OWN body — passing a ref object as an argument to a function called
+// during render trips the react-hooks/refs lint rule, even though nothing is actually read until
+// the closure runs later.
+function anchorBoxRelativeToStage(stage: HTMLElement, anchor: HTMLElement): AnchorBox {
+  const stageRect = stage.getBoundingClientRect();
+  const anchorRect = anchor.getBoundingClientRect();
+  return {
+    left: anchorRect.left - stageRect.left,
+    right: anchorRect.right - stageRect.left,
+    top: anchorRect.top - stageRect.top,
+    bottom: anchorRect.bottom - stageRect.top,
+  };
+}
+
+function measureCardAnchor(stage: HTMLElement, card: HTMLElement, anchor: HTMLElement): AnchorBox {
+  const prevScale = gsap.getProperty(card, "scale") as number;
+  gsap.set(card, { scale: 1 });
+  const box = anchorBoxRelativeToStage(stage, anchor);
+  gsap.set(card, { scale: prevScale });
+  return box;
+}
+
+/**
+ * One of the three diagrams for steps 5/6/7-8. NOT the `[data-machine-diagram][data-diagram-step=
+ * "N"]` wrapper itself — that div is `absolute inset-y-0 ... items-center`, i.e. deliberately
+ * stretched to the CARD's full height so its content can be vertically centred inside it, so its
+ * own rect is nearly the whole card, not the diagram. The diagram's real visible frame is that
+ * wrapper's one child — `MachineInfraDiagram`/`MachineDeployDiagram`/`MachineAgentDiagram` each
+ * render exactly one root `<div>` (`w-[105|108|115%]`, its own `aspectRatio`) — so `firstElementChild`
+ * is exactly "the MachineInfraDiagram frame" grid-trail.md §7 means.
+ */
+export function measureDiagramBox(stage: HTMLElement, card: HTMLElement, step: number): AnchorBox | null {
+  const wrapper = card.querySelector<HTMLElement>(`[data-diagram-step="${step}"]`);
+  const anchor = wrapper?.firstElementChild;
+  if (!(anchor instanceof HTMLElement)) return null;
+  return measureCardAnchor(stage, card, anchor);
+}
+
+/**
+ * The server column, expanded to the extent it occupies at FULL separation — top pulled up by
+ * `SEPARATION_YPERCENT` of the column's own height, bottom pushed down by `BASE_GAP_PERCENT +
+ * SEPARATION_YPERCENT` — so the frame contains the server in both its closed AND fully-split
+ * poses (steps 3-4), and the crosses never move between them.
+ */
+export function measureServerBox(stage: HTMLElement, server: HTMLElement, card: HTMLElement): AnchorBox {
+  const box = measureCardAnchor(stage, card, server);
+  const height = box.bottom - box.top;
+  return {
+    left: box.left,
+    right: box.right,
+    top: box.top - (SEPARATION_YPERCENT / 100) * height,
+    bottom: box.bottom + ((BASE_GAP_PERCENT + SEPARATION_YPERCENT) / 100) * height,
+  };
+}
+
 interface MachineScrollRefs {
   // Pin trigger AND pin target — the whole full-viewport screen.
   sectionRef: RefObject<HTMLElement | null>;
@@ -301,6 +370,14 @@ interface MachineScrollRefs {
   // The 4 corner "+" marks, drawn by the background grid rather than by elements in this section
   // (see lib/gridEffect/useGridMarks.ts) — this only drives how visible they are.
   gridMarks: GridMarksHandle;
+  // Four more sets, one per piece of steps 3-8 content (grid-trail.md §7 — replaces an earlier,
+  // wrong "one fixed frame for everything" version): the server's own frame (steps 3-4, sized to
+  // its fully-split extent so it doesn't move when the server opens) and one frame per diagram
+  // (steps 5, 6, 7-8). Each fades in/out with its own content, never all at once.
+  serverMarks: GridMarksHandle;
+  infraMarks: GridMarksHandle;
+  deployMarks: GridMarksHandle;
+  agentMarks: GridMarksHandle;
   // topside.svg — grows continuously, then fades out (opacity) right at the end, as if we'd flown
   // straight into it. No hole/aperture cut into it any more (removed 2026-09-21).
   topsideRef: RefObject<HTMLElement | null>;
@@ -330,6 +407,10 @@ export function useMachineScrollAnimation({
   wordmarkRef,
   hatchRef,
   gridMarks,
+  serverMarks,
+  infraMarks,
+  deployMarks,
+  agentMarks,
   topsideRef,
   tintRef,
   cardRef,
@@ -467,6 +548,10 @@ export function useMachineScrollAnimation({
       };
 
       applyWordmark(0);
+      serverMarks.setAppearance({ opacity: 0 });
+      infraMarks.setAppearance({ opacity: 0 });
+      deployMarks.setAppearance({ opacity: 0 });
+      agentMarks.setAppearance({ opacity: 0 });
       gsap.set(topside, { opacity: 0, scale: TOPSIDE_HIDDEN_SCALE });
       gsap.set(card, { opacity: 0, scale: 0.52 });
       if (tint) gsap.set(tint, { opacity: 0 });
@@ -492,6 +577,10 @@ export function useMachineScrollAnimation({
         // only ever right while this screen is pinned (i.e. also standing still in the viewport).
         // With the pin gone the wordmark scrolls and they would stay behind, floating on their own.
         gridMarks.setAppearance({ opacity: 0 });
+        serverMarks.setAppearance({ opacity: 0 });
+        infraMarks.setAppearance({ opacity: 0 });
+        deployMarks.setAppearance({ opacity: 0 });
+        agentMarks.setAppearance({ opacity: 0 });
         gsap.set(topside, { opacity: 0 });
         gsap.set(card, { opacity: 1, scale: 1, filter: "none" });
         gsap.set(fill, { clipPath: "inset(0% 0% 0% 0%)" });
@@ -606,6 +695,18 @@ export function useMachineScrollAnimation({
           const exit = easeDiagram(clamp01((p2 - STEP4_EXIT_START) / (1 - STEP4_EXIT_START)));
           gsap.set(serverBottom!, { opacity: 1 - exit, y: exit * STEP4_EXIT_DRIFT_PX });
           gsap.set(machineWord!, { opacity: wordRamp * (1 - exit) });
+
+          // F-server (grid-trail.md §7): fades in over the LAST 20% of the card's approach, so it
+          // is already fully there the instant the card lands — server still closed — rather than
+          // only appearing once step 3 starts splitting it open. Holds through the split and step
+          // 4, fades out with the exact same `exit` that takes the bottom half + wordmark away.
+          const serverCrossIn = clamp01((approachRaw - 0.8) / 0.2);
+          serverMarks.setAppearance({
+            opacity: serverCrossIn * (1 - exit),
+            scale: CROSS_HIDDEN_SCALE + (1 - CROSS_HIDDEN_SCALE) * serverCrossIn,
+          });
+        } else {
+          serverMarks.setAppearance({ opacity: 0 });
         }
 
         // 7) the card's own outline: on for steps 3-5, off for 6-8 (those diagrams are wider than
@@ -633,6 +734,16 @@ export function useMachineScrollAnimation({
             Math.min(p / DIAGRAM_WRAPPER_FADE, (1 - p) / DIAGRAM_WRAPPER_FADE, 1),
           );
           gsap.set(d.el, { opacity: wrapper });
+
+          // This diagram's own frame (grid-trail.md §7): the SAME wrapper value that drives the
+          // diagram's own cross-fade, so the frame can never be visible without its content or vice
+          // versa. `data-diagram-step` is "2"/"3"/"4" for infra/deploy/agent respectively.
+          const diagramMarks =
+            d.stepIndex === 2 ? infraMarks : d.stepIndex === 3 ? deployMarks : d.stepIndex === 4 ? agentMarks : null;
+          diagramMarks?.setAppearance({
+            opacity: wrapper,
+            scale: CROSS_HIDDEN_SCALE + (1 - CROSS_HIDDEN_SCALE) * wrapper,
+          });
 
           // Invisible: park the pieces at the end state that matches WHICH side of the range we are
           // on — hidden before it, fully built after it — and only when that changes, so an

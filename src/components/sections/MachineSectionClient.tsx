@@ -1,14 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { InfrastructureSectionClient } from "./InfrastructureSectionClient";
 import { useRasterizedSvg } from "@/hooks/useRasterizedSvg";
 import type { InfrastructureStep } from "@/lib/infrastructureSteps";
 import type { MachineServerParts } from "@/lib/machineServerParts";
 import { BlurChars } from "@/components/ui/BlurChars";
 import { BLUR_HIDDEN_FILTER, BLUR_HIDDEN_Y_PX } from "@/components/ui/BlurText";
-import { useMachineScrollAnimation, TOPSIDE_HIDDEN_SCALE } from "@/animations/machineScrollAnimation";
+import {
+  useMachineScrollAnimation,
+  measureServerBox,
+  measureDiagramBox,
+  TOPSIDE_HIDDEN_SCALE,
+} from "@/animations/machineScrollAnimation";
 import { MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout";
 import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
 import { vw, s, HEADER_HEIGHT_PX } from "@/lib/grid";
@@ -64,6 +69,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
   const tintRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
+  const cardServerRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
   const topsideRaster = useRasterizedSvg("/infrastructur/topside.svg", TOPSIDE_RASTER_WIDTH);
@@ -72,11 +78,54 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
   // resize and on every ScrollTrigger refresh); the animation below owns how visible they are.
   const gridMarks = useGridMarks(wordmarkRef, { gapX: CROSS_GAP_X_PX, gapY: CROSS_GAP_Y_PX });
 
+  // Four MORE sets, one per piece of steps 3-8 content — replaces an earlier single shared frame
+  // that got both the server's pose and the diagrams' position wrong (grid-trail.md §7). Each uses
+  // `fit: "center"` (content centred between the crosses, not snapped to an edge) and a `box()`
+  // that measures its anchor relative to the pinned stage with the card's own approach-scale
+  // forced to 1 — correct at any time, not just once the card has already landed. `anchorRef`
+  // itself (`cardRef`) is unused whenever `box` is supplied; passed only to satisfy the hook's
+  // signature. Refs are read INSIDE each callback's own body (not passed as arguments to another
+  // function) — react-hooks/refs flags the latter even when nothing is actually read until later.
+  const serverBox = useCallback(() => {
+    const stage = stageRef.current;
+    const server = cardServerRef.current;
+    const card = cardRef.current;
+    if (!stage || !server || !card) return null;
+    return measureServerBox(stage, server, card);
+  }, []);
+  const infraBox = useCallback(() => {
+    const stage = stageRef.current;
+    const card = cardRef.current;
+    if (!stage || !card) return null;
+    return measureDiagramBox(stage, card, 2);
+  }, []);
+  const deployBox = useCallback(() => {
+    const stage = stageRef.current;
+    const card = cardRef.current;
+    if (!stage || !card) return null;
+    return measureDiagramBox(stage, card, 3);
+  }, []);
+  const agentBox = useCallback(() => {
+    const stage = stageRef.current;
+    const card = cardRef.current;
+    if (!stage || !card) return null;
+    return measureDiagramBox(stage, card, 4);
+  }, []);
+
+  const serverMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: serverBox });
+  const infraMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: infraBox });
+  const deployMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: deployBox });
+  const agentMarks = useGridMarks(cardRef, { gapX: 0, gapY: 0, fit: "center", box: agentBox });
+
   useMachineScrollAnimation({
     sectionRef,
     wordmarkRef,
     hatchRef,
     gridMarks,
+    serverMarks,
+    infraMarks,
+    deployMarks,
+    agentMarks,
     topsideRef,
     tintRef,
     cardRef,
@@ -185,6 +234,7 @@ export function MachineSectionClient({ steps, machineServer }: MachineSectionCli
             embedded
             cardRef={cardRef}
             fillRef={fillRef}
+            serverRef={cardServerRef}
             steps={steps}
             className=""
             machineServer={machineServer}

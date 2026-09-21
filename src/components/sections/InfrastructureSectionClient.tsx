@@ -35,6 +35,9 @@ interface InfrastructureSectionClientProps {
   embedded?: boolean;
   cardRef?: RefObject<HTMLDivElement | null>;
   fillRef?: RefObject<HTMLDivElement | null>;
+  // The right column's own box — external only so the machine screen can snap grid-trail.md §5's
+  // crosses to it (a fixed frame around steps 3-8, whether the server is split or closed).
+  serverRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function InfrastructureSectionClient({
@@ -46,12 +49,14 @@ export function InfrastructureSectionClient({
   embedded = false,
   cardRef: externalCardRef,
   fillRef: externalFillRef,
+  serverRef: externalServerRef,
 }: InfrastructureSectionClientProps) {
   const internalCardRef = useRef<HTMLDivElement>(null);
   const internalFillRef = useRef<HTMLDivElement>(null);
+  const internalServerRef = useRef<HTMLDivElement>(null);
   const cardRef = externalCardRef ?? internalCardRef;
   const fillRef = externalFillRef ?? internalFillRef;
-  const serverRef = useRef<HTMLDivElement>(null);
+  const serverRef = externalServerRef ?? internalServerRef;
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
 
   // Hooks can't be conditional — the hook itself no-ops when it isn't the one driving.

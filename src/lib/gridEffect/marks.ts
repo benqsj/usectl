@@ -1,10 +1,10 @@
-// The cross marks ("+") the grid draws, and the glow region each owner of marks frames, as a tiny
-// publish/subscribe store.
+// The cross marks ("+") the grid draws, and the region each owner of marks frames (the rectangle
+// GridTrail.tsx draws the pointer trail inside), as a tiny publish/subscribe store.
 //
 // Why a store at all: the marks (and their region) belong to SECTIONS (the machine screen's
-// wordmark, the hero's cube, …) but they are drawn by the one background canvas, which knows
-// nothing about sections. Sections push theirs in here via useGridMarks; GridCanvas reads whatever
-// is currently in it.
+// wordmark, the hero's cube, …) but they are drawn by the background canvases, which know nothing
+// about sections. Sections push theirs in here via useGridMarks; GridCanvas and GridTrail read
+// whatever is currently in it.
 //
 // A mark/region is stored as GRID INDICES, never pixels. That is the whole point of the rewrite: a
 // resize changes what `col 6, row 4` is in pixels, but it can never move the mark (or the region's
@@ -21,7 +21,7 @@ export interface GridMark {
   scale: number;
 }
 
-/** The rectangle spanned by an owner's own 4 crosses — see grid-glow.md §3, "Region". */
+/** The rectangle spanned by an owner's own 4 crosses — see grid-trail.md §2, "regions". */
 export interface GridRegionInput {
   /** 1-indexed columns, left <= right */
   left: number;
@@ -29,7 +29,7 @@ export interface GridRegionInput {
   /** 1-indexed row lines, top <= bottom */
   top: number;
   bottom: number;
-  /** the glow inside this region is scaled by this too, so it fades with the crosses */
+  /** the trail inside this region is scaled by this too, so it fades out with the crosses */
   opacity: number;
 }
 

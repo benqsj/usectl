@@ -1,15 +1,12 @@
 // Every knob the grid effect has, in one place — the lab page (/lab/lines) edits this shape live,
 // and BackgroundLines.tsx ships the values the user picked there.
 //
-// 2026-09-21 (grid-glow.md): the mouse deformation is gone — the lines never bend. What is left is
-// a glow that follows the pointer while it is inside a section's own 4-cross region (see
-// gridEffect/marks.ts GridRegion). `easing` is reused for the glow's own follow-the-pointer lerp.
+// 2026-09-21 (grid-trail.md): the mouse deformation, and then the glow that briefly replaced it,
+// are both gone. The grid canvas itself is now fully static — it never reads the pointer at all.
+// What is left is a separate pen-like TRAIL (GridTrail.tsx, its own 2D canvas) that draws behind the
+// pointer while it is inside a section's own 4-cross region, in `#11a32a`, fading shortly after.
 
 export interface GridEffectParams {
-  /** lerp factor per frame at 60fps; frame-rate independent in GridCanvas — how the glow trails the pointer */
-  easing: number;
-  /** how long a region's glow intensity takes to fade in/out as the pointer enters/leaves it */
-  glowFadeMs: number;
   /** cross marks: half-length of one arm, in design px (scaled by --s) */
   markArmPx: number;
   /** cross marks: arm thickness, design px. 2 = exactly as thick as a grid line */
@@ -17,50 +14,31 @@ export interface GridEffectParams {
   /** cross marks: peak alpha. 0.3 matches cross.svg's own stroke opacity */
   markAlpha: number;
 
-  // --- glow (grid-glow.md §3/§4) ---
-  /** design px — gaussian falloff radius of the glow around the pointer */
-  glowRadiusPx: number;
-  /** peak line alpha inside the glow, replacing the rest-state LINE_ALPHA at the pointer */
-  lineGlowAlpha: number;
-  /** peak alpha of the soft radial fill drawn under the lines */
-  fillAlpha: number;
-  /** fill colour */
-  fillColor: "white" | "brand";
-  /** design px feather on the region's own edge; 0 = hard edge exactly on the crosses' lines */
-  regionFeatherPx: number;
-  /** extra alpha a region's own 4 crosses get right at the glow's centre; 0 = off */
-  markGlowBoost: number;
+  // --- pointer trail (grid-trail.md §3/§4) ---
+  /** design px — stroke width of the trail */
+  trailThicknessPx: number;
+  /** ms — how long a point along the trail takes to fade out once drawn */
+  trailFadeMs: number;
+  /** design px — shadowBlur radius around the stroke */
+  trailGlowPx: number;
+  /** 0..1 — how much the pen tip lags the raw pointer position; frame-rate independent, higher = laggier */
+  trailSmoothing: number;
 }
 
 export const GRID_EFFECT_DEFAULTS: GridEffectParams = {
-  easing: 0.12,
-  glowFadeMs: 300,
   markArmPx: 16,
   markThicknessPx: 2,
   markAlpha: 0.3,
-  glowRadiusPx: 180,
-  lineGlowAlpha: 0.18,
-  fillAlpha: 0.04,
-  fillColor: "white",
-  regionFeatherPx: 0,
-  markGlowBoost: 0.2,
+  // Chosen 2026-09-21 in an interactive demo (see grid-trail.md §3) — the demo's own slider values
+  // (2.5 / 350ms / 26 / 0.40), converted to design px at 1920 so this project's own `k` reproduces
+  // what the user looked at.
+  trailThicknessPx: 3.7,
+  trailFadeMs: 350,
+  trailGlowPx: 35,
+  trailSmoothing: 0.4,
 };
 
-const WHITE_RGB: readonly [number, number, number] = [1, 1, 1];
-// #11a32a, this project's --brand token (globals.css) — kept as a literal here rather than read
-// from the DOM, since the renderer has no React/CSS access of its own.
-const BRAND_RGB: readonly [number, number, number] = [0x11 / 255, 0xa3 / 255, 0x2a / 255];
-
-export function resolveFillColor(color: GridEffectParams["fillColor"]): readonly [number, number, number] {
-  return color === "brand" ? BRAND_RGB : WHITE_RGB;
-}
-
-// Must match the u_marks[] array size in shader.ts. Hero and the machine screen are 4 each, i.e.
-// exactly 8 — headroom so that adding a third section (the infrastructure card and the build
-// section are both open TODOs) cannot silently drop marks off the end.
-export const MAX_MARKS = 16;
-
-// Must match the u_regions[] / u_regionGlow[] array size in shader.ts. One region per section that
-// calls useGridMarks — today that is hero + the machine screen, i.e. 2, with headroom for the two
-// still-open TODOs (infrastructure card, build section).
-export const MAX_REGIONS = 4;
+// Must match the u_marks[] array size in shader.ts. Hero (4) + the machine wordmark (4) + the
+// machine steps-card's four own frames (4 each, grid-trail.md §7) = 24 at once, mid-scroll through
+// the machine screen — 32 leaves headroom for the build section's still-open TODO on top of that.
+export const MAX_MARKS = 32;

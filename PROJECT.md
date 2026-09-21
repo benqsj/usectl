@@ -837,8 +837,44 @@ and the places the plan turned out to be wrong. Short version of what changed he
   "compare" overlay that draws today's CSS grid in red over the canvas, and a drag/resizable dummy
   box with the four snapped crosses around it.
 
+## Pointer trail replaces the mouse deformation, and the steps 3-8 crosses reworked (2026-09-21)
+
+Built to `grid-trail.md` (now marked implemented, with a full run log in its own §8). Two rounds:
+
+- **The deformation is gone; a pen-like trail replaces it.** The grid canvas (`GridCanvas.tsx`) no
+  longer reads the pointer at all — it redraws only on resize/DPR/breakpoint/marks-change, putting
+  its rest-state output back to exactly what §10 above measured. A new, separate layer,
+  `src/components/layout/GridTrail.tsx` (its own 2D canvas, painted on top), draws a `var(--brand)`
+  line that follows the pointer while it is inside a section's own 4-cross region — but the pen
+  **snaps to the nearest intersection and only ever moves in right angles** (a horizontal leg along
+  the row it just left, then a vertical leg along the column it just entered, never a diagonal) —
+  the "ხაზებზე გასწორებული" variant the user picked from a 7-way demo, replacing an initial
+  free-hand version built against the plan's own first draft. Shipped values: thickness 3.7, fade
+  350ms, glow 35, smoothing 0.4 (all design px at 1920, scaled by `--s`). `useGridMarks`'s `glow`
+  option was renamed `trail` (same default `true` — no section had to change to get it).
+- **The machine screen's steps 3-8 crosses, rebuilt.** A first version (one shared frame snapped to
+  the server column's box) shipped invisible while the server was closed, in the wrong place once it
+  split, and off-centre on every diagram step — all three root-caused and fixed by replacing it with
+  **four independent `useGridMarks` calls**, one per piece of content (the server, expanded to its
+  fully-split extent so one frame covers it closed AND open; and one per diagram — steps 5, 6, 7-8).
+  Each uses a new `fit: "center"` snap mode (content centred between the crosses, not snapped to an
+  edge) and a `box()` that measures its anchor **relative to the pinned stage with the card's own
+  approach-scale forced to 1** — correct at any time, including on mount, not just once the card has
+  finished flying in. Each frame's opacity is driven by the exact same value that already drives its
+  own content's visibility, so nothing needed a boundary-triggered tween and scrolling back up
+  reverses everything for free. `MAX_MARKS` raised 16 → 32 to fit hero + wordmark + all four new
+  frames at once mid-screen; `GridCanvas.tsx` now packs only `opacity > 0` marks before the cap.
+- **One open item, not fully root-caused** (see grid-trail.md §8's own "One open item" for the full
+  trace): a **single instant** `page.mouse.move()` right after a long idle period could occasionally
+  read a freshly-landed region's opacity back as 0 immediately after the store had just correctly
+  held 1 — reproduced in both dev and a production build, survived a 5s wait, but did **not**
+  reproduce with realistic incremental pointer movement or a real continuous scroll-forward-then-back
+  sweep (both checked clean). If the trail ever fails to draw on the very first hover right after the
+  page settles — but works on every hover after that — this is the place to resume.
+- `grid-glow.md` (the glow this trail replaced) has been deleted — its history is preserved inside
+  `grid-trail.md`'s own §2 ("Keep" list) and this project's own earlier "Header grid lines" entries.
+
 ## Open items / TODO
-- **2026-09-21 — grid deformation dropped; the glow that replaced it was built, then dropped too. Now: a pointer TRAIL inside the cross marks (plan final, not started).** Full plan: `grid-trail.md` (root), written as a delta from the uncommitted glow code; `grid-glow.md` is kept only as the record of where the region machinery came from. The lines stop bending and never change colour; the crosses stay; inside the rectangle framed by a section's 4 crosses the pointer draws a `#11a32a` line that fades in 350ms, on its own 2D canvas above the grid canvas. Values chosen by the user in a demo — that file's §3. Work in its stage order and stop at its STOP markers.
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - `BuildSectionClient.tsx` — the 4 corner "+" crosses from the reference screenshot still aren't added. No longer a hard problem: they would be one `useGridMarks(ref, {gapX, gapY})` call (see the background-grid entry above), the same as Hero's and the machine screen's. Same for the Infrastructure card's. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.
 - Verify `HeroSection.tsx` against real Figma data once the MCP rate limit resets — see the "Implemented so far" note above for exactly what's unconfirmed (font sizes, spacing, button styling).
