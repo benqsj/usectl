@@ -4,7 +4,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HERO_STACK_GAP_CLOSED_PX, HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
 import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
-import { gridMetrics, readScale } from "@/lib/grid";
+import { readScale } from "@/lib/grid";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 
@@ -134,30 +134,32 @@ export function useBuildScrollAnimation({
         // that space for a reason. Fixed by refreshing once the pin fully releases (closed), so the
         // spacer re-measures against the now-shorter content. Deferred one frame so the DOM has
         // settled from the same tick's `applyCloseProgress(1)` first.
+        //
+        // Per explicit feedback 2026-09-21: once the close animation finishes and scrolling
+        // continues past it (toward the Footer), just hide the marks outright — don't try to keep
+        // them visible for a while first. Several earlier attempts (a continuous rect-based fade, a
+        // Hero-style independent ScrollTrigger) at softening this transition either read as "the
+        // crosses are following me" or turned out fragile/broken in ways headless testing didn't
+        // catch. A plain opacity flip on the SAME pin's own onLeave/onLeaveBack/onEnter/onEnterBack
+        // — the simplest possible version of this, and the one every other pinned section's own
+        // gridMarks already uses — is what was actually wanted.
         onLeave: () => {
           applyCloseProgress(1);
-          // Geometry-wise this section is no longer pinned — see isPinnedRef's own doc comment —
-          // but the marks themselves stay visually on (no setAppearance call here); only their
-          // position stops updating.
           isPinnedRef.current = false;
+          gridMarks.setAppearance({ opacity: 0 });
           requestAnimationFrame(() => ScrollTrigger.refresh());
         },
         onLeaveBack: () => {
           applyCloseProgress(0);
           isPinnedRef.current = false;
-          // Scrolled back above the section entirely — this is the only direction the marks get
-          // hidden again. See onEnter/onEnterBack below for why forward exit doesn't hide them.
           gridMarks.setAppearance({ opacity: 0 });
         },
         // The moment the pin engages is the only moment the grid marks have a frame of reference
-        // (viewport space) — same pattern as the machine screen's own wordmark crosses.
-        //
-        // Split out of a single onToggle per feedback 2026-09-21: this is the LAST section on the
-        // page before the footer, and hiding the marks the instant the pin released (right as the
-        // model finished settling into its closed pose) read as the crosses vanishing out from under
-        // it before there was any chance to see the resting state. onEnter/onEnterBack turn them on;
-        // onLeave (forward exit, past the pin) deliberately leaves them alone — they stay visible
-        // through the rest of the section instead of cutting out the moment it unpins.
+        // (viewport space) — same pattern as the machine screen's own wordmark crosses. `markBox()`
+        // (BuildSectionClient.tsx) only ever computes a real box while `isPinnedRef.current` is
+        // true, so re-snapping here always lands on the same resting position — scrolling back up
+        // can never push the top pair any higher than that, since the position is never derived from
+        // anything BUT this one static formula.
         onEnter: () => {
           isPinnedRef.current = true;
           gridMarks.refreshAnchor();
@@ -170,43 +172,6 @@ export function useBuildScrollAnimation({
         },
       });
 
-      // Per feedback 2026-09-21: two earlier attempts (both since reverted) tried to keep the marks
-      // LIVE-TRACKING the server once unpinned, using its `getBoundingClientRect()` — first without
-      // any off-screen handling, then fading based on `rect.bottom`, then `rect.top`. All three read
-      // as "the crosses are following me down the page", which is exactly what was NOT wanted. The
-      // actual ask is simpler: once scrolled down past the pin (heading toward the Footer), just
-      // hide the marks — leave their POSITION exactly where it was when the pin let go, don't
-      // recompute it at all. `markBox()` (BuildSectionClient.tsx) went back to returning `null` once
-      // unpinned for exactly this — `refreshAnchor()` (which is what would move the marks) is never
-      // called from here any more; this handler only ever touches opacity. `getBoundingClientRect()`
-      // is still read here, but purely as a "how far past the pin are we" signal for the fade curve,
-      // not to reposition anything.
-      //
-      // The fade's own reference point: `nearestRow`'s floor-of-1 doesn't bite exactly at
-      // `rect.top < 0` — it bites at `rect.top < m.header + 0.5*m.rowPitch` (the point its own
-      // rounding would want to go below row 1). Anchoring the fade there (not at the arbitrary `0`)
-      // means it starts exactly when the position would otherwise go stale, not some time after —
-      // confirmed via a real screenshot where a `rect.top === 0` reference left the cross fully
-      // opaque while already visibly detached.
-      const OFFSCREEN_FADE_PX = 200;
-      let scrollRaf = 0;
-      const onScroll = () => {
-        if (isPinnedRef.current || scrollRaf) return;
-        scrollRaf = requestAnimationFrame(() => {
-          scrollRaf = 0;
-          const el = wrapperRef.current;
-          if (!el) return;
-          const rect = el.getBoundingClientRect();
-          const k = readScale();
-          const fadePx = OFFSCREEN_FADE_PX * k;
-          const m = gridMetrics(undefined, k);
-          const breakPoint = m.header + 0.5 * m.rowPitch;
-          const opacity = gsap.utils.clamp(0, 1, (rect.top - breakPoint + fadePx) / fadePx);
-          gridMarks.setAppearance({ opacity });
-        });
-      };
-      window.addEventListener("scroll", onScroll, { passive: true });
-
       // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
       // mechanism as heroScrollAnimation.ts / infrastructureScrollAnimation.ts.
       const targetScrollY = scrollYBeforeChurnRef.current;
@@ -215,11 +180,6 @@ export function useBuildScrollAnimation({
           if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
         }, 100);
       }
-
-      return () => {
-        window.removeEventListener("scroll", onScroll);
-        if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      };
     },
     { scope: sectionRef },
   );
