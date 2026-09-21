@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useRef, type CSSProperties } from "react";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import { useBuildScrollAnimation, LIFT_ON_CLOSE_PX } from "@/animations/buildScrollAnimation";
-import { HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
+import { HERO_STACK_GAP_CLOSED_PX, HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
 import { HEADER_HEIGHT_PX, readScale, s } from "@/lib/grid";
-import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
+import { BUILD_CLOSE_ON_SCROLL, BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
 import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
 
 // Same relationship the hero's own corner crosses use around its identically-sized (480px) cube —
@@ -40,6 +39,7 @@ export function BuildSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
+  const modelSyncRef = useRef<(() => void) | null>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   // Written by useBuildScrollAnimation's own ScrollTrigger callbacks — see its doc comment and
   // markBox's own below for why this, not getComputedStyle, is the right signal.
@@ -71,11 +71,28 @@ export function BuildSectionClient() {
     if (!el || !isPinnedRef.current) return null;
     const k = readScale();
     const coreHeight = BUILD_MODEL_WIDTH_PX * HERO_CORE_HEIGHT_RATIO * k;
+    if (BUILD_CLOSE_ON_SCROLL) {
+      return {
+        left: el.offsetLeft,
+        right: el.offsetLeft + el.offsetWidth,
+        top: el.offsetTop - LIFT_ON_CLOSE_PX * k,
+        bottom: el.offsetTop + coreHeight,
+      };
+    }
+    // Static, already-closed server (BUILD_CLOSE_ON_SCROLL off): frame what is actually on screen —
+    // the closed stack, lifted by LIFT_ON_CLOSE_PX (raw px: it is applied as a plain translateY).
+    // The frame above was sized for every pose of the old close animation and put the bottom pair
+    // below the fold on laptop-height viewports (reported 2026-09-21: "the bottom pluses are
+    // missing"). The bottom edge is also kept at least ~0.6 of a grid row above the viewport's
+    // bottom, so the nearest-row snap can never round the pair off-screen.
+    const top = el.offsetTop - LIFT_ON_CLOSE_PX;
+    const closedHeight = 3 * HERO_STACK_GAP_CLOSED_PX * k + coreHeight;
+    const rowPitch = 114 * k; // ROW_PITCH (lib/grid.ts) in px
     return {
       left: el.offsetLeft,
       right: el.offsetLeft + el.offsetWidth,
-      top: el.offsetTop - LIFT_ON_CLOSE_PX * k,
-      bottom: el.offsetTop + coreHeight,
+      top,
+      bottom: Math.min(top + closedHeight, window.innerHeight - rowPitch * 0.6),
     };
   }, []);
 
@@ -85,11 +102,23 @@ export function BuildSectionClient() {
     box: markBox,
   });
 
-  useBuildScrollAnimation({ sectionRef, wrapperRef, modelRef, ssrScrollReserveRef, gridMarks, isPinnedRef });
+  useBuildScrollAnimation({
+    sectionRef,
+    wrapperRef,
+    modelRef,
+    modelSyncRef,
+    ssrScrollReserveRef,
+    gridMarks,
+    isPinnedRef,
+  });
 
-  // The GLB arrives well after the scroll trigger is built — refreshing re-applies the current
-  // scroll position to the model once it's ready, same pattern as HeroSectionClient.
-  const handleModelReady = useCallback(() => ScrollTrigger.refresh(), []);
+  // The GLB arrives well after the scroll trigger is built — this re-applies the current scroll
+  // progress to the model directly once it's ready, same pattern as HeroSectionClient's own
+  // modelSyncRef. Used to call the static, page-wide `ScrollTrigger.refresh()` instead — see
+  // buildScrollAnimation.ts's own doc comment on modelSyncRef for why that was a real bug (refresh
+  // landing back at Hero on reload, this section's own bottom crosses intermittently not
+  // reappearing), not just an inefficiency.
+  const handleModelReady = useCallback(() => modelSyncRef.current?.(), []);
 
   return (
     // Outer <section> is a plain block (no height of its own) — deliberately NOT `min-h-screen`
@@ -162,7 +191,18 @@ export function BuildSectionClient() {
           ref={wrapperRef}
           aria-hidden="true"
           className="relative mx-auto mt-[calc(var(--s)*280)] w-[calc(var(--s)*480)] [--core-height:calc(var(--s)*330.32)] h-[calc(3*var(--stack-gap)_+_var(--core-height))]"
-          style={{ "--stack-gap": `${HERO_STACK_GAP_OPEN_PX}px` } as CSSProperties}
+          // Server-rendered in the pose the effect will put it in, so nothing jumps on hydration:
+          // open when it closes on scroll, otherwise already closed and lifted (the same values
+          // buildScrollAnimation.ts's applyCloseProgress(1) sets).
+          style={
+            BUILD_CLOSE_ON_SCROLL
+              ? ({ "--stack-gap": `${HERO_STACK_GAP_OPEN_PX}px` } as CSSProperties)
+              : ({
+                  "--stack-gap": `${HERO_STACK_GAP_CLOSED_PX}px`,
+                  transform: `translateY(-${LIFT_ON_CLOSE_PX}px)`,
+                  marginBottom: `-${LIFT_ON_CLOSE_PX}px`,
+                } as CSSProperties)
+          }
         >
           {/* Same ambient glow as the hero's cube wrapper. */}
           <div

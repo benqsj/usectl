@@ -3,11 +3,22 @@
 import { useEffect, useRef, type RefObject } from "react";
 // Type-only: the runtime `three` import below is dynamic, so the value namespace it produces
 // isn't available in type position. These are erased at build time and add nothing to the bundle.
-import type { AnimationAction, AnimationMixer, Light, Mesh, Object3D } from "three";
+import type {
+  AnimationAction,
+  AnimationMixer,
+  Light,
+  Material,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+} from "three";
 import { HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
 import { readScale } from "@/lib/grid";
 import {
   HERO_CORE_HEIGHT_RATIO,
+  HERO_INTRO,
+  HERO_INTRO_PIECES,
+  HERO_INTRO_RING,
   HERO_MODEL_BASE_WIDTH_PX,
   HERO_MODEL_ELEVATION_MAX_DEG,
   HERO_MODEL_ELEVATION_MIN_DEG,
@@ -35,7 +46,52 @@ interface HeroServerModelProps {
   wrapperRef: RefObject<HTMLDivElement | null>;
   /** Called once the model is on screen, so the scroll timeline can re-sync to it. */
   onReady?: () => void;
+  /**
+   * Play the first-load intro (the pieces fall in and stack up — see HERO_INTRO). Only the hero
+   * asks for it; BuildSection reuses this component for a server that is already open on entry.
+   */
+  intro?: boolean;
+  /** The CSS glow under the server. With `intro`, it is kept hidden and grows as pieces land. */
+  glowRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * With `intro`: called once, when the model is ready, with whether the intro is actually playing
+   * (it is skipped for reduced motion, a scroll-restoring reload, or a visitor already scrolled
+   * away). The hero times its text reveal off this.
+   */
+  onIntro?: (playing: boolean) => void;
+  /**
+   * Draw the canvas at this many times the usual resolution (capped at 2x device pixels). For a
+   * wrapper that gets CSS-scaled up — the hero grows its server on scroll — so it stays sharp.
+   */
+  pixelRatioBoost?: number;
 }
+
+/** A material the intro fades, with the values it goes back to afterwards. */
+interface FadingMaterial {
+  material: MeshStandardMaterial;
+  opacity: number;
+  /** null for materials that don't glow. */
+  emissiveIntensity: number | null;
+}
+
+interface IntroPiece {
+  node: Object3D;
+  /** Where the explode clip currently puts this piece; the intro's offsets are added on top. */
+  restY: number;
+  materials: FadingMaterial[];
+}
+
+const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
+const smoothstep = (x: number) => {
+  const c = clamp01(x);
+  return c * c * (3 - 2 * c);
+};
+const easeOutCubic = (u: number) => 1 - Math.pow(1 - u, 3);
+/** A short light pulse that peaks right after a landing and dies away. */
+const landingFlash = (tau: number) => (tau < 0 ? 0 : Math.exp(-tau / 0.28) * smoothstep(tau / 0.03));
+/** A soft squash that starts and ends at 0 — the piece presses down, then settles. */
+const landingSquash = (tau: number) =>
+  tau < 0 || tau > 0.32 ? 0 : Math.sin((tau / 0.32) * Math.PI) * Math.exp(-tau / 0.16);
 
 /**
  * The hero's server, rendered with three.js in place of the four stacked layer SVGs.
@@ -52,14 +108,28 @@ interface HeroServerModelProps {
  *
  * three.js is imported dynamically: it is ~600 KB and nothing above the fold needs it to paint.
  */
-export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModelProps) {
+export function HeroServerModel({
+  apiRef,
+  wrapperRef,
+  onReady,
+  intro = false,
+  glowRef,
+  onIntro,
+  pixelRatioBoost = 1,
+}: HeroServerModelProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const grabRef = useRef<HTMLDivElement>(null);
   // Held in a ref, not read from the closure: an inline callback from the parent would otherwise
   // change identity on every render and re-run this effect — which re-imports and re-parses the
   // whole model.
   const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
+  const onIntroRef = useRef(onIntro);
+  // Kept current from an effect rather than during render (react-hooks/refs); the model only calls
+  // them from the async GLB callback, long after this has run.
+  useEffect(() => {
+    onReadyRef.current = onReady;
+    onIntroRef.current = onIntro;
+  });
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -82,7 +152,7 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio * Math.max(pixelRatioBoost, 1), 2));
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 0.8;
       // setSize(..., false) below deliberately leaves the canvas elements own CSS size
@@ -122,7 +192,9 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
       addLight(new THREE.DirectionalLight(0xbfd8ff, 0.3), -3, 1.5, -1.5); // cool fill
       addLight(new THREE.DirectionalLight(0x8effb0, 0.45), -1.5, -0.5, -3); // green rim
       scene.add(new THREE.AmbientLight(0xffffff, 0.08));
-      addLight(new THREE.PointLight(0x11ff4a, 1.2, 2, 2), 0, -0.05, 0); // accent-ring glow
+      const ACCENT_LIGHT_INTENSITY = 1.2;
+      const accentLight = new THREE.PointLight(0x11ff4a, ACCENT_LIGHT_INTENSITY, 2, 2);
+      addLight(accentLight, 0, -0.05, 0); // accent-ring glow
 
       // holder keeps the stack vertically centred as it opens; turntable carries the yaw.
       const holder = new THREE.Group();
@@ -137,11 +209,162 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
       let closedCentreY = 0;
       let ready = false;
 
+      // ---- first-load intro -------------------------------------------------------------------
+      // Everything the intro changes (piece offsets, rotation, scale, opacity, glow strength) is
+      // layered on top of the pose the explode clip gives each piece, and finishIntro() puts every
+      // one of them back exactly — so once it is over the model is indistinguishable from one that
+      // never played it, and the scroll timeline is never fighting anything.
+      const glow = glowRef?.current ?? null;
+      let gltfRoot: Object3D | null = null;
+      let pieces: IntroPiece[] = [];
+      let ring: IntroPiece | null = null;
+      /** performance.now() when the intro started; -1 while it isn't playing. */
+      let introStart = -1;
+      const replacedMaterials = new Set<Material>();
+      const introStartOf = (i: number) => HERO_INTRO.delay + i * HERO_INTRO.gapSeconds;
+      const introLandOf = (i: number) => introStartOf(i) + HERO_INTRO.fallSeconds;
+      // A little tail after the cap lands, so its light pulse can die away before we hand over.
+      const introEnd = () => introLandOf(HERO_INTRO_PIECES.length - 1) + 0.8;
+      const introParts = () => (ring ? [...pieces, ring] : pieces);
+
+      const setGlow = (opacity: number, scale: number) => {
+        if (!glow) return;
+        glow.style.opacity = opacity.toFixed(3);
+        // The individual `scale` property, so it composes with Tailwind's -translate-x-1/2
+        // (which uses `translate`) instead of overwriting it.
+        glow.style.scale = scale.toFixed(3);
+      };
+
+      const setIntroTransparency = (on: boolean) => {
+        for (const part of introParts()) {
+          for (const m of part.materials) {
+            if (m.material.transparent !== on) {
+              m.material.transparent = on;
+              m.material.needsUpdate = true;
+            }
+            if (!on) m.material.opacity = m.opacity;
+          }
+        }
+      };
+
+      const finishIntro = () => {
+        introStart = -1;
+        for (const piece of pieces) {
+          piece.node.position.y = piece.restY;
+          piece.node.rotation.set(0, 0, 0);
+          piece.node.scale.set(1, 1, 1);
+          piece.node.visible = true;
+        }
+        if (ring) ring.node.visible = true;
+        setIntroTransparency(false);
+        for (const part of introParts()) {
+          for (const m of part.materials) {
+            if (m.emissiveIntensity !== null) m.material.emissiveIntensity = m.emissiveIntensity;
+          }
+        }
+        accentLight.intensity = ACCENT_LIGHT_INTENSITY;
+        if (glow) glow.style.transition = "opacity 0.6s ease-out, scale 0.6s ease-out";
+        setGlow(1, 1);
+      };
+
+      /** Poses every piece for intro time `t` (seconds, already scaled by HERO_INTRO.speed). */
+      const applyIntro = (t: number) => {
+        const n = pieces.length;
+        let flash = 0;
+        let landed = 0;
+        pieces.forEach((piece, i) => {
+          const u = (t - introStartOf(i)) / HERO_INTRO.fallSeconds;
+          let offset = 0;
+          let alpha = 1;
+          let twist = 0;
+          let tiltX = 0;
+          let tiltZ = 0;
+          let scaleY = 1;
+          let scaleXZ = 1;
+          if (u < 1) {
+            const uu = clamp01(u);
+            offset = HERO_INTRO.height * (1 - uu * uu); // gravity: speeds up into the landing
+            const settle = 1 - easeOutCubic(uu); // 1 at the top -> 0 on landing
+            const dir = i % 2 ? 1 : -1;
+            twist = THREE.MathUtils.degToRad(HERO_INTRO.twistDeg) * dir * settle;
+            const wobble = THREE.MathUtils.degToRad(HERO_INTRO.wobbleDeg) * settle;
+            tiltX = wobble * Math.sin(uu * Math.PI * 2.2 + i);
+            tiltZ = wobble * dir * Math.cos(uu * Math.PI * 1.7 + i * 0.7);
+            alpha = smoothstep(u / HERO_INTRO.fade);
+          } else {
+            landed++;
+            const tau = (u - 1) * HERO_INTRO.fallSeconds;
+            const k = landingSquash(tau);
+            scaleY = 1 - HERO_INTRO.squash * k;
+            scaleXZ = 1 + HERO_INTRO.squash * 0.45 * k;
+            // The cap lands hardest — it is what "switches the server on".
+            flash += landingFlash(tau) * (i === n - 1 ? 1.6 : 0.7);
+          }
+          piece.node.position.y = piece.restY + offset;
+          piece.node.rotation.set(tiltX, twist, tiltZ);
+          piece.node.scale.set(scaleXZ, scaleY, scaleXZ);
+          piece.node.visible = alpha > 0.002;
+          for (const m of piece.materials) m.material.opacity = m.opacity * alpha;
+        });
+
+        // The outline doesn't fall: it lights up under the base as the base lands.
+        const ringAlpha = smoothstep((t - introLandOf(0)) / HERO_INTRO.ringFadeSeconds);
+        if (ring) {
+          ring.node.visible = ringAlpha > 0.002;
+          for (const m of ring.materials) m.material.opacity = m.opacity * ringAlpha;
+        }
+        accentLight.intensity = ACCENT_LIGHT_INTENSITY * ringAlpha + 3.2 * flash;
+        for (const part of introParts()) {
+          for (const m of part.materials) {
+            if (m.emissiveIntensity !== null) m.material.emissiveIntensity = m.emissiveIntensity * (1 + 0.8 * flash);
+          }
+        }
+        const share = landed / Math.max(n, 1);
+        setGlow(Math.min(1, (landed ? 0.25 + 0.75 * share : 0) + 0.35 * flash), 0.75 + 0.25 * share + 0.06 * flash);
+      };
+
+      /**
+       * Gives each piece its own copies of its materials — the GLB shares materials between the
+       * layers, and each piece has to fade on its own. Only done when the intro is enabled.
+       */
+      const collectIntroPart = (name: string): IntroPiece | null => {
+        const node = gltfRoot?.getObjectByName(name);
+        if (!node) return null;
+        const materials: FadingMaterial[] = [];
+        const copies = new Map<Material, Material>();
+        node.traverse((o) => {
+          const mesh = o as Mesh;
+          if (!mesh.isMesh) return;
+          const swap = (m: Material) => {
+            let copy = copies.get(m);
+            if (!copy) {
+              copy = m.clone();
+              copies.set(m, copy);
+              replacedMaterials.add(m);
+              const std = copy as MeshStandardMaterial;
+              const glows = !!std.emissive && std.emissive.getHex() !== 0;
+              materials.push({ material: std, opacity: std.opacity, emissiveIntensity: glows ? std.emissiveIntensity : null });
+            }
+            return copy;
+          };
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
+        });
+        return { node, restY: node.position.y, materials };
+      };
+
       /** 0 -> 1, closed -> open, kept centred on screen. */
       const setProgress = (progress: number) => {
         if (!explode || !mixer) return;
+        // The mixer only writes a node when the clip's value CHANGES, so a piece still carrying an
+        // intro offset has to be put back on its clip pose first — otherwise an unchanged clip
+        // value leaves the offset in place and it gets read back below as the new resting height.
+        for (const piece of pieces) piece.node.position.y = piece.restY;
         explode.time = explodeDuration * THREE.MathUtils.clamp(progress, 0, 1);
         mixer.update(0);
+        for (const piece of pieces) piece.restY = piece.node.position.y;
+        // Once the scroll timeline starts pulling the stack apart, the intro has lost its moment:
+        // finish it on the spot rather than have pieces still falling into an opening server.
+        if (progress > 0 && introStart >= 0) finishIntro();
         // The stack only grows upward, so drop the holder by half that growth — the same net
         // result the CSS stack got by growing downward and being shifted up by half.
         const growth = cap ? cap.position.y - capClosedY : 0;
@@ -253,12 +476,18 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
             placeCamera();
           }
         }
+        if (introStart >= 0) {
+          const t = ((performance.now() - introStart) / 1000) * HERO_INTRO.speed;
+          if (t >= introEnd()) finishIntro();
+          else applyIntro(t);
+        }
         renderer.render(scene, camera);
       });
 
       new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(HERO_MODEL_URL, (gltf) => {
         if (disposed) return;
         const root = gltf.scene;
+        gltfRoot = root;
         holder.add(root);
         turntable = root.getObjectByName("turntable") ?? root;
         turntable.rotation.y = THREE.MathUtils.degToRad(HERO_MODEL_START_YAW_DEG);
@@ -282,11 +511,32 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
         const closedBox = new THREE.Box3().setFromObject(root);
         closedCentreY = (closedBox.max.y + closedBox.min.y) / 2;
 
+        if (intro) {
+          pieces = HERO_INTRO_PIECES.map(collectIntroPart).filter((p): p is IntroPiece => p !== null);
+          ring = collectIntroPart(HERO_INTRO_RING);
+        }
         setProgress(0);
         resize();
+
+        // Only when the page genuinely opens on the hero. Skipped for reduced motion, for a reload
+        // that ScrollChurnGuard is putting back at an old scroll position (the page is hidden
+        // behind `scroll-restoring` while that happens), and for anyone who has already scrolled
+        // well away before the model arrived.
+        const restoring = document.documentElement.classList.contains("scroll-restoring");
+        const atHero = window.scrollY < window.innerHeight * 0.5;
+        if (intro && pieces.length && !reduced && !restoring && atHero) {
+          if (glow) glow.style.transition = "none";
+          setIntroTransparency(true);
+          for (const part of introParts()) part.node.visible = false; // nothing flashes in whole first
+          introStart = performance.now();
+        } else if (glow) {
+          if (intro) finishIntro();
+          else setGlow(1, 1);
+        }
         ready = true;
         apiRef.current = { setProgress };
         onReadyRef.current?.();
+        if (intro) onIntroRef.current?.(introStart >= 0);
       });
 
       teardown = () => {
@@ -307,6 +557,7 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
           if (Array.isArray(material)) material.forEach((m) => m.dispose());
           else material?.dispose();
         });
+        replacedMaterials.forEach((m) => m.dispose());
         envRT.texture.dispose();
         pmrem.dispose();
         renderer.dispose();
@@ -319,7 +570,7 @@ export function HeroServerModel({ apiRef, wrapperRef, onReady }: HeroServerModel
       disposed = true;
       teardown?.();
     };
-  }, [apiRef, wrapperRef]);
+  }, [apiRef, wrapperRef, intro, glowRef, pixelRatioBoost]);
 
   return (
     <>

@@ -3,12 +3,13 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import {
+  HERO_EXPLODE_ON_SCROLL,
   HERO_PIN_SCROLL_DISTANCE,
   HERO_STACK_GAP_CLOSED_PX,
   HERO_STACK_GAP_OPEN_PX,
 } from "@/lib/heroLayers";
 import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
-import { readScale } from "@/lib/grid";
+import { HEADER_HEIGHT_PX, readScale } from "@/lib/grid";
 import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 
@@ -16,7 +17,13 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // Wrapper scales up this much once the text has cleared out. Reduced 1.2 -> 1.08 -> 1.04 across
 // two rounds of feedback — kept reading as enlarging too much each time.
-const CUBE_SCALE_TARGET = 1.04;
+//
+// Raised 1.04 -> 1.35 on 2026-09-21: with the server no longer coming apart on scroll
+// (HERO_EXPLODE_ON_SCROLL), rising + growing noticeably is now the hero's whole scroll moment.
+// Then 1.35 -> 1.2 the same day: "grows too much — a little smaller".
+// HeroSectionClient passes a matching `pixelRatioBoost` to the model so the canvas is drawn at
+// this size rather than upscaled (the scale is a CSS transform on the wrapper around it).
+export const CUBE_SCALE_TARGET = 1.2;
 // How far the text rises as it fades, instead of dissolving in place.
 const TEXT_RISE_PX = 60;
 // Extra scroll distance (px) the pin holds the section for while the timeline scrubs.
@@ -175,7 +182,9 @@ export function useHeroScrollAnimation({
         // because the wrapper itself is.
         const closedHeight = 3 * STACK_GAP_CLOSED_PX * readScale() + coreHeightPx();
         const naturalCenterY = cubeWrapper.offsetTop + closedHeight / 2;
-        recenterY = window.innerHeight / 2 - EXTRA_RISE_PX - naturalCenterY;
+        // Centred in the part of the viewport BELOW the sticky header, not the whole viewport: at
+        // CUBE_SCALE_TARGET 1.35 the grown server otherwise crowds the header on shorter screens.
+        recenterY = (window.innerHeight + HEADER_HEIGHT_PX) / 2 - EXTRA_RISE_PX - naturalCenterY;
       };
       measureRecenterY();
 
@@ -240,36 +249,45 @@ export function useHeroScrollAnimation({
             ease: "power2.inOut",
           },
           SCALE_START,
-        )
-        // 3. The instant that finishes, the server pulls apart. Two tweens run together here:
-        //    --stack-gap (so the wrapper's document height grows exactly as it did with the SVG
-        //    stack) and `disassemble.t`, which scrubs the GLB's explode_sequence clip. No
-        //    re-centring tween is needed any more: the model keeps itself centred as it opens
-        //    (see HeroServerModel.setProgress), which is what the old CENTER_SHIFT_ON_OPEN_PX
-        //    offset on this tween used to do by hand.
-        .fromTo(
-          cubeWrapper,
-          { "--stack-gap": () => `${STACK_GAP_CLOSED_PX * readScale()}px` },
-          {
-            "--stack-gap": () => `${STACK_GAP_OPEN_PX * readScale()}px`,
-            duration: DISASSEMBLE_DURATION,
-            ease: "power1.inOut",
-          },
-          SCALE_START + CUBE_SCALE_DURATION,
-        )
-        .fromTo(
-          disassemble,
-          { t: 0 },
-          {
-            t: 1,
-            duration: DISASSEMBLE_DURATION,
-            ease: "power1.inOut",
-            onUpdate: () => modelRef.current?.setProgress(disassemble.t),
-          },
-          SCALE_START + CUBE_SCALE_DURATION,
-        )
-        // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
-        .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
+        );
+
+      if (HERO_EXPLODE_ON_SCROLL) {
+        tl
+        // 3. (Only with HERO_EXPLODE_ON_SCROLL — off since 2026-09-21, see heroLayers.ts.) The
+          //    instant that finishes, the server pulls apart. Two tweens run together here:
+          //    --stack-gap (so the wrapper's document height grows exactly as it did with the SVG
+          //    stack) and `disassemble.t`, which scrubs the GLB's explode_sequence clip. No
+          //    re-centring tween is needed any more: the model keeps itself centred as it opens
+          //    (see HeroServerModel.setProgress), which is what the old CENTER_SHIFT_ON_OPEN_PX
+          //    offset on this tween used to do by hand.
+          .fromTo(
+            cubeWrapper,
+            { "--stack-gap": () => `${STACK_GAP_CLOSED_PX * readScale()}px` },
+            {
+              "--stack-gap": () => `${STACK_GAP_OPEN_PX * readScale()}px`,
+              duration: DISASSEMBLE_DURATION,
+              ease: "power1.inOut",
+            },
+            SCALE_START + CUBE_SCALE_DURATION,
+          )
+          .fromTo(
+            disassemble,
+            { t: 0 },
+            {
+              t: 1,
+              duration: DISASSEMBLE_DURATION,
+              ease: "power1.inOut",
+              onUpdate: () => modelRef.current?.setProgress(disassemble.t),
+            },
+            SCALE_START + CUBE_SCALE_DURATION,
+          )
+          // 4. Nothing moves: the pin just keeps holding while the fully-open server sits there.
+          .to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION + DISASSEMBLE_DURATION);
+      } else {
+        // 4'. The server stays closed: after the scale/rise, the pin just holds for the same beat
+        //     the open server used to get, then releases.
+        tl.to(hold, { t: 1, duration: HOLD_OPEN_DURATION }, SCALE_START + CUBE_SCALE_DURATION);
+      }
 
       // The GLB loads asynchronously and arrives well after this timeline (and its ScrollTrigger)
       // already exist — HeroServerModel.tsx always starts it at setProgress(0) (closed), since it

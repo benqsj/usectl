@@ -27,6 +27,19 @@
   h1 { margin:4px 0 0; font-size:calc(var(--s)*98); line-height:1.05; font-weight:700; }
   @media (min-width:640px) { h1 { white-space:nowrap; } }
   h1 .brand { color:var(--brand); }
+  /* text reveal. Every piece of text that animates is a unit: .u (its box, and the mask when the
+     style clips) around .ui (what actually moves). The JS builds them per the "split" setting. */
+  #content.pre { visibility:hidden; }
+  #content .u { display:inline-block; vertical-align:top; }
+  #content .u.blk { display:block; }
+  #content .ui { display:inline-block; }
+  #content .u.blk > .ui { display:block; }
+  #content[data-clip="1"] .u { overflow:hidden; padding:.06em .03em .16em; margin:-.06em -.03em -.16em; }
+  #content .word { display:inline-block; white-space:nowrap; }
+  #content .btn { display:inline-block; }   /* so the button's own padding is part of the moving box */
+  #content[data-clip="1"] .btns .u { padding:4px 4px 8px; margin:-4px -4px -8px; }
+  #panel h4 { margin:10px 0 2px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:#8ee89c; }
+  #panel .speed.t { margin-top:4px; }
   .sub { max-width:calc(var(--s)*1080); margin:8px auto 0; font-size:calc(var(--s)*28); color:rgba(255,255,255,.7); }
   .btns { margin-top:calc(var(--s)*35); display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:center; }
   .btn { border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:14px 28px; font-size:18px;
@@ -50,6 +63,7 @@
            font:12px/1.4 ui-sans-serif,system-ui,sans-serif; color:rgba(255,255,255,.85);
            background:rgba(18,18,18,.88); border:1px solid rgba(255,255,255,.12); border-radius:12px;
            padding:12px 14px; backdrop-filter:blur(8px); }
+  #panel { max-height:calc(100vh - 32px); overflow-y:auto; overscroll-behavior:contain; }
   #panel.min .body { display:none; }
   #panel .top { display:flex; align-items:center; gap:8px; }
   #panel .top b { flex:1; font-size:13px; }
@@ -90,16 +104,7 @@
 <body>
 <main>
   <section class="hero">
-    <div id="content">
-      <div class="eyebrow-row">
-        <img src="/herosection/Subtract.svg" alt="" width="58" height="26" aria-hidden="true" />
-        <span class="eyebrow">Managed Kubernetes &amp; AI Agent Infrastructure</span>
-      </div>
-      <h1>One server. <span class="brand">Unlimited</span> machines.</h1>
-      <p class="sub">Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
-        without a DevOps team. Build it. Launch it.</p>
-      <div class="btns"><a class="btn primary" href="#">Create Machine</a><a class="btn" href="#">See how it works</a></div>
-    </div>
+    <div id="content" class="pre" aria-label="One server. Unlimited machines."></div>
     <div id="cubeWrapper" aria-hidden="true">
       <div id="glow"></div>
       <div id="stage"></div>
@@ -127,9 +132,79 @@
     </div>
   </div>
   <div class="body">
+    <h4>სერვერი</h4>
     <div id="sliders"></div>
     <label class="check"><input type="checkbox" id="ring" /> კონტურის ხაზი საერთოდ დამალე</label>
-    <label class="check"><input type="checkbox" id="text" checked /> ტექსტის გამოჩენაც ანიმაციით</label>
+
+    <h4>ტექსტი</h4>
+    <label class="check"><input type="checkbox" id="text" checked /> ტექსტის ანიმაცია ჩართულია</label>
+    <label><span>მზა ვარიანტები</span>
+      <select id="textPreset" style="grid-column:1 / -1"></select>
+    </label>
+    <div class="speed t">
+      <div class="head"><span>ტექსტის სიჩქარე</span><b id="tSpeedVal">1.00×</b></div>
+      <div class="bar">
+        <button id="tSlower" title="ნელა">−</button>
+        <input type="range" id="tSpeedRange" min="0.25" max="3" step="0.05" style="flex:1" />
+        <button id="tFaster" title="სწრაფად">+</button>
+      </div>
+      <div class="chips">
+        <button data-t="0.5">0.5×</button><button data-t="1">1×</button>
+        <button data-t="1.5">1.5×</button><button data-t="2">2×</button>
+      </div>
+    </div>
+    <label><span>როდის გამოვიდეს</span>
+      <select id="textWhen" style="grid-column:1 / -1">
+        <option value="after">სერვერის აწყობის შემდეგ (cap-ის დაჯდომისას)</option>
+        <option value="mid">შუაში (მე-2 დეტალის დაჯდომისას)</option>
+        <option value="with">სერვერთან ერთად (პირველივე დეტალთან)</option>
+        <option value="pieces">დეტალებთან ერთად — ყოველ დაჯდომაზე ერთი სტრიქონი</option>
+        <option value="before">ჯერ ტექსტი, მერე სერვერი</option>
+      </select>
+    </label>
+    <label><span>ანიმაციის სტილი</span>
+      <select id="textStyle" style="grid-column:1 / -1">
+        <option value="up">Mask — ამოსვლა ქვემოდან</option>
+        <option value="down">Mask — ჩამოსვლა ზემოდან</option>
+        <option value="skew">Mask — ამოსვლა დახრით</option>
+        <option value="fadeUp">ნაზად ამოსვლა + გამოჩენა</option>
+        <option value="fade">უბრალო გამოჩენა (fade)</option>
+        <option value="left">Mask — შემოსვლა მარცხნიდან</option>
+        <option value="blur">ბუნდოვნიდან გამოჩენა</option>
+        <option value="wipe">მარცხნიდან გადაშლა</option>
+        <option value="wipeCenter">შუიდან გადაშლა</option>
+        <option value="scale">გადიდებით გამოჩენა (pop)</option>
+        <option value="flip">3D გადმობრუნება</option>
+        <option value="type">საბეჭდი მანქანა</option>
+      </select>
+    </label>
+    <label><span>რა ნაწილებად შემოვიდეს</span>
+      <select id="textSplit" style="grid-column:1 / -1">
+        <option value="block">სტრიქონებად (eyebrow → სათაური → აბზაცი → ღილაკები)</option>
+        <option value="words">სიტყვა-სიტყვა</option>
+        <option value="letters">ასო-ასო</option>
+      </select>
+    </label>
+    <label><span>თანმიმდევრობა</span>
+      <select id="textOrder" style="grid-column:1 / -1">
+        <option value="top">ზემოდან ქვემოთ</option>
+        <option value="bottom">ქვემოდან ზემოთ</option>
+        <option value="together">ყველა ბლოკი ერთად (ბლოკის შიგნით სათითაოდ)</option>
+        <option value="random">შემთხვევითი</option>
+      </select>
+    </label>
+    <label><span>მოძრაობის ხასიათი (easing)</span>
+      <select id="textEase" style="grid-column:1 / -1">
+        <option value="expo">რბილი დამუხრუჭება</option>
+        <option value="smooth">გლუვი</option>
+        <option value="back">პატარა გადაცილებით (back)</option>
+        <option value="inout">ნელა-სწრაფად-ნელა</option>
+        <option value="linear">თანაბარი</option>
+      </select>
+    </label>
+    <div id="textSliders"></div>
+    <button id="textOnly">▶ მხოლოდ ტექსტის ანიმაცია</button>
+
     <button id="reset">ნაგულისხმევზე დაბრუნება</button>
     <button id="copy">Copy settings</button>
     <div style="color:rgba(255,255,255,.5)">სერვერი მაუსით გადაატრიალე: აქეთ-იქით და ზემოთ-ქვემოთ.</div>
@@ -167,7 +242,10 @@ const RING_NAME = '05_accent_ring';
    squash — how much a piece squashes on landing (1 - squash tall for a moment). It squashes
             DOWN into what's under it, so nothing ever moves up after landing.               */
 // approved 2026-09-21 — see hero-intro-animation.md
-const DEFAULTS = { speed: 1, height: 0.5, dur: 0.62, gap: 0.4, wobble: 10, squash: 0.08, twist: 0, delay: 0.25, fade: 0.3 };
+const DEFAULTS = { speed: 1, height: 0.3, dur: 0.62, gap: 0.4, wobble: 10, squash: 0.08, twist: 0, delay: 0.25, fade: 0.3,
+                   textSpeed: 1, textOffset: -1.3, textDur: 0.8, blockGap: 0.14, unitGap: 0.06, distance: 110, blur: 8 };
+/* text choices (the selects); the preset list below sets these together with the text sliders */
+const TEXT_DEFAULTS = { when: 'after', style: 'up', split: 'words', order: 'top', ease: 'expo' };
 const SLIDERS = [
   ['dur',    'ერთი დეტალის ვარდნის დრო (წმ)',      0.12, 1.2, 0.01],
   ['gap',    'ინტერვალი დეტალებს შორის (წმ)',      0.03, 0.8, 0.01],
@@ -176,10 +254,34 @@ const SLIDERS = [
   ['squash', 'დაჯდომისას ჩაჯდომა (რბილი დარტყმა)', 0,    0.2, 0.01],
   ['twist',  'ტრიალი ვარდნისას (°)',              0,    180, 5],
 ];
+const TEXT_SLIDERS = [
+  ['textOffset', 'დაყოვნება არჩეული მომენტიდან (წმ, − = უფრო ადრე)', -2, 2, 0.05],
+  ['textDur',    'ერთი ნაწილის ანიმაციის ხანგრძლივობა (წმ)',       0.05, 2.5, 0.05],
+  ['blockGap',   'ინტერვალი სტრიქონებს შორის (წმ)',               0, 0.8, 0.01],
+  ['unitGap',    'ინტერვალი სიტყვებს / ასოებს შორის (წმ)',          0, 0.3, 0.005],
+  ['distance',   'საიდან ამოდის (%)',                             10, 250, 5],
+  ['blur',       'ბუნდოვნება (px)',                               0, 30, 1],
+];
+const TEXT_PRESETS = [
+  ['Mask — სიტყვებით ამოსვლა',   { style: 'up', split: 'words', order: 'top', ease: 'expo', textDur: 0.8, blockGap: 0.14, unitGap: 0.06, distance: 110 }],
+  ['Mask — ასოებით ამოსვლა',     { style: 'up', split: 'letters', order: 'top', ease: 'expo', textDur: 0.6, blockGap: 0.12, unitGap: 0.018, distance: 110 }],
+  ['Mask — სტრიქონებით',          { style: 'up', split: 'block', order: 'top', ease: 'expo', textDur: 0.9, blockGap: 0.16, unitGap: 0, distance: 110 }],
+  ['Mask — დახრით, სიტყვებით',    { style: 'skew', split: 'words', order: 'top', ease: 'expo', textDur: 0.9, blockGap: 0.12, unitGap: 0.05, distance: 120 }],
+  ['Mask — ზემოდან ჩამოსვლა',     { style: 'down', split: 'words', order: 'top', ease: 'expo', textDur: 0.8, blockGap: 0.12, unitGap: 0.05, distance: 110 }],
+  ['ბუნდოვნიდან, სიტყვებით',      { style: 'blur', split: 'words', order: 'top', ease: 'smooth', textDur: 1.0, blockGap: 0.12, unitGap: 0.04, distance: 60, blur: 10 }],
+  ['მარცხნიდან გადაშლა',          { style: 'wipe', split: 'block', order: 'top', ease: 'inout', textDur: 1.0, blockGap: 0.15, unitGap: 0 }],
+  ['3D გადმობრუნება, ასოებით',     { style: 'flip', split: 'letters', order: 'top', ease: 'back', textDur: 0.7, blockGap: 0.1, unitGap: 0.02 }],
+  ['Pop, სიტყვებით',               { style: 'scale', split: 'words', order: 'together', ease: 'back', textDur: 0.6, blockGap: 0.05, unitGap: 0.05 }],
+  ['საბეჭდი მანქანა',              { style: 'type', split: 'letters', order: 'top', ease: 'linear', textDur: 0.05, blockGap: 0.15, unitGap: 0.025 }],
+  ['დეტალებთან ერთად, სტრიქონებით', { when: 'pieces', style: 'up', split: 'block', order: 'top', ease: 'expo', textDur: 0.9, textOffset: 0 }],
+  ['დეტალებთან ერთად, სიტყვებით',   { when: 'pieces', style: 'up', split: 'words', order: 'top', ease: 'expo', textDur: 0.7, unitGap: 0.05, textOffset: 0 }],
+  ['ჯერ ტექსტი, მერე სერვერი',       { when: 'before', style: 'up', split: 'words', order: 'top', ease: 'expo', textDur: 0.8, blockGap: 0.12, unitGap: 0.05 }],
+  ['მარცხნიდან შემოსვლა, სიტყვებით', { style: 'left', split: 'words', order: 'top', ease: 'expo', textDur: 0.8, blockGap: 0.12, unitGap: 0.05, distance: 110 }],
+];
 
 const Q = new URLSearchParams(location.search);
 const P = { ...DEFAULTS };
-for (const [k] of SLIDERS) if (Q.has(k)) P[k] = Number(Q.get(k));
+for (const [k] of [...SLIDERS, ...TEXT_SLIDERS]) if (Q.has(k)) P[k] = Number(Q.get(k));
 
 const wrapper = document.getElementById('cubeWrapper');
 const stage = document.getElementById('stage');
@@ -288,9 +390,11 @@ const endDrag = (e) => {
 const restingOmega = () => (reduced ? 0 : (Math.PI * 2) / ROTATION_SECONDS);
 const ringHidden = () => document.getElementById('ring').checked;
 
-const startOf = (i) => P.delay + i * P.gap;
+// "ჯერ ტექსტი, მერე სერვერი" pushes the whole server back by however long the text takes
+let serverShift = 0;
+const startOf = (i) => P.delay + serverShift + i * P.gap;
 const landOf = (i) => startOf(i) + P.dur;
-const introLength = () => landOf(LAYER_NAMES.length - 1) + 0.8;
+const introLength = () => Math.max(landOf(LAYER_NAMES.length - 1) + 0.8, textEnd + 0.1);
 
 function setMaterialsTransparent(on) {
   for (const L of [...layers, ring]) for (const e of L.mats) {
@@ -301,20 +405,155 @@ function setMaterialsTransparent(on) {
 
 function playIntro() {
   if (!ready) return;
-  if (reduced) { finishIntro(); return; }
+  if (reduced) { startText(); finishIntro(); return; }
   introT0 = performance.now(); introOn = true;
   // the turn itself is untouched: the same 24s turn the live site has, never reset or sped up
   setMaterialsTransparent(true);
-  content.getAnimations().forEach((a) => a.cancel());
-  if (document.getElementById('text').checked) {
-    content.animate(
-      [{ opacity: 0, transform: 'translateY(24px)', filter: 'blur(6px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-      { duration: 900 / P.speed, delay: 80 / P.speed, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'both' });
+  hideText();
+}
+
+/* ===== text ================================================================================ */
+const TEXT = {
+  when: () => document.getElementById('textWhen').value,
+  style: () => document.getElementById('textStyle').value,
+  split: () => document.getElementById('textSplit').value,
+  order: () => document.getElementById('textOrder').value,
+  ease: () => document.getElementById('textEase').value,
+};
+const textOn = () => document.getElementById('text').checked;
+const EASINGS = { expo: 'cubic-bezier(.16,1,.3,1)', smooth: 'cubic-bezier(.2,.8,.2,1)', back: 'cubic-bezier(.34,1.56,.64,1)',
+                  inout: 'cubic-bezier(.65,0,.35,1)', linear: 'linear' };
+const CLIPPING = { up: 1, down: 1, skew: 1, left: 1 };   // styles that move inside a mask
+
+// the hero copy, as blocks of parts (same text as HeroSectionClient.tsx)
+const LOGO = document.createElement('img');
+LOGO.src = '/herosection/Subtract.svg'; LOGO.alt = ''; LOGO.width = 58; LOGO.height = 26;
+const BLOCKS = [
+  { tag: 'div', cls: 'eyebrow-row', parts: [{ el: () => LOGO.cloneNode() }, { text: 'Managed Kubernetes & AI Agent Infrastructure', cls: 'eyebrow' }] },
+  { tag: 'h1', parts: [{ text: 'One server.' }, { text: 'Unlimited', cls: 'brand' }, { text: 'machines.' }] },
+  { tag: 'p', cls: 'sub', parts: [{ text: 'Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live, without a DevOps team. Build it. Launch it.' }] },
+  { tag: 'div', cls: 'btns', parts: [
+    { el: () => Object.assign(document.createElement('a'), { className: 'btn primary', href: '#', textContent: 'Create Machine' }) },
+    { el: () => Object.assign(document.createElement('a'), { className: 'btn', href: '#', textContent: 'See how it works' }) } ] },
+];
+
+const unit = (child, block = false) => {
+  const u = document.createElement(block ? 'div' : 'span'); u.className = block ? 'u blk' : 'u';
+  const ui = document.createElement(block ? 'div' : 'span'); ui.className = 'ui';
+  ui.append(child); u.append(ui);
+  return { u, ui };
+};
+
+/** Rebuilds the copy split into units; returns them grouped per block, in reading order. */
+let builtSplit = null;
+let groups = [];
+function buildText(split) {
+  content.textContent = '';
+  groups = [];
+  for (const b of BLOCKS) {
+    const el = document.createElement(b.tag); if (b.cls) el.className = b.cls;
+    const units = [];
+    b.parts.forEach((part, pi) => {
+      if (part.el) {                       // logo, buttons: always one unit each
+        if (split === 'block') el.append(part.el());
+        else { const { u, ui } = unit(part.el()); el.append(u); units.push(ui); }
+        return;
+      }
+      const holder = part.cls ? Object.assign(document.createElement('span'), { className: part.cls }) : document.createDocumentFragment();
+      const words = part.text.split(' ');
+      words.forEach((w, wi) => {
+        if (split === 'block') holder.append(w);
+        else if (split === 'words') { const { u, ui } = unit(document.createTextNode(w)); holder.append(u); units.push(ui); }
+        else {
+          const word = document.createElement('span'); word.className = 'word';
+          for (const ch of w) { const { u, ui } = unit(document.createTextNode(ch)); word.append(u); units.push(ui); }
+          holder.append(word);
+        }
+        if (wi < words.length - 1) holder.append(' ');
+      });
+      el.append(holder);
+      if (b.tag === 'h1' && pi < b.parts.length - 1) el.append(' ');
+    });
+    if (split === 'block') { const { u, ui } = unit(el, true); content.append(u); units.push(ui); }
+    else content.append(el);
+    groups.push(units);
+  }
+  builtSplit = split;
+}
+
+function keyframes(style) {
+  const D = P.distance, B = P.blur;
+  switch (style) {
+    case 'up':         return [{ transform: `translateY(calc(${D}% + 12px))` }, { transform: 'translateY(0)' }];
+    case 'down':       return [{ transform: `translateY(calc(-${D}% - 12px))` }, { transform: 'translateY(0)' }];
+    case 'skew':       return [{ transform: `translateY(calc(${D}% + 12px)) skewY(12deg)` }, { transform: 'translateY(0) skewY(0)' }];
+    case 'fadeUp':     return [{ opacity: 0, transform: `translateY(${D * 0.4}%)` }, { opacity: 1, transform: 'translateY(0)' }];
+    case 'blur':       return [{ opacity: 0, filter: `blur(${B}px)`, transform: `translateY(${D * 0.3}%)` }, { opacity: 1, filter: 'blur(0px)', transform: 'translateY(0)' }];
+    case 'wipe':       return [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }];
+    case 'wipeCenter': return [{ clipPath: 'inset(0 50% 0 50%)' }, { clipPath: 'inset(0 0% 0 0%)' }];
+    case 'scale':      return [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1)' }];
+    case 'flip':       return [{ opacity: 0, transform: 'perspective(600px) rotateX(-95deg)' }, { opacity: 1, transform: 'perspective(600px) rotateX(0deg)' }];
+    case 'type':       return [{ opacity: 0 }, { opacity: 1 }];
+    case 'fade':       return [{ opacity: 0 }, { opacity: 1 }];
+    case 'left':       return [{ transform: `translateX(calc(-${D}% - 12px))` }, { transform: 'translateX(0)' }];
   }
 }
 
+/** Seconds (intro time) from the chosen moment, and the order units go in. */
+let textEnd = 0;
+function schedule() {
+  const n = LAYER_NAMES.length;
+  // relative delay of every unit, in text-time seconds
+  let list = [];
+  const order = TEXT.order();
+  const gs = order === 'bottom' ? [...groups].reverse().map((g) => [...g].reverse()) : groups;
+  // one after another: a line starts once the previous line's last word/letter has started + blockGap
+  let cursor = 0;
+  const perPiece = TEXT.when() === 'pieces';
+  gs.forEach((g, gi) => {
+    // "with the pieces": line gi comes in as piece gi lands (in text time, from the first landing)
+    const start = perPiece ? (landOf(Math.min(gi, n - 1)) - landOf(0)) * P.textSpeed : order === 'together' ? 0 : cursor;
+    g.forEach((ui, k) => list.push({ ui, d: start + k * P.unitGap }));
+    cursor = start + Math.max(0, g.length - 1) * P.unitGap + P.blockGap;
+  });
+  if (order === 'random' && !perPiece) {
+    let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const shuffled = list.map((x) => x.ui).sort(() => rnd() - 0.5);
+    list = shuffled.map((ui, k) => ({ ui, d: k * Math.max(P.unitGap, 0.01) }));
+  }
+  const tLen = (Math.max(0, ...list.map((x) => x.d)) + P.textDur) / P.textSpeed;   // text-only length
+  serverShift = TEXT.when() === 'before' ? Math.max(0, tLen + P.textOffset) : 0;
+  const anchor = { after: landOf(n - 1), mid: landOf(1), with: startOf(0), pieces: landOf(0), before: P.delay }[TEXT.when()] + P.textOffset;
+  textEnd = Math.max(0, anchor) + tLen;
+  return { list, anchor: Math.max(0, anchor) };
+}
+
+let textAnims = [];
+function startText(fromNow = false) {
+  textAnims.forEach((a) => a.cancel()); textAnims = [];
+  if (builtSplit !== TEXT.split()) buildText(TEXT.split());
+  content.classList.remove('pre');
+  content.dataset.clip = CLIPPING[TEXT.style()] ? '1' : '0';
+  const { list, anchor } = schedule();
+  if (!textOn()) { serverShift = 0; textEnd = 0; return; }
+  const frames = keyframes(TEXT.style());
+  const k = 1000 / P.speed;
+  for (const { ui, d } of list) {
+    ui.style.transformOrigin = TEXT.style() === 'flip' ? '50% 100%' : '';
+    textAnims.push(ui.animate(frames, {
+      duration: (P.textDur / P.textSpeed) * k,
+      delay: ((fromNow ? 0 : anchor) + d / P.textSpeed) * k,
+      easing: TEXT.style() === 'type' ? 'steps(1, end)' : EASINGS[TEXT.ease()],
+      fill: 'both',
+    }));
+  }
+}
+const hideText = () => startText(false);
+function playText() { /* timing lives in the animations themselves (see startText) */ }
+
 function finishIntro() {
   introOn = false;
+  if (reduced) textAnims.forEach((a) => a.finish());
   for (const L of layers) { L.node.position.y = L.baseY; L.node.rotation.set(0, 0, 0); L.node.scale.set(1, 1, 1); L.node.visible = true; }
   ring.node.visible = !ringHidden();
   setMaterialsTransparent(false);
@@ -387,6 +626,7 @@ renderer.setAnimationLoop(() => {
   if (introOn) {
     const t = forcedT ?? ((performance.now() - introT0) / 1000) * P.speed;
     const landed = applyIntro(t);
+    if (forcedT != null) textAnims.forEach((an) => { an.pause(); an.currentTime = (t * 1000) / P.speed; });
     hud.textContent = `t = ${t.toFixed(2)}s · landed ${landed}/4`;
     if (t >= introLength() && forcedT == null) { finishIntro(); hud.textContent = 'done — R ან ↻ თავიდან სანახავად'; }
   }
@@ -441,9 +681,9 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(MODEL_URL, (gltf) => {
 });
 
 /* ===== panel ============================================================================== */
-const slidersEl = document.getElementById('sliders');
 const inputs = {};
-for (const [k, label, min, max, step] of SLIDERS) {
+for (const [list, holder] of [[SLIDERS, 'sliders'], [TEXT_SLIDERS, 'textSliders']]) for (const [k, label, min, max, step] of list) {
+  const slidersEl = document.getElementById(holder);
   const l = document.createElement('label');
   l.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
   const input = l.querySelector('input'), out = l.querySelector('output');
@@ -453,8 +693,26 @@ for (const [k, label, min, max, step] of SLIDERS) {
   slidersEl.appendChild(l);
 }
 const syncPanel = () => { for (const k in inputs) { inputs[k].input.value = P[k]; inputs[k].out.textContent = P[k]; } };
-document.getElementById('reset').onclick = () => { Object.assign(P, DEFAULTS); syncPanel(); setSpeed(1, false); playIntro(); };
+const selects = ['when', 'style', 'split', 'order', 'ease'];
+const selId = (k) => 'text' + k[0].toUpperCase() + k.slice(1);
+const setSelects = (o) => selects.forEach((k) => { if (o[k]) document.getElementById(selId(k)).value = o[k]; });
+selects.forEach((k) => (document.getElementById(selId(k)).onchange = playIntro));
+const presetEl = document.getElementById('textPreset');
+presetEl.innerHTML = '<option value="">— აირჩიე —</option>' + TEXT_PRESETS.map(([name], i) => `<option value="${i}">${name}</option>`).join('');
+presetEl.onchange = () => {
+  const pr = TEXT_PRESETS[presetEl.value]; if (!pr) return;
+  const o = { ...DEFAULTS, ...TEXT_DEFAULTS, textSpeed: P.textSpeed, ...pr[1] };
+  for (const [k] of TEXT_SLIDERS) P[k] = o[k];
+  setSelects(o); syncPanel(); playIntro();
+};
+setSelects(TEXT_DEFAULTS);
+document.getElementById('textOnly').onclick = () => startText(true);
+document.getElementById('reset').onclick = () => {
+  Object.assign(P, DEFAULTS); setSelects(TEXT_DEFAULTS); presetEl.value = '';
+  syncPanel(); setSpeed(1, false); setTextSpeed(1, false); playIntro();
+};
 document.getElementById('ring').onchange = playIntro;
+document.getElementById('text').onchange = playIntro;
 syncPanel();
 document.getElementById('replay').onclick = playIntro;
 // on narrow screens start with only the speed bar open, so the panel doesn't cover the server
@@ -464,7 +722,7 @@ document.getElementById('toggle').onclick = (e) => {
   e.target.textContent = p.classList.contains('min') ? '+' : '–';
 };
 const speedRange = document.getElementById('speedRange'), speedVal = document.getElementById('speedVal');
-const chips = [...document.querySelectorAll('.speed .chips button')];
+const chips = [...document.querySelectorAll('.speed:not(.t) .chips button')];
 function setSpeed(v, replay = true) {
   // keep the intro where it is on screen instead of jumping when the speed changes mid-play
   const now = performance.now();
@@ -480,8 +738,22 @@ document.getElementById('slower').onclick = () => setSpeed(P.speed - 0.1);
 document.getElementById('faster').onclick = () => setSpeed(P.speed + 0.1);
 chips.forEach((c) => (c.onclick = () => setSpeed(Number(c.dataset.s))));
 setSpeed(P.speed, false);
+const tRange = document.getElementById('tSpeedRange'), tVal = document.getElementById('tSpeedVal');
+const tChips = [...document.querySelectorAll('.speed.t .chips button')];
+function setTextSpeed(v, replay = true) {
+  P.textSpeed = Math.round(Math.min(Math.max(v, 0.25), 3) * 100) / 100;
+  tRange.value = P.textSpeed; tVal.textContent = P.textSpeed.toFixed(2) + '×';
+  tChips.forEach((c) => c.classList.toggle('on', Number(c.dataset.t) === P.textSpeed));
+  if (replay) startText(true);
+}
+tRange.addEventListener('input', () => setTextSpeed(Number(tRange.value), false));
+tRange.addEventListener('change', () => startText(true));
+document.getElementById('tSlower').onclick = () => setTextSpeed(P.textSpeed - 0.1);
+document.getElementById('tFaster').onclick = () => setTextSpeed(P.textSpeed + 0.1);
+tChips.forEach((c) => (c.onclick = () => setTextSpeed(Number(c.dataset.t))));
+setTextSpeed(P.textSpeed, false);
 document.getElementById('copy').onclick = async (e) => {
-  const clean = { ...P };
+  const clean = { ...P, text: textOn() ? Object.fromEntries(selects.map((k) => [k, TEXT[k]()])) : 'off' };
   const txt = JSON.stringify({ ...clean, hideRing: ringHidden() });
   try { await navigator.clipboard.writeText(txt); e.target.textContent = 'Copied ✓'; }
   catch { prompt('Settings:', txt); }

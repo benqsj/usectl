@@ -1,12 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useRef, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { HeroServerModel, type HeroServerModelHandle } from "@/components/sections/HeroServerModel";
-import { useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
+import { CUBE_SCALE_TARGET, useHeroScrollAnimation } from "@/animations/heroScrollAnimation";
 import { HERO_PIN_SCROLL_DISTANCE, HERO_STACK_GAP_CLOSED_PX } from "@/lib/heroLayers";
-import { HERO_CORE_HEIGHT_RATIO } from "@/lib/heroModel";
+import { HERO_CORE_HEIGHT_RATIO, HERO_INTRO_TEXT, heroIntroTextStartSeconds } from "@/lib/heroModel";
 import { useGridMarks } from "@/lib/gridEffect/useGridMarks";
 import { HEADER_HEIGHT_PX, readScale, s } from "@/lib/grid";
 
@@ -25,10 +25,79 @@ const HERO_MARK_GAP_X_PX = 129;
 const HERO_MARK_GAP_Y_PX = 0;
 const HERO_MODEL_WIDTH_PX = 480;
 
+// ---- the copy's mask reveal (see globals.css .hero-mask and HERO_INTRO_TEXT) ---------------------
+
+/** One unit that slides up out of its own mask. `line` groups units that belong to the same line. */
+function Mask({ line, button = false, children }: { line: number; button?: boolean; children: ReactNode }) {
+  return (
+    <span className={button ? "hero-mask hero-mask-btn" : "hero-mask"} data-hero-line={line}>
+      <span className="hero-mask-in">{children}</span>
+    </span>
+  );
+}
+
+/** Splits `text` into masked words, keeping real spaces between them so lines still wrap normally. */
+function MaskWords({ text, line }: { text: string; line: number }) {
+  const words = text.split(" ");
+  return (
+    <>
+      {words.map((word, i) => (
+        <Fragment key={i}>
+          <Mask line={line}>{word}</Mask>
+          {i < words.length - 1 ? " " : null}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** Seconds to wait for the model to say whether the intro plays before revealing the copy anyway. */
+const TEXT_FALLBACK_SECONDS = 4;
+
+/**
+ * Plays the copy's reveal: each line's words one after another, each line starting once the
+ * previous line's last word has started + lineGap. `startDelayMs` is when the first word goes.
+ * Clears `html.hero-intro` once everything is up, which also drops the masks' clipping.
+ */
+function revealHeroText(root: HTMLElement, startDelayMs: number) {
+  const html = document.documentElement;
+  if (!html.classList.contains("hero-intro")) return;
+  const units = [...root.querySelectorAll<HTMLElement>("[data-hero-line]")];
+  const t = HERO_INTRO_TEXT;
+  let cursor = 0;
+  let lastLine = -1;
+  let inLine = 0;
+  let lineStart = 0;
+  const animations = units.map((unit) => {
+    const line = Number(unit.dataset.heroLine);
+    if (line !== lastLine) {
+      if (lastLine !== -1) cursor = lineStart + (inLine - 1) * t.wordGapSeconds + t.lineGapSeconds;
+      lineStart = cursor;
+      lastLine = line;
+      inLine = 0;
+    }
+    const delay = lineStart + inLine * t.wordGapSeconds;
+    inLine++;
+    const inner = unit.firstElementChild as HTMLElement;
+    return inner.animate(
+      [{ transform: `translateY(calc(${t.distancePercent}% + 12px))` }, { transform: "translateY(0)" }],
+      { duration: t.unitSeconds * 1000, delay: startDelayMs + delay * 1000, easing: t.easing, fill: "both" },
+    );
+  });
+  void Promise.all(animations.map((a) => a.finished)).then(
+    () => {
+      html.classList.remove("hero-intro");
+      animations.forEach((a) => a.cancel()); // resting state is plain CSS again (transform: none)
+    },
+    () => html.classList.remove("hero-intro"),
+  );
+}
+
 export function HeroSectionClient() {
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cubeWrapperRef = useRef<HTMLDivElement>(null);
+  const glowRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
@@ -75,33 +144,69 @@ export function HeroSectionClient() {
   // of just already being there).
   const handleModelReady = useCallback(() => modelSyncRef.current?.(), []);
 
+  // The copy comes in with the server's intro: timed off the moment the intro starts, or straight
+  // away (no animation) when the model decides not to play it. If the model never reports — WebGL
+  // unavailable, a very slow network — the copy is revealed anyway after TEXT_FALLBACK_SECONDS.
+  const textHandledRef = useRef(false);
+  const handleIntro = useCallback((playing: boolean) => {
+    if (textHandledRef.current || !contentRef.current) return;
+    textHandledRef.current = true;
+    if (playing) revealHeroText(contentRef.current, heroIntroTextStartSeconds() * 1000);
+    else document.documentElement.classList.remove("hero-intro");
+  }, []);
+  useEffect(() => {
+    // From here on this component owns the reveal (including its own fallback just below), so the
+    // early script's blunt failsafe must not yank the class out from under a running animation.
+    window.clearTimeout((window as Window & { __heroIntroFailsafe?: number }).__heroIntroFailsafe);
+    const id = window.setTimeout(() => {
+      if (textHandledRef.current || !contentRef.current) return;
+      textHandledRef.current = true;
+      revealHeroText(contentRef.current, 0);
+    }, TEXT_FALLBACK_SECONDS * 1000);
+    return () => window.clearTimeout(id);
+  }, []);
+
   return (
     <section
       ref={sectionRef}
       className="relative flex flex-col items-center px-6 pt-16 pb-28 text-center md:pb-36"
     >
       <div ref={contentRef}>
+        {/* Every word / logo / button is wrapped in a <Mask> for the intro's reveal; `line` numbers
+            the lines in the order they come in. With no intro the masks are plain inline boxes. */}
         <div className="flex items-center justify-center gap-3">
-          <Image src="/herosection/Subtract.svg" alt="" width={58} height={26} aria-hidden="true" />
+          <Mask line={0}>
+            <Image src="/herosection/Subtract.svg" alt="" width={58} height={26} aria-hidden="true" />
+          </Mask>
           <span className="font-heading text-[calc(var(--s)*22)] leading-none font-light tracking-[-0.02em] text-white/70">
-            Managed Kubernetes &amp; AI Agent Infrastructure
+            <MaskWords line={0} text="Managed Kubernetes & AI Agent Infrastructure" />
           </span>
         </div>
 
         <h1 className="mt-[4px] font-heading text-[calc(var(--s)*98)] leading-[1.05] font-bold sm:text-nowrap">
-          One server. <span className="text-brand">Unlimited</span> machines.
+          <MaskWords line={1} text="One server." />{" "}
+          <span className="text-brand">
+            <MaskWords line={1} text="Unlimited" />
+          </span>{" "}
+          <MaskWords line={1} text="machines." />
         </h1>
 
         <p className="mx-auto mt-2 max-w-[calc(var(--s)*1080)] text-[calc(var(--s)*28)] text-white/70">
-          Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live,
-          without a DevOps team. Build it. Launch it.
+          <MaskWords
+            line={2}
+            text="Zero-ops hosting for your apps and AI agents. Everything you need to take your idea live, without a DevOps team. Build it. Launch it."
+          />
         </p>
 
         <div className="mt-[calc(var(--s)*35)] flex flex-wrap items-center justify-center gap-4">
-          <Button href="#">Create Machine</Button>
-          <Button href="#" withArrow>
-            See how it works
-          </Button>
+          <Mask line={3} button>
+            <Button href="#">Create Machine</Button>
+          </Mask>
+          <Mask line={3} button>
+            <Button href="#" withArrow>
+              See how it works
+            </Button>
+          </Mask>
         </div>
       </div>
 
@@ -127,17 +232,29 @@ export function HeroSectionClient() {
         {/* Soft ambient glow beneath the server, matching server-cube.png's reference look — the
             model has no equivalent "shadow/glow" of its own, so it's a plain CSS radial gradient.
             Positioned off the same formula as the wrapper's own height, so it tracks the base
-            layer down as the stack opens. */}
+            layer down as the stack opens. Starts hidden: it belongs to the server, so
+            HeroServerModel brings it in with the model (growing it piece by piece during the
+            first-load intro) instead of it glowing under an empty stage while the GLB loads. */}
         <div
+          ref={glowRef}
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 h-[calc(var(--s)*130)] w-[170%] -translate-x-1/2 rounded-full blur-2xl"
           style={{
             top: `calc(3 * var(--stack-gap) + var(--core-height) - 45px)`,
+            opacity: 0,
             background: "radial-gradient(ellipse at center, rgba(72,144,72,0.55) 0%, rgba(72,144,72,0) 70%)",
           }}
         />
 
-        <HeroServerModel apiRef={modelRef} wrapperRef={cubeWrapperRef} onReady={handleModelReady} />
+        <HeroServerModel
+          apiRef={modelRef}
+          wrapperRef={cubeWrapperRef}
+          onReady={handleModelReady}
+          intro
+          glowRef={glowRef}
+          onIntro={handleIntro}
+          pixelRatioBoost={CUBE_SCALE_TARGET}
+        />
       </div>
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add

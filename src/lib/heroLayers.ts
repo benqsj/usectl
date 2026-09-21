@@ -33,4 +33,10 @@ export const HERO_STACK_GAP_OPEN_PX = 140;
 // 3.6 per explicit instruction to slow down only the server's own disassembly — this is exactly
 // that doubled unit's worth of extra px (1.8 units * 233.33px/unit = 420px) added on top, so the
 // text fade, scale/rise and end-hold phases still need exactly the scroll they always did.
-export const HERO_PIN_SCROLL_DISTANCE = 1680;
+//
+// 2026-09-21: the server no longer comes apart on scroll (explicit request — "don't disassemble it on
+// scroll, show it closed straight away"). With HERO_EXPLODE_ON_SCROLL off the timeline has no
+// disassemble phase at all (3.6 of its 7.2 units), so the pin is exactly that much shorter:
+// 1680 - 3.6 * 233.33 = 840. Flip the flag back to true to restore the old behaviour as it was.
+export const HERO_EXPLODE_ON_SCROLL = false;
+export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 840;

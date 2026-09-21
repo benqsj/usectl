@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import type { RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -6,6 +6,7 @@ import { MACHINE_PHASES, MACHINE_PIN_SCROLL_DISTANCE } from "@/lib/machineLayout
 import { gridMetrics, readScale } from "@/lib/grid";
 import type { AnchorBox, GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
 import { createStepSwap } from "@/animations/stepSwap";
+import { SCROLL_RESTORED_EVENT } from "@/components/layout/ScrollChurnGuard";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -442,6 +443,13 @@ interface MachineScrollRefs {
 //      small and far away, and scroll flies us towards it until it sits at full size (scrubbed)
 //   -> then the six steps swap their text (triggered, same as everywhere else) while the static
 //      bar fills (scrubbed).
+//
+// This file used to also carry its own `scrollYBeforeChurnRef`-based scrollY restore, on top of the
+// shared `<ScrollChurnGuard />` (layout.tsx) — removed 2026-09-21, same real bug and same fix as
+// buildScrollAnimation.ts's own doc comment describes: ScrollChurnGuard exists specifically because
+// five independent per-section copies of this fix raced each other, and this file's own copy was
+// never actually removed when that shared guard replaced them, so it kept fighting it (and GSAP's
+// own internal scrollTo calls during every pinned ScrollTrigger's setup) on refresh.
 export function useMachineScrollAnimation({
   sectionRef,
   wordmarkRef,
@@ -459,14 +467,8 @@ export function useMachineScrollAnimation({
   stepCount,
   ssrScrollReserveRef,
 }: MachineScrollRefs) {
-  // Survives React 19 StrictMode's dev-only mount -> cleanup -> remount cycle — see the matching
-  // comment in heroScrollAnimation.ts.
-  const scrollYBeforeChurnRef = useRef<number | null>(null);
-
   useGSAP(
     (_context, contextSafe) => {
-      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
-
       // Collapse the SSR placeholder before anything else, on every code path (including
       // prefers-reduced-motion, which never creates a real pin-spacer).
       if (ssrScrollReserveRef.current) ssrScrollReserveRef.current.style.height = "0px";
@@ -863,7 +865,7 @@ export function useMachineScrollAnimation({
         });
       });
 
-      ScrollTrigger.create({
+      const machineTrigger = ScrollTrigger.create({
         trigger: section,
         start: "top top",
         end: () => `+=${PIN_SCROLL_DISTANCE * readScale()}`,
@@ -900,14 +902,13 @@ export function useMachineScrollAnimation({
         },
       });
 
-      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
-      // mechanism as heroScrollAnimation.ts.
-      const targetScrollY = scrollYBeforeChurnRef.current;
-      if (targetScrollY !== null) {
-        setTimeout(() => {
-          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
-        }, 100);
-      }
+      // After a refresh is put back at its old scroll position (ScrollChurnGuard), jump straight
+      // there instead of gliding from the top state — the glide is only for real scrolling.
+      const onScrollRestored = () => {
+        if (machineTrigger.isActive) applySmoothed(machineTrigger.progress, true);
+      };
+      window.addEventListener(SCROLL_RESTORED_EVENT, onScrollRestored);
+      return () => window.removeEventListener(SCROLL_RESTORED_EVENT, onScrollRestored);
     },
     { scope: sectionRef, dependencies: [stepCount] },
   );

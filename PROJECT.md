@@ -955,6 +955,122 @@ Replaced the entire `onScroll`/`getBoundingClientRect` fade block with a plain, 
 
 Verified via a precise scroll scan reading the wrapper's live `getBoundingClientRect()` at each sampled point alongside a screenshot: crosses fully visible through the pin and at the exact release point, gone in the very next sampled frame (100px later) once scrolling continues, still gone scrolling further down to the Footer, reappear at the identical resting position (same pixel row) the moment scrolling back up re-enters the pin — never earlier, never higher. Re-checked Hero's own crosses and a full-document console-error sweep — zero errors. `tsc --noEmit` and `eslint` both clean.
 
+## Two real, unrelated bugs found and fixed: BuildSection's bottom crosses sometimes not reappearing, and hard refresh always snapping back near Hero regardless of scroll depth (2026-09-21)
+
+User report (in Georgian): near the footer's 3D animation (BuildSection), scrolling past it hides
+the corner "+" crosses as expected, but scrolling back up sometimes leaves the bottom pair
+permanently missing; separately, a hard refresh anywhere on the page always jumped back up near
+Hero instead of staying at the refreshed position. Root-caused both with real instrumentation
+(Playwright, patched `window.scrollTo`/`ScrollTrigger.refresh`, `window.__debugMarks` snapshots of
+the grid-marks store) rather than guessed at — three genuinely separate bugs, not one.
+
+**Bug 1 — `BuildSectionClient.tsx`'s own `handleModelReady` and `buildScrollAnimation.ts`'s own
+`onLeave` both still called the STATIC, page-wide `ScrollTrigger.refresh()`.** This is the exact
+pattern `heroScrollAnimation.ts`'s own "THE FIX for..." comment already documents as the diagnosed
+cause of an EARLIER bug (Build's refresh call popping Hero's model to the wrong pose) — Hero was
+made resilient to it (`modelSyncRef`, re-asserting its own state defensively), but the two call
+sites IN Build itself were never actually removed. A static `ScrollTrigger.refresh()` reverts and
+re-measures EVERY ScrollTrigger on the page and dispatches ScrollTrigger's global `"refresh"` event
+— which every `useGridMarks` owner listens to via `refreshAnchor()` — at a moment uncorrelated with
+BuildSection's own pin state, corrupting its grid-marks store entry intermittently. Fixed: the GLB
+`onReady` resync now goes through a `modelSyncRef` (same pattern as Hero, reading the trigger's own
+current progress directly — `buildScrollAnimation.ts`), and `onLeave`'s "re-measure the pin-spacer
+against the now-closed content" refresh (needed, see the file's own "phantom gap" comment) now calls
+the SPECIFIC trigger instance's own `.refresh()` method instead of the static one — confirmed via
+GSAP source that the instance method does NOT revert/re-measure every other trigger or dispatch the
+global event, unlike the static one.
+
+**Bug 2 — `buildScrollAnimation.ts` and `machineScrollAnimation.ts` both still carried their own
+per-section `scrollYBeforeChurnRef` + `setTimeout(..., 100)` scrollY restore, ON TOP OF the shared
+`<ScrollChurnGuard />`.** `ScrollChurnGuard.tsx`'s own doc comment already explains this component
+exists SPECIFICALLY because five independent per-section copies of this same fix used to race each
+other — Hero's, Infrastructure's, and Pricing's copies were actually removed when the shared guard
+replaced them, but Build's and Machine's never were, so they kept fighting the shared guard (and
+each other, and GSAP's own internal `scrollTo` calls that fire as part of every `pin: true`
+`ScrollTrigger.create()`'s own initial setup/measurement) on every hard refresh. Traced with
+Playwright by patching `window.scrollTo` itself and logging every call's stack during a real reload
+deep in the page: a cascade of 10+ competing `scrollTo` calls within the first ~150ms, from GSAP's
+own trigger setup AND from these two leftover per-section restores, landing scrollY at a wrong-but-
+consistent value (not random) — which is exactly why refresh "always" (not "sometimes") landed near
+the top: the wrong landing value happened to be much smaller than the true target, reading as
+"snapped back toward Hero" regardless of where the user actually was. Fixed by deleting both leftover
+blocks (and their now-unused `scrollYBeforeChurnRef`/`useRef` import) — `ScrollChurnGuard` is now the
+ONLY scrollY restore mechanism on the page, as originally intended.
+
+**Bug 3, found only after fixing 1+2 and re-testing — a separate, deeper issue in
+`ScrollChurnGuard.tsx` itself.** Even after removing every source of competing `scrollTo` calls,
+refreshing at a scroll position close to the BOTTOM of the page still intermittently landed at
+`scrollY = 0`. Traced exhaustively (including a `--use-gl=swiftshader` headless WebGL run to read the
+actual grid-marks store via a temporary debug hook, and a from-scratch fresh `chromium.launch()` per
+attempt to rule out any Playwright/CDP test-harness artifact): the browser's own
+`history.scrollRestoration` (`"auto"`, the default) frequently never applies AT ALL for a deep
+target — not late, not clamped-then-corrected, just silently skipped, reproducibly, across fresh
+browser processes (5/6 fresh-process attempts failed at a 0.95-of-page-height target before this
+fix; 6/6 passed after). Most likely cause: Chromium attempts the restoration once, early, and if the
+target would currently exceed the document's max scroll extent AT THAT EXACT MOMENT — plausible this
+early, given this page's five SSR-reserve placeholders each collapse to 0px before their own real
+pin-spacer exists (see `ScrollChurnGuard.tsx`'s own long-standing top comment) — it appears to give
+up rather than retry once layout settles. A first attempted fix (poll `window.scrollY` for up to
+500ms as a hedge inside `ScrollChurnGuard`, in case restoration was merely slow) did NOT help,
+confirming this isn't a timing race at all: no restoration attempt ever happens in the failing case,
+at any point, so there was nothing for a poll to catch.
+
+Fixed at the root instead of chased further: `layout.tsx`'s `SCROLL_CHURN_GUARD_SCRIPT`
+(`beforeInteractive`, so as early as physically possible) now sets `history.scrollRestoration =
+"manual"`, opting the page OUT of the browser's own (proven unreliable here) restoration entirely,
+and saves `window.scrollY` to `sessionStorage` on a `pagehide` listener — `pagehide` fires as part of
+the OLD document's unload sequence, which completes before a reload's NEW document begins loading, so
+the saved value is always the genuine pre-refresh position and is immune to the new load's own churn
+corrupting it (unlike a plain continuous `scroll` listener would be, which risks getting overwritten
+mid-restore by GSAP's own churn-induced scroll events on the SAME load). `ScrollChurnGuard.tsx` now
+reads its `captured` target from `sessionStorage` instead of `window.scrollY` — a plain,
+already-available string with no browser-restoration timing left to race against. The now-unneeded
+500ms poll hedge was removed again; the component is back to a single capture + single 150ms-delayed
+restore, just sourced differently.
+
+**Verified end-to-end**, all via Playwright against a real production build (`next build && next
+start`), with fresh `chromium.launch()` browser processes (not just fresh pages/contexts) to rule out
+any test-harness state leakage: (1) reload at 9 different scroll depths spanning 5%–99% of the page,
+each in its own fresh browser process — 8/9 landed exactly on target and stable across repeated
+sampling; the 9th (99%) landed on the page's own true max-scroll ceiling, the same value the 95% case
+also correctly lands on, i.e. a test-target-computation artifact (target exceeded the real max
+scrollable position), not a bug; (2) BuildSection's corner crosses checked across 6 consecutive
+down-past-the-footer-then-back-up cycles — pinned/visible every single time; (3) a full-document
+forward-then-backward console/page-error sweep — zero errors. `tsc --noEmit` and `eslint` both clean
+across every touched file (`buildScrollAnimation.ts`, `machineScrollAnimation.ts`, `layout.tsx`,
+`ScrollChurnGuard.tsx`, `BuildSectionClient.tsx`).
+
+## Hero + Build: server no longer comes apart on scroll (2026-09-21)
+
+Explicit request: don't disassemble the 3D server on scroll — neither in the Hero nor in BuildSection
+above the footer; show it closed straight away. Done behind two flags so it can be switched back:
+
+- `HERO_EXPLODE_ON_SCROLL = false` (`src/lib/heroLayers.ts`). `heroScrollAnimation.ts` keeps the text
+  fade and the scale/recentre, drops the disassemble phase (the `--stack-gap` + `explode_sequence`
+  tweens), and holds for the same 1.2-unit beat after the scale. `HERO_PIN_SCROLL_DISTANCE` follows
+  the flag: 1680 -> 840 (3.6 units * 233.33px removed), so the SSR reserve still matches the pin.
+- `BUILD_CLOSE_ON_SCROLL = false` (`src/lib/buildLayout.ts`). `applyCloseProgress` always applies the
+  closed pose, and the wrapper is server-rendered already closed and lifted (`--stack-gap` closed,
+  `translateY(-160px)`, `margin-bottom: -160px`) so nothing jumps on hydration. The pin is KEPT, but
+  short (`BUILD_PIN_SCROLL_DISTANCE` 900 -> 400): a first version dropped the pin entirely and with it
+  the corner "+" marks, which only exist while the section is pinned (they live in viewport space) —
+  reported straight away, so the pin came back purely to hold the marks.
+  Follow-up: only the TOP pair showed on laptop-height viewports — `markBox` still framed every pose
+  of the old close animation, putting the bottom pair below the fold. With the static server it now
+  frames the actual closed, lifted stack, and keeps the bottom edge ~0.6 of a grid row above the
+  viewport bottom so the nearest-row snap can't round it off-screen (checked at 1440x780, 1512x860,
+  1920x1000 — all four marks visible).
+
+Follow-up the same day: since the hero's scroll moment is now only the rise, it grows more —
+`CUBE_SCALE_TARGET` 1.04 -> 1.35, then trimmed to 1.2 on feedback (exported; HeroSectionClient passes it to the model as
+`pixelRatioBoost` so the canvas is drawn at that size instead of CSS-upscaled, capped at 2x device
+pixels), and `recenterY` centres it in the viewport area below the 96px sticky header rather than
+the whole viewport, so the bigger server doesn't crowd the header on shorter screens (checked at
+1920x1080 and 1280x800).
+
+Verified in a production build: the hero server stays closed through the whole pin, the Build
+section's server is closed on arrival, zero console errors. `tsc` and `eslint` clean.
+
 ## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - ~~`BuildSectionClient.tsx` — the 4 corner "+" crosses...~~ — **done, 2026-09-21**, see the "Grid-mark fixes" entry above. The Infrastructure card's own four are still missing — same `useGridMarks(ref, {gapX, gapY})` pattern, one call. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.

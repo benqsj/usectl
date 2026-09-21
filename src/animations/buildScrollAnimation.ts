@@ -1,9 +1,9 @@
-import { useRef, type RefObject } from "react";
+import type { RefObject } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { HERO_STACK_GAP_CLOSED_PX, HERO_STACK_GAP_OPEN_PX } from "@/lib/heroLayers";
-import { BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
+import { BUILD_CLOSE_ON_SCROLL, BUILD_PIN_SCROLL_DISTANCE } from "@/lib/buildLayout";
 import { readScale } from "@/lib/grid";
 import type { HeroServerModelHandle } from "@/components/sections/HeroServerModel";
 import type { GridMarksHandle } from "@/lib/gridEffect/useGridMarks";
@@ -19,11 +19,19 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 // that — the server shouldn't travel down the page at all, it should come up close to the text and
 // the whole section (heading, paragraph, buttons, AND the open server) should fit in ONE screen,
 // closing while the page holds still. That's exactly what a pin is for. Because this now creates a
-// real pin-spacer, it needs the same refresh-safety pair every other pinned section in this project
-// carries (see heroScrollAnimation.ts for the original, fully-diagnosed bug both of these guard
-// against): `ssrScrollReserveRef` (server-rendered placeholder so the pre-hydration and hydrated page
-// heights match) and `scrollYBeforeChurnRef` (restores scrollY if React 19 StrictMode's dev-only
-// effect churn clamps it away).
+// real pin-spacer, it needs the same SSR-height fix every other pinned section in this project
+// carries (see heroScrollAnimation.ts for the original, fully-diagnosed bug this guards against):
+// `ssrScrollReserveRef`, a server-rendered placeholder so the pre-hydration and hydrated page
+// heights match. (This file used to ALSO carry its own `scrollYBeforeChurnRef`-based scrollY
+// restore, on top of the shared `<ScrollChurnGuard />` in layout.tsx — a real, found-2026-09-21 bug:
+// ScrollChurnGuard exists specifically because five independent per-section copies of this same fix
+// raced each other (see ScrollChurnGuard.tsx's own doc comment) and this file's own copy — never
+// actually removed when that shared guard was introduced, unlike Hero's own copy — was fighting it
+// exactly that way, confirmed by tracing every `window.scrollTo` call during a reload: this file's
+// own `setTimeout(..., 100)` correction fired on top of ScrollChurnGuard's, each racing GSAP's own
+// internal scrollTo calls (every `ScrollTrigger.create({pin:true, ...})` call does its own internal
+// scroll-position preservation during setup), landing scrollY somewhere neither intended. Removed;
+// the shared guard is the only scrollY restore this file needs.)
 const STACK_GAP_CLOSED_PX = HERO_STACK_GAP_CLOSED_PX;
 const STACK_GAP_OPEN_PX = HERO_STACK_GAP_OPEN_PX;
 
@@ -48,6 +56,24 @@ interface BuildScrollRefs {
   sectionRef: RefObject<HTMLElement | null>;
   wrapperRef: RefObject<HTMLDivElement | null>;
   modelRef: RefObject<HeroServerModelHandle | null>;
+  // Filled in with a resync function once the trigger exists; BuildSectionClient.tsx calls it from
+  // HeroServerModel's `onReady` the instant its GLB finishes loading. See the removed
+  // `ScrollTrigger.refresh()` call below for why this exists instead of that: the GLB's async load
+  // time is unpredictable (network-dependent), so a STATIC, page-wide `ScrollTrigger.refresh()`
+  // fired from it could land at any scroll position/pin state — and that call reverts and
+  // re-measures EVERY ScrollTrigger on the page, not just this one. That's exactly the documented
+  // cause (see heroScrollAnimation.ts's own "THE FIX for..." comment) of Hero's model popping to the
+  // wrong pose, and — newly diagnosed here — of two more bugs reported 2026-09-21: a hard refresh
+  // landing the page back at the Hero section regardless of where it was scrolled to (a page-wide
+  // revert can shrink some OTHER pin's spacer height, clamping scrollY down toward the top with
+  // nothing left to correct it once ScrollChurnGuard's own one-shot restore window has closed), and
+  // this section's own bottom corner crosses intermittently failing to reappear on scroll-back-up
+  // (the same page-wide revert firing ScrollTrigger's global "refresh" event, which re-runs EVERY
+  // useGridMarks instance's refreshAnchor() — including this one — at a moment uncorrelated with
+  // this pin's own isPinnedRef/onEnter/onLeave state). A direct call to applyCloseProgress with this
+  // trigger's own current progress achieves the same "model must reflect current scroll position"
+  // goal without touching anything else on the page.
+  modelSyncRef: RefObject<(() => void) | null>;
   ssrScrollReserveRef: RefObject<HTMLDivElement | null>;
   // The 4 corner "+" marks around the server, drawn by the background grid (see
   // lib/gridEffect/useGridMarks.ts) — this only drives whether/where they're anchored, same as
@@ -68,16 +94,13 @@ export function useBuildScrollAnimation({
   sectionRef,
   wrapperRef,
   modelRef,
+  modelSyncRef,
   ssrScrollReserveRef,
   gridMarks,
   isPinnedRef,
 }: BuildScrollRefs) {
-  const scrollYBeforeChurnRef = useRef<number | null>(null);
-
   useGSAP(
     () => {
-      if (scrollYBeforeChurnRef.current === null) scrollYBeforeChurnRef.current = window.scrollY;
-
       // Collapse the SSR placeholder before anything else — see the matching comment in
       // heroScrollAnimation.ts / infrastructureScrollAnimation.ts for why this has to run on every
       // code path, including prefers-reduced-motion below (which never creates a real pin-spacer).
@@ -90,7 +113,8 @@ export function useBuildScrollAnimation({
       // Pure function of scroll progress (0 = open, 1 = closed) — freezes wherever scroll stops,
       // reverses cleanly, same convention every other continuous scrub in this project uses.
       const applyCloseProgress = (closeProgress: number) => {
-        const clamped = gsap.utils.clamp(0, 1, closeProgress);
+        // BUILD_CLOSE_ON_SCROLL off: always the closed pose, whatever the scroll says.
+        const clamped = BUILD_CLOSE_ON_SCROLL ? gsap.utils.clamp(0, 1, closeProgress) : 1;
         gsap.set(wrapper, {
           "--stack-gap": `${gsap.utils.interpolate(STACK_GAP_OPEN_PX, STACK_GAP_CLOSED_PX, clamped)}px`,
           y: -LIFT_ON_CLOSE_PX * clamped,
@@ -101,17 +125,22 @@ export function useBuildScrollAnimation({
         modelRef.current?.setProgress(1 - clamped);
       };
 
-      applyCloseProgress(0);
+      applyCloseProgress(0); // (the closed pose when BUILD_CLOSE_ON_SCROLL is off)
       gridMarks.setAppearance({ opacity: 0 });
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         applyCloseProgress(1);
         // No pin, no motion — and no corner marks either: they live in viewport space and are only
         // ever correct while this section is actually pinned (see useGridMarks.ts).
+        modelSyncRef.current = () => applyCloseProgress(1);
         return;
       }
 
-      ScrollTrigger.create({
+      // Held (not const) so onLeave's own resync below can reference it — see that callback's own
+      // comment for why this replaces the old static, page-wide `ScrollTrigger.refresh()` call.
+      let trigger: ScrollTrigger | null = null;
+
+      trigger = ScrollTrigger.create({
         trigger: section,
         start: "top top",
         end: () => `+=${BUILD_PIN_SCROLL_DISTANCE * readScale()}`,
@@ -143,11 +172,21 @@ export function useBuildScrollAnimation({
         // catch. A plain opacity flip on the SAME pin's own onLeave/onLeaveBack/onEnter/onEnterBack
         // — the simplest possible version of this, and the one every other pinned section's own
         // gridMarks already uses — is what was actually wanted.
+        //
+        // The refresh here is scoped to THIS trigger instance (`trigger.refresh()`), not the static
+        // `ScrollTrigger.refresh()` — same fix, same reasoning as modelSyncRef's own doc comment
+        // above. The static call reverts and re-measures EVERY ScrollTrigger on the page (and
+        // dispatches a global "refresh" event every useGridMarks instance listens to), which is what
+        // was actually causing the two bugs reported 2026-09-21 (refresh landing back at Hero, and
+        // this section's own bottom crosses intermittently not reappearing). An instance-level
+        // refresh() still re-measures THIS pin's own spacer against the now-closed, shorter content
+        // — the one thing this call was ever needed for (see the "phantom gap" diagnosis a few lines
+        // up) — without touching anything else on the page.
         onLeave: () => {
           applyCloseProgress(1);
           isPinnedRef.current = false;
           gridMarks.setAppearance({ opacity: 0 });
-          requestAnimationFrame(() => ScrollTrigger.refresh());
+          requestAnimationFrame(() => trigger?.refresh());
         },
         onLeaveBack: () => {
           applyCloseProgress(0);
@@ -172,14 +211,10 @@ export function useBuildScrollAnimation({
         },
       });
 
-      // Restores whatever scrollY was BEFORE StrictMode's dev-only churn clamped it away — same
-      // mechanism as heroScrollAnimation.ts / infrastructureScrollAnimation.ts.
-      const targetScrollY = scrollYBeforeChurnRef.current;
-      if (targetScrollY !== null) {
-        setTimeout(() => {
-          if (window.scrollY !== targetScrollY) window.scrollTo(0, targetScrollY);
-        }, 100);
-      }
+      // The GLB loads asynchronously and arrives well after this trigger already exists — see
+      // modelSyncRef's own doc comment on BuildScrollRefs for the full reasoning. Reads the
+      // trigger's own current progress directly rather than going through a page-wide refresh.
+      modelSyncRef.current = () => applyCloseProgress(trigger ? trigger.progress : 0);
     },
     { scope: sectionRef },
   );

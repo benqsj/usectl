@@ -39,6 +39,13 @@ body {
   color: var(--foreground);
 }
 
+/* Set by layout.tsx's early script while a refresh is being put back at its old scroll position
+   (see ScrollChurnGuard.tsx) — layout still happens, so GSAP measures normally; only the content is
+   made transparent, so the top of the page never flashes before the jump. */
+html.scroll-restoring body {
+  opacity: 0;
+}
+
 /* The background grid is painted twice over: the CSS gradient layers below (first paint, and the
    permanent fallback) and a WebGL canvas that can bend them around the cursor. GridCanvas.tsx sets
    data-grid-canvas="on" on the wrapper only after WebGL2 initialised AND the first frame is on
@@ -60,4 +67,30 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Hero copy mask reveal (HeroSectionClient.tsx). Every word, the logo and each button is a
+   .hero-mask box around a .hero-mask-in that moves. The boxes are ALWAYS inline-block with a net-zero
+   padding/margin, so the layout is identical with and without the intro; only the clipping and the
+   parked-below position depend on `html.hero-intro`, which layout.tsx's early script sets on a fresh
+   load at the top of the page (so the words are already hidden on the very first paint) and
+   HeroSectionClient removes once the words are up. No JS at all -> no class -> the copy just shows. */
+.hero-mask {
+  display: inline-block;
+  vertical-align: top;
+  padding: 0.06em 0.03em 0.16em;
+  margin: -0.06em -0.03em -0.16em;
+}
+.hero-mask-btn {
+  padding: 4px 4px 8px;
+  margin: -4px -4px -8px;
+}
+.hero-mask-in {
+  display: inline-block;
+}
+html.hero-intro .hero-mask {
+  overflow: hidden;
+}
+html.hero-intro .hero-mask-in {
+  transform: translateY(calc(110% + 12px));
 }

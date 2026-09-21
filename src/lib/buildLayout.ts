@@ -2,7 +2,20 @@
 // server closes — see src/animations/buildScrollAnimation.ts. Also read by BuildSectionClient.tsx
 // to server-render a matching SSR placeholder spacer (same reasoning as every other pinned section's
 // `ssrScrollReserveRef` — see PROJECT.md for the original diagnosed bug this pattern guards against).
-export const BUILD_PIN_SCROLL_DISTANCE = 900;
+// With BUILD_CLOSE_ON_SCROLL off (below) nothing moves while pinned; the pin is kept only because the
+// corner "+" marks are drawn in viewport space and can only frame the server while it stands still
+// (see useGridMarks.ts), so it is a short hold instead of the full close animation's 900.
+export const BUILD_PIN_SCROLL_DISTANCE_CLOSING = 900;
+export const BUILD_PIN_SCROLL_DISTANCE_STATIC = 400;
+
+// 2026-09-21, explicit request: the server above the footer no longer opens/closes on scroll — it is
+// simply there, already closed. The section still pins briefly so its corner marks show (a first
+// no-pin version lost them — reported straight away). true restores the old open-on-entry ->
+// close-while-pinned behaviour exactly as it was.
+export const BUILD_CLOSE_ON_SCROLL = false;
+export const BUILD_PIN_SCROLL_DISTANCE = BUILD_CLOSE_ON_SCROLL
+  ? BUILD_PIN_SCROLL_DISTANCE_CLOSING
+  : BUILD_PIN_SCROLL_DISTANCE_STATIC;
 
 // The server's wrapper width — deliberately much smaller than the hero's own 400/480px. Per explicit
 // request (2026-09-18): the server must come up close to the text and shrink enough that the
