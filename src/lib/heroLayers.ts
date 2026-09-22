@@ -51,4 +51,8 @@ export const HERO_EXPLODE_ON_SCROLL = false;
 //
 // Then the dive into the cap that replaces the machine screen (heroScrollAnimation.ts, DIVE_*):
 // DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units: 1820 + 2.75 * 233.33 = 2462.
-export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 2462;
+//
+// 2026-09-22: explicit request for more scroll specifically between landing on "your stack, in one
+// place" and the zoom-in finishing — not the sections before it. STACK_HOLD_DURATION (1.4 -> 1.8)
+// and DIVE_MOVE (2.0 -> 2.8) together add 1.2 units: 2462 + 1.2 * 233.33 = 2742.
+export const HERO_PIN_SCROLL_DISTANCE = HERO_EXPLODE_ON_SCROLL ? 1680 : 2742;

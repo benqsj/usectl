@@ -131,17 +131,20 @@ const SPACE_SPREAD = 0.32;
 // public/sources/Variant C, "02 — your stack". Adds STACK_MOVE + STACK_HOLD = 3 units (700px) to the
 // pin — see heroLayers.ts.
 export const STACK_MOVE_DURATION = 1.6;
-export const STACK_HOLD_DURATION = 1.4;
+// STACK_HOLD_DURATION raised 1.4 -> 1.8 on 2026-09-22, alongside DIVE_MOVE below — explicit request
+// to need more scroll specifically from "your stack, in one place" through to the zoom-in finishing,
+// not from the sections before it. See heroLayers.ts for how this feeds HERO_PIN_SCROLL_DISTANCE.
+export const STACK_HOLD_DURATION = 1.8;
 
 // The dive, after "02" (replaces the machine screen, 2026-09-21 — "Top dive" in
 // public/demo-stack-dive.html): the services and the copy go, the server scans back from the line
 // drawing to its rendered self, the star on the cap goes a little darker, the stack closes, the
 // server turns a quarter and the view tips over until it looks straight down, then zooms into the
 // star until it fills the screen, and the canvas fades out onto the page's own background grid.
-// Kept short on purpose ("less scroll than the demo"): DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units
-// (~640px).
+// DIVE_MOVE raised 2.0 -> 2.8 on 2026-09-22 (see STACK_HOLD_DURATION above) — the zoom-in itself now
+// needs noticeably more scroll to finish.
 export const DIVE_LEAD = 0.55;
-export const DIVE_MOVE = 2.0;
+export const DIVE_MOVE = 2.8;
 export const DIVE_END = 0.2;
 // How far the zoom goes (the star fills a 1920 screen well before this).
 const DIVE_ZOOM = 70;

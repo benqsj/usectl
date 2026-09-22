@@ -1201,6 +1201,17 @@ scroll than the demo. After "02 — your stack", still inside the hero's pin
 - Verified with Playwright: hero dive -> dark screen -> card flies in -> "Give every project its own
   space." -> "Run each part independently.". `tsc`/`eslint` clean.
 
+## Hero: more scroll from "your stack, in one place" through the zoom-in (2026-09-22)
+
+Explicit request: needs more scroll specifically between landing on "02 — your stack" and the
+dive/zoom-in finishing — not the sections before it. Raised `STACK_HOLD_DURATION` (1.4 -> 1.8) and
+`DIVE_MOVE` (2.0 -> 2.8) in `heroScrollAnimation.ts` — 1.2 timeline units more, all inside the
+segment asked about. `HERO_PIN_SCROLL_DISTANCE` (`heroLayers.ts`) grown by the matching 280px
+(1.2 * 233.33px/unit): 2462 -> 2742. Verified via a scroll-scan (Playwright/Chromium against
+`next dev`): the dive's fade-to-hidden window moved out from where it used to sit, now spanning
+roughly scrollY 2700-3000 instead of ~2400-2700; full-document scroll sweep — zero console/page
+errors. `tsc --noEmit`/`eslint` both clean.
+
 ## Open items / TODO
 - `PricingCalculatorSectionClient.tsx` — diagram + typography + the live scroll-driven stepper (now also manually clickable, see the 2026-09-18 follow-up entries above) are done; still open: exact card spacing/chamfer size (eyeballed, not measured).
 - ~~`BuildSectionClient.tsx` — the 4 corner "+" crosses...~~ — **done, 2026-09-21**, see the "Grid-mark fixes" entry above. The Infrastructure card's own four are still missing — same `useGridMarks(ref, {gapX, gapY})` pattern, one call. Only caveat: marks are drawn in viewport space, so a section can only show them while it is pinned.
