@@ -77,7 +77,9 @@ export interface HeroDive {
   focus: number;
   zoom: number;
   starDark: number;
-  /** True once the dive has ended under the page-coloured veil: nothing to draw until it goes back. */
+  /** 0..1 — the dive's end: the canvas fades out, leaving the page (and its grid) behind it. */
+  fade?: number;
+  /** True once the fade is complete: nothing to draw until it goes back. */
   hidden?: boolean;
 }
 
@@ -274,6 +276,8 @@ export function HeroServerModel({
 
       // ---- "02 — your stack": blueprint look + locked pose ---------------------------------------
       let poseLocked = false;
+      /** 1 = rendered server, 0 = line drawing (setBlueprint) — scales the green glow + light. */
+      let blueprintSolidShare = 1;
       /** The quarter-turn yaw the lock settles on, captured when the lock engages. */
       let lockYaw: number | null = null;
       // ---- the dive (setDive) ----
@@ -600,11 +604,8 @@ export function HeroServerModel({
         // The band glows while the cut is on the server and fades at both ends.
         u.uScanStrength.value = Math.sin(Math.PI * v);
         const solidShare = 1 - smoothstep(v);
-        accentLight.intensity = ACCENT_LIGHT_INTENSITY * solidShare;
-        if (glow) {
-          glow.style.transition = "none";
-          glow.style.opacity = solidShare.toFixed(3);
-        }
+        blueprintSolidShare = solidShare;
+        applyGreen();
       };
 
       const setPoseLock = (on: boolean) => {
@@ -627,7 +628,23 @@ export function HeroServerModel({
         }
       };
 
+      /**
+       * The green around the server — the CSS glow under it and the accent point light. Both follow
+       * the line drawing (none on the drawing), and both go as the dive starts turning: zoomed into
+       * the cap, a green haze behind it read as a green background.
+       */
+      const applyGreen = () => {
+        const diveShare = dive ? 1 - smoothstep(dive.turn / 40) : 1;
+        const k = blueprintSolidShare * diveShare;
+        accentLight.intensity = ACCENT_LIGHT_INTENSITY * k;
+        if (glow) {
+          glow.style.transition = "none";
+          glow.style.opacity = k.toFixed(3);
+        }
+      };
+
       const applyDive = () => {
+        applyGreen();
         const d = dive;
         updateDiveTarget();
         camera.zoom = d ? Math.max(d.zoom, 0.01) : 1;
@@ -636,9 +653,10 @@ export function HeroServerModel({
         const down = d ? smoothstep((d.elev - 45) / 45) : 0;
         keyLight.intensity = KEY_LIGHT_INTENSITY * (1 - 0.52 * down);
         const cover = !!d && d.zoom > 1.001;
-        // Once the dive has ended under its veil the canvas is hidden outright, not just left
-        // un-rendered: its last (full-viewport, zoomed) frame would otherwise stay on it and show
-        // below the veil as the hero scrolls away.
+        // The dive ends by fading the canvas itself out, so the page's own background grid is what
+        // is left — no opaque cover. Once gone it is hidden outright, not just left un-rendered: its
+        // last (full-viewport, zoomed) frame would otherwise stay on it as the hero scrolls away.
+        stage.style.opacity = d?.fade ? (1 - d.fade).toFixed(3) : "";
         stage.style.visibility = d?.hidden ? "hidden" : "";
         if (cover !== covering) {
           covering = cover;
@@ -886,7 +904,7 @@ export function HeroServerModel({
           if (t >= introEnd()) finishIntro();
           else applyIntro(t);
         }
-        // Nothing to draw once the dive has ended under its veil, or while the canvas is off screen
+        // Nothing to draw once the dive has faded out, or while the canvas is off screen
         // — at the dive's full-viewport size that would otherwise be real work for nothing.
         if (dive?.hidden || !onScreen) return;
         renderer.render(scene, camera);

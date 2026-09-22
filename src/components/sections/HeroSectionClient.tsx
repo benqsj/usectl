@@ -131,7 +131,6 @@ export function HeroSectionClient() {
   const glowRef = useRef<HTMLDivElement>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
   const stackRef = useRef<HTMLDivElement>(null);
-  const diveVeilRef = useRef<HTMLDivElement>(null);
   const ssrScrollReserveRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HeroServerModelHandle | null>(null);
   const modelSyncRef = useRef<(() => void) | null>(null);
@@ -171,7 +170,6 @@ export function HeroSectionClient() {
     gridMarks,
     spaceRef,
     stackRef,
-    diveVeilRef,
   });
 
   // The GLB arrives well after the timeline is built, always starting at its closed pose. This
@@ -431,16 +429,6 @@ export function HeroSectionClient() {
           ))}
         </div>
       </div>
-
-      {/* The end of the dive into the cap: the view fades out to the page background while still
-          pinned, so the next section comes up out of a clean screen. Opacity driven by
-          heroScrollAnimation.ts (DIVE_*). */}
-      <div
-        ref={diveVeilRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 hidden h-screen bg-background md:block"
-        style={{ opacity: 0 }}
-      />
 
       {/* Placeholder that pre-reserves the same scroll distance GSAP's pin-spacer will later add
           (see heroScrollAnimation.ts, where it's collapsed to 0 right before that real pin-spacer

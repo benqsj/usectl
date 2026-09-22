@@ -105,8 +105,6 @@ interface HeroScrollRefs {
   spaceRef?: RefObject<HTMLDivElement | null>;
   // The "02 — your stack" overlay (HeroSectionClient.tsx), which follows "01" in the same pin.
   stackRef?: RefObject<HTMLDivElement | null>;
-  // Full-viewport cover the dive into the cap ends on (HeroSectionClient.tsx).
-  diveVeilRef?: RefObject<HTMLDivElement | null>;
 }
 
 // "03 — isolated spaces" phase (closed-server timeline only), after the rise: the server moves right,
@@ -139,8 +137,9 @@ export const STACK_HOLD_DURATION = 1.4;
 // public/demo-stack-dive.html): the services and the copy go, the server scans back from the line
 // drawing to its rendered self, the star on the cap goes a little darker, the stack closes, the
 // server turns a quarter and the view tips over until it looks straight down, then zooms into the
-// star until it fills the screen and the screen fades to the page background. Kept short on
-// purpose ("less scroll than the demo"): DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units (~640px).
+// star until it fills the screen, and the canvas fades out onto the page's own background grid.
+// Kept short on purpose ("less scroll than the demo"): DIVE_LEAD + DIVE_MOVE + DIVE_END = 2.75 units
+// (~640px).
 export const DIVE_LEAD = 0.55;
 export const DIVE_MOVE = 2.0;
 export const DIVE_END = 0.2;
@@ -153,13 +152,16 @@ const span = (m: number, a: number, b: number) => clamp01((m - a) / (b - a));
 /** The dive's pose for m 0..1 (the "Top dive" curves from the approved demo). */
 function divePose(m: number, starDark: number): HeroDive {
   const turn = inOut(span(m, 0.05, 0.55));
+  // the last 15%: the zoomed canvas fades straight to the page behind it (grid and all)
+  const fade = inOut(span(m, 0.85, 1));
   return {
     turn: 90 * turn,
     elev: 35 + (89.9 - 35) * turn,
     focus: inOut(span(m, 0.3, 0.75)),
     zoom: Math.exp(Math.log(DIVE_ZOOM) * Math.pow(span(m, 0.4, 1), 4)),
     starDark,
-    hidden: m >= 1,
+    fade,
+    hidden: fade >= 1,
   };
 }
 // On "02" the server ends up this much smaller than on "01", and this much further right (share of
@@ -293,7 +295,6 @@ export function useHeroScrollAnimation({
   gridMarks,
   spaceRef,
   stackRef,
-  diveVeilRef,
 }: HeroScrollRefs) {
   useGSAP(
     () => {
@@ -687,15 +688,6 @@ export function useHeroScrollAnimation({
           const applyDive = () => modelRef.current?.setDive(divePose(dive.m, dive.star));
           tl.fromTo(dive, { star: 0 }, { star: 1, duration: 0.5, ease: "power1.inOut", immediateRender: false, onUpdate: applyDive }, D + 0.6);
           tl.fromTo(dive, { m: 0 }, { m: 1, duration: DIVE_MOVE, ease: "none", immediateRender: false, onUpdate: applyDive }, D + DIVE_LEAD);
-          const veil = diveVeilRef?.current;
-          if (veil) {
-            tl.fromTo(
-              veil,
-              { opacity: 0 },
-              { opacity: 1, duration: DIVE_MOVE * 0.15, ease: "power1.in", immediateRender: false },
-              D + DIVE_LEAD + DIVE_MOVE * 0.85,
-            );
-          }
           tl.to({}, { duration: DIVE_END }, D + DIVE_LEAD + DIVE_MOVE);
           applyDiveOnSync = applyDive;
 

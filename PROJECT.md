@@ -1156,8 +1156,8 @@ scroll than the demo. After "02 — your stack", still inside the hero's pin
 - the same scan runs back up — line drawing -> rendered server;
 - the star on the cap goes a little darker (its spokes get their own material on first use);
 - the stack closes, turns a quarter and the camera tips from 35° to straight down, then the view
-  homes in on the star and zooms x70 into it; a page-coloured veil (`diveVeilRef`) fades in over the
-  last 15%, and the pin releases onto the pricing section.
+  homes in on the star and zooms x70 into it; over the last 15% the canvas fades out (a page-coloured
+  veil did this at first — replaced, see below), and the pin releases.
 - Scroll: DIVE_LEAD 0.55 + DIVE_MOVE 2.0 + DIVE_END 0.2 = 2.75 units; `HERO_PIN_SCROLL_DISTANCE`
   1820 -> 2462.
 - `HeroServerModel.setDive({turn, elev, focus, zoom, starDark, hidden})`. While zoom > 1 the canvas
@@ -1190,6 +1190,14 @@ scroll than the demo. After "02 — your stack", still inside the hero's pin
   section's own height (`[data-hero-section]`, re-measured in `onRefreshInit`), so its pin starts on
   the exact scroll the hero's pin ends on (checked: both 1738 at 1280x720) and the card appears in
   place. Until then the (transparent, empty) machine screen passes over the pinned hero.
+- No green during the zoom (feedback): the CSS glow under the server and the green accent light now
+  fade out over the first ~40° of the dive's turn (`HeroServerModel.applyGreen`, which also carries
+  the line-drawing fade they already had), and the machine screen's green wash (`tint`) stays off
+  with `skipIntro`.
+- No opaque veil any more (feedback: "a black background that slowly scrolls up and away — show the
+  background lines straight away"): the page-coloured cover div was removed; the dive now ends by
+  fading the canvas itself out (`HeroDive.fade`, last 15% of the move), so the page's own grid is
+  what's left, and nothing opaque rides up with the hero after the pin.
 - Verified with Playwright: hero dive -> dark screen -> card flies in -> "Give every project its own
   space." -> "Run each part independently.". `tsc`/`eslint` clean.
 

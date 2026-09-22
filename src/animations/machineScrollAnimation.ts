@@ -682,7 +682,8 @@ export function useMachineScrollAnimation({
           force3D: true,
           filter: cardBlur > 0.15 ? `blur(${cardBlur.toFixed(2)}px)` : "none",
         });
-        if (tint) {
+        // (skipping the intro there is no fly-through for the green wash to follow — it stays off)
+        if (tint && !skipIntro) {
           gsap.set(tint, {
             opacity:
               progress <= P.zoomStart
