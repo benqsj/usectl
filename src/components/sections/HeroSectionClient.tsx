@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 import { useGSAP } from "@gsap/react";
 import { s, readScale, HEADER_HEIGHT_PX } from "@/lib/grid";
 
-gsap.registerPlugin(ScrollTrigger, useGSAP);
+gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, useGSAP);
 
 // Pinned hero with a scroll-driven THREE-state scene (built 2026-09-25 against three user
 // screenshots: design-ref.png → state 1, second-section.png → state 2, third-section.png →
@@ -49,37 +50,54 @@ const CALLOUT_LABELS = [
   { text: "Encrypted Postgres Storage", x: 1340, y: 597 },
 ] as const;
 
-// State 3 stack pieces. START = pixel-aligned over the state-2 server's own cap/base (the piece
-// SVGs share new-server.svg's internal coordinates — top piece = server rows 0-284, bottom piece
-// = server rows 402-687, verified by center-column pixel profiles). END = the stacked pose from
-// the third-section reference.
-const CAP_PIECE = { w: 420, h: 284, left: 960 - 420 / 2, top: SERVER_STATE2.top, dy: 107 };
-const BOTTOM_PIECE = { w: 417, h: 285, left: 960 - 417 / 2, top: SERVER_STATE2.top + 402, dy: 31 };
+// State 3 stack geometry. The 2→3 transition works INSIDE the inline server svg (fade the
+// middle-layer elements, drift the surviving cap/base elements — no overlay swap, per explicit
+// user request); bottom-server-piece.svg is only used as the GREENING overlay at rest (it is
+// server rows 402-687 pixel-exactly, so grayscaled it is visually identical to the docked base).
+// dy 52/-24 (were 107/31): the whole stacked pose sits 55px higher — the user reported the
+// state-3 server "ძაან დაბლა" — so the cap comes down less and the base rises slightly to meet it
+const CAP_PIECE = { w: 420, h: 284, left: 960 - 420 / 2, top: SERVER_STATE2.top, dy: 52 };
+const BOTTOM_PIECE = { w: 417, h: 285, left: 960 - 417 / 2, top: SERVER_STATE2.top + 402, dy: -24 };
+// drift amounts in the svg's own user units: CSS px transforms on inline-svg children live in
+// the 421-wide viewBox space, which the state-2 wrapper renders at SERVER_SCALE — so design px
+// divide by that scale (and the --s fluidity comes along for free, no k() needed)
+const CAP_DRIFT_UNITS = CAP_PIECE.dy / SERVER_SCALE;
+const BASE_DRIFT_UNITS = BOTTOM_PIECE.dy / SERVER_SCALE;
+// inline-svg layer classification (verified by tinting offline — see PROJECT.md): children
+// 77-100 = the cap (77-82 are its lower side walls — classifying them as "mid" made the cap's
+// under-lines vanish on the 2→3 fade, user-reported; 83-100 plate + asterisk); 0-27 = the base
+// body + its top plate; 28-76 = the two middle slabs + their face pieces; 101+ are loose face
+// chips split by bbox y (≥500 = on the base's face, the rest sit on the middle slabs).
+const SERVER_CAP_RANGE = [77, 100] as const;
+const SERVER_BASE_BODY_MAX = 27;
+const SERVER_SLABS_MAX = 82;
+const SERVER_BASE_CHIP_MIN_Y = 500;
 // Dashed guide lines between the settled pieces (design px, drawn at the END positions).
 const STACK_GUIDES = [
-  { x: 752, y1: 388, y2: 699 },
-  { x: 960, y1: 511, y2: 787 },
-  { x: 1168, y1: 388, y2: 699 },
+  { x: 752, y1: 333, y2: 644 },
+  { x: 960, y1: 456, y2: 732 },
+  { x: 1168, y1: 333, y2: 644 },
 ] as const;
 
+// y values 30 up from the original ref-derived ones ("ტექსტიც მარჯვენა მხარეს მაღლა აწიე ოდნავ")
 const PANEL_ITEMS = [
   {
     no: "01/",
     title: "Application Services",
     desc: "Automated deployment for APIs, web apps, and microservices.",
-    y: 447,
+    y: 417,
   },
   {
     no: "02/",
     title: "Application Storage",
     desc: "High-availability managed databases and S3-compatible object storage.",
-    y: 549,
+    y: 519,
   },
   {
     no: "03/",
     title: "Background Jobs",
     desc: "Isolated worker queues, scheduled CRONs, and async processing.",
-    y: 652,
+    y: 622,
   },
 ] as const;
 
@@ -94,11 +112,13 @@ const PANEL4_ITEMS = [
 ] as const;
 
 // State 5: the Pods view (public/section-5/server2.svg, 689×1007 — the COMPLETE 3-slab exploded
-// stack in one SVG, chips and the bottom slab's glow baked in; replaced the old three-instance
-// section-4/server.svg hack + CSS glow on 2026-09-28) + three pod-status callouts wired to the
-// slabs with rounded elbow arrows (drawn inline so they can dash-draw). The image sits 20px into
-// the wrapper so the new art's stack center matches where the old one sat.
-const SERVER5 = { w: 480, left: 820, top: 170, imgDy: 20 };
+// stack in one SVG, chips and the bottom slab's glow baked in) + three pod-status callouts wired
+// to the slabs with rounded elbow arrows (drawn inline so they can dash-draw).
+// w 560 / left 650 / top 37 (was 480/820/170): enlarged and re-centered slightly LEFT of the
+// page center per user feedback; at this size the svg's stack content spans section-y ≈182-798,
+// i.e. vertically centered on the s(980) canvas. Slab top-face tops land at ≈182/424/618
+// (native 178/476/715 × 560/689 scale) — the POD y values below derive from those.
+const SERVER5 = { w: 560, left: 650, top: 37, imgDy: 0 };
 const POD_LABEL_X = 1490;
 const PODS = [
   {
@@ -106,26 +126,31 @@ const PODS = [
     status: "RUNNING v1.4.2",
     deploying: false,
     desc: "Independent Deploy \u2022 1 vCPU / 2GB",
-    y: 330,
+    y: 206,
   },
   {
     title: "[ POD // API ]",
     status: "DEPLOYING v2.1.0 (80%)",
     deploying: true,
     desc: "Zero Downtime \u2022 2 vCPU / 4GB",
-    y: 558,
+    y: 398,
   },
   {
     title: "[ POD // WORKERS ]",
     status: "RUNNING v1.4.2",
     deploying: false,
     desc: "Async Processing \u2022 1 vCPU / 1GB",
-    y: 762,
+    y: 563,
   },
 ] as const;
-// rounded "right, up, right" elbow ending at the arrow tip (ex, ey) — same shape as arrow-line.svg
+// rounded "right, up, right" elbow ending at the arrow tip (ex, ey) — same shape as
+// arrow-line.svg. Start point = each slab's right corner, PIXEL-MEASURED from server2.svg via
+// canvas alpha-scan (native corners x≈600/y 275,512,715 → stage (1138, 261/453/618) at the
+// 560-wide render): start x = ex-340 = 1138; start y = ey+45 = pod.y+55, so the POD y values
+// are corner_y − 55 = 206/398/563. Earlier values eyeballed off formulas missed slab 2 by 52px
+// and the base by 81px (the slabs' pitch and the base's thickness are both irregular).
 const podElbow = (ex: number, ey: number) =>
-  `M ${ex - 235} ${ey + 45} H ${ex - 88} Q ${ex - 80} ${ey + 45} ${ex - 80} ${ey + 37} ` +
+  `M ${ex - 340} ${ey + 45} H ${ex - 88} Q ${ex - 80} ${ey + 45} ${ex - 80} ${ey + 37} ` +
   `V ${ey + 8} Q ${ex - 80} ${ey} ${ex - 72} ${ey} H ${ex}`;
 
 // State 6: Continuous Deployment (built against Desktop/new-version/section-6 screenshots).
@@ -146,8 +171,14 @@ const deployElbow = (sx: number, sy: number, ex: number, ey: number) =>
   `M ${sx} ${sy} H ${ex - 53} Q ${ex - 45} ${sy} ${ex - 45} ${sy - 8} ` +
   `V ${ey + 8} Q ${ex - 45} ${ey} ${ex - 37} ${ey} H ${ex}`;
 const DEPLOY6_LINES = [
-  { sx: 1378, sy: 700, ey: 612 }, // board right corner → the deploying card
-  { sx: 1160, sy: 856, ey: 780 }, // board lower edge → the live card
+  // board right corner → the deploying card
+  { d: deployElbow(1378, 700, DEPLOY6_X - 5, 612), ey: 612 },
+  // the LIVE card feeds from the POD//API card ABOVE it, not from the board (user request):
+  // exit the card's left edge, drop down outside it, hook right into the LIVE card's title
+  {
+    d: `M ${DEPLOY6_X} 660 H 1410 Q 1402 660 1402 668 V 772 Q 1402 780 1410 780 H ${DEPLOY6_X - 5}`,
+    ey: 780,
+  },
 ] as const;
 
 // State 7: AI Infrastructure (built against Desktop/new-version/section-7/). The state-6 board
@@ -158,16 +189,59 @@ const DEPLOY6_LINES = [
 // user got the full export through), plus bottom-left-server.svg below and short curved
 // connectors between board edges.
 const AGENT7 = { w: 521, left: 763, top: 480 };
-const BOARD6_TO7 = { dx: 1278 - BOARD6.left, dy: 626 - BOARD6.top, scale: 348 / BOARD6.w };
-const BOTTOM7 = { w: 330, left: 1085, top: 765 };
+// Board positions SOLVED from the connectors (user rule: "ისრები სადაც მთავრდება, მანდ უნდა
+// იჯდნენ ის ნაწილები"): arrow A's tip (1287,709) lies exactly on the right board's top-left
+// edge AND the connect-both squiggle's upper end (1330,805) on its bottom-left edge → right
+// board (1239,641); arrow B's tip (1183,798) on the bottom board's top-left edge AND the
+// squiggle's lower end (1317,821) on its top-right edge → bottom board (1062,772). The
+// squiggle itself stays put at translate(1316,805) and now BRIDGES the two boards.
+// nudged apart along the squiggle's own axis (~9px each side) so connect-both sits centered
+// with visible air on both sides ("შუაში იჯდეს") while both arrow tips stay on the edges
+const BOARD6_TO7 = { dx: 1245 - BOARD6.left, dy: 634 - BOARD6.top, scale: 348 / BOARD6.w };
+const BOTTOM7 = { w: 348, left: 1056, top: 779 };
 const BADGE7 = { left: 1005, top: 320, w: 214 };
-const BADGE7_LINE = { x: 1111, top: 384, height: 118 }; // badge bottom → the ring's top corner
 const TERMINAL7 = { left: 1455, top: 359, w: 360 };
-// short curved edge-to-edge connectors (design px), each ending in a small arrowhead
-const CONNECTOR7_LINES = [
-  { d: "M 1268 638 C 1282 645, 1288 636, 1300 646", ax: 1302, ay: 647, dir: "right" },
-  { d: "M 1133 724 C 1140 750, 1150 762, 1165 778", ax: 1167, ay: 781, dir: "down" },
-] as const;
+// Connectors traced from the evening reference screens; all anchor coordinates are
+// pixel-measured board extremes (canvas alpha-scan): main top vertex (1007,488), main right
+// corner (1267,623), main bottom-edge midpoint (1141,709), right-board left corner (1292,640),
+// right-board bottom vertex (1460,763), bottom-board top edge (1190,~788), bottom-board right
+// corner (1414,858). Arrow directions per the screens: INTO the right board's left corner, and
+// straight DOWN into the bottom board; the right↔bottom link has NO arrowhead.
+// The connector lines are the USER'S OWN SVG exports (public/section-7/right-bottom-line.svg,
+// left-bottom-line.svg, connect-both.svg) inlined verbatim so they can dash-draw; each path is
+// translated so its start touches the main board's edge (S1≈(1155,565), S2≈(1215,596)).
+// The files carry no arrowheads — the triangles are ours, oriented along each path's end
+// tangent per the check-lines reference (into the right board's edge; down at the bottom board).
+const CONNECTOR7_LINES: readonly { tx: number; ty: number; d: string; arrow?: string; flip?: boolean }[] = [
+  // main board's lower-right edge -> right board's top-left corner: the user's
+  // right-bottom-line.svg UNFLIPPED (per the 7:44PM design capture: it starts right next to
+  // line B — "ორივე თითქმის ერთი ადგილიდან" — dips into a bowl, then rises diagonally to the
+  // board's corner, ending with its baked-in down-hook; our arrow continues that hook into
+  // the board's edge)
+  {
+    tx: 1189.7,
+    ty: 675.5,
+    d: "M0.330811 43.4829L6.92649 49.3026C13.0576 54.7124 22.0648 55.3102 28.857 50.7579L100.109 3.00402C106.463 -1.25493 115.018 0.0371146 119.831 5.98291",
+    arrow: "M 1306 684 L 1313 679 L 1316 690 Z",
+  },
+  // main board's lower-right edge -> bottom board's top-left edge: the user's
+  // left-bottom-line.svg verbatim (19x64 S), arrow pointing down at its end
+  {
+    tx: 1167.5,
+    ty: 727.8,
+    d: "M0.252825 0.431527L9.39041 5.78637C20.3591 12.2143 20.498 28.0218 9.64382 34.6414C0.649665 40.1267 -1.14058 52.4382 5.9189 60.2579L8.26135 62.8525",
+    arrow: "M 1172 794 L 1179 787 L 1183 798 Z",
+  },
+  // right board <-> bottom board: the user's connect-both.svg squiggle in the small gap
+  {
+    tx: 1316,
+    ty: 805,
+    d: "M0.978882 16.332L2.4901 13.5615C3.37276 11.9433 3.08384 9.93698 1.78045 8.6336L1.66841 8.52156C0.162766 7.01592 0.105117 4.59317 1.53744 3.01762C2.92148 1.49517 5.23643 1.27519 6.88246 2.50971L6.96206 2.56941C8.66726 3.84832 11.0681 3.60664 12.4842 2.01353L13.9789 0.332031",
+  },
+];
+// badge → main board's top vertex: down, quarter-left, across, quarter-down, ends at the
+// vertex notch (no arrowhead) — the straight vertical line it replaces read wrong vs the ref
+const BADGE7_LINE_D = "M 1075 378 V 396 Q 1075 404 1067 404 H 1015 Q 1007 404 1007 412 V 482";
 
 // State 8: the pricing calculator (built against Desktop/new-version/section-8/ — first as a
 // standalone scrolled section, then folded INTO the pin on user feedback: "ახალ გვერდზე არ უნდა
@@ -187,17 +261,16 @@ const fmtPrice = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2
 // large mixed-color line ("Keep building" green, "what matters" steel blue), the two state-1
 // pill buttons, and a soft green glow hugging the right edge.
 
-export function HeroSectionClient() {
+export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
   const sectionRef = useRef<HTMLElement>(null);
   const heroTextRef = useRef<HTMLDivElement>(null);
   const secondTextRef = useRef<HTMLDivElement>(null);
   const thirdTextRef = useRef<HTMLDivElement>(null);
   const serverRef = useRef<HTMLDivElement>(null);
-  const serverImgRef = useRef<HTMLImageElement>(null);
+  const serverSvgRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
   const calloutBoxRef = useRef<HTMLDivElement>(null);
   const calloutsRef = useRef<HTMLDivElement>(null);
-  const capPieceRef = useRef<HTMLDivElement>(null);
   const bottomPieceRef = useRef<HTMLDivElement>(null);
   const guidesRef = useRef<SVGSVGElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -221,11 +294,12 @@ export function HeroSectionClient() {
   const agent7Ref = useRef<HTMLDivElement>(null);
   const bottom7Ref = useRef<HTMLDivElement>(null);
   const badge7Ref = useRef<HTMLDivElement>(null);
-  const badgeLine7Ref = useRef<HTMLDivElement>(null);
+  const badgeLine7Ref = useRef<SVGPathElement>(null);
   const terminal7Ref = useRef<HTMLDivElement>(null);
   const connectors7Ref = useRef<SVGSVGElement>(null);
   const pricing8Ref = useRef<HTMLDivElement>(null);
   const final9Ref = useRef<HTMLDivElement>(null);
+  const rulerFillRef = useRef<HTMLDivElement>(null);
   const ssrReserveRef = useRef<HTMLDivElement>(null);
 
   // state 8's live calculator (React state co-existing with the scrubbed GSAP scene: GSAP only
@@ -245,11 +319,10 @@ export function HeroSectionClient() {
       const secondText = secondTextRef.current;
       const thirdText = thirdTextRef.current;
       const server = serverRef.current;
-      const serverImg = serverImgRef.current;
+      const serverSvgHost = serverSvgRef.current;
       const glow = glowRef.current;
       const box = calloutBoxRef.current;
       const callouts = calloutsRef.current;
-      const capPiece = capPieceRef.current;
       const bottomPiece = bottomPieceRef.current;
       const guides = guidesRef.current;
       const panel = panelRef.current;
@@ -278,14 +351,15 @@ export function HeroSectionClient() {
       const connectors7 = connectors7Ref.current;
       const pricing8 = pricing8Ref.current;
       const final9 = final9Ref.current;
+      const rulerFill = rulerFillRef.current;
       if (
-        !section || !heroText || !secondText || !thirdText || !server || !serverImg || !glow ||
-        !box || !callouts || !capPiece || !bottomPiece || !guides || !panel || !panelLine ||
+        !section || !heroText || !secondText || !thirdText || !server || !serverSvgHost || !glow ||
+        !box || !callouts || !bottomPiece || !guides || !panel || !panelLine ||
         !fourthText || !machine || !machineOpen || !panel4 || !panel4Line ||
         !fifthText || !server5 || !pods ||
         !sixthText || !board6 || !terminal6 || !pushLine6 || !node6 || !badge6 || !deploy6 ||
         !seventhText || !agent7 || !bottom7 || !badge7 || !badgeLine7 ||
-        !terminal7 || !connectors7 || !pricing8 || !final9
+        !terminal7 || !connectors7 || !pricing8 || !final9 || !rulerFill
       ) {
         return;
       }
@@ -311,9 +385,31 @@ export function HeroSectionClient() {
       const connectorArrows = Array.from(connectors7.querySelectorAll<SVGPathElement>("[data-connector-arrow]"));
       const board6Glow = board6.querySelector<HTMLElement>("[data-board-glow]");
       const pricingItems = Array.from(pricing8.querySelectorAll<HTMLElement>("[data-pricing-reveal]"));
+      const bottomImg = bottomPiece.querySelector("img");
+      const bottomGlow = bottomPiece.querySelector<HTMLElement>("[data-bottom-glow]");
+
+      // the stack base is born COLORLESS — state 3 animates its green back in as it docks
+      if (bottomImg) gsap.set(bottomImg, { filter: "grayscale(1)" });
+
+      // classify the inline server svg's children into cap / base / middle layers
+      // (classification rule verified by offline tinting — see the constants above)
+      const serverRoot = serverSvgHost.querySelector("svg");
+      if (!serverRoot) return;
+      const capEls: SVGGraphicsElement[] = [];
+      const baseEls: SVGGraphicsElement[] = [];
+      const midEls: SVGGraphicsElement[] = [];
+      Array.from(serverRoot.children)
+        .filter((el) => el.tagName !== "defs")
+        .forEach((el, i) => {
+          const g = el as SVGGraphicsElement;
+          if (i >= SERVER_CAP_RANGE[0] && i <= SERVER_CAP_RANGE[1]) capEls.push(g);
+          else if (i <= SERVER_BASE_BODY_MAX) baseEls.push(g);
+          else if (i <= SERVER_SLABS_MAX) midEls.push(g);
+          else (g.getBBox().y >= SERVER_BASE_CHIP_MIN_Y ? baseEls : midEls).push(g);
+        });
 
       // Prepare line "draw" reveals: hide each polyline/path behind its own full dash offset.
-      [...lines, ...podLines, ...deployLines, ...connectorLines].forEach((line) => {
+      [...lines, ...podLines, ...deployLines, ...connectorLines, badgeLine7].forEach((line) => {
         const len = line.getTotalLength();
         line.style.strokeDasharray = `${len}`;
         line.style.strokeDashoffset = `${len}`;
@@ -396,21 +492,11 @@ export function HeroSectionClient() {
         })
         .catch(() => {});
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: section,
-          // The section's top always sits exactly HEADER_HEIGHT_PX below the viewport top, so the
-          // pin is active from the very first scrolled pixel — nothing moves before the scene does.
-          start: () => `top ${HEADER_HEIGHT_PX}px`,
-          end: `+=${PIN_SCROLL_DISTANCE}`,
-          scrub: true,
-          pin: true,
-          // Explicit on purpose: <main> is display:flex, which silently disables GSAP's automatic
-          // pin spacing (documented in PROJECT.md — bit this project before).
-          pinSpacing: true,
-          invalidateOnRefresh: true,
-        },
-      });
+      // The master timeline is PAUSED and fully DECOUPLED from scroll (user feedback, round 2:
+      // even a 1s scrub glide still read as "the animation follows my wheel"). A standalone
+      // ScrollTrigger created after the states only PINS the section; transitions are played
+      // time-based by goToState() below — slow and eased, fullpage.js-style.
+      const tl = gsap.timeline({ paused: true });
 
       // ---- state 1 → state 2 -------------------------------------------------------------
       tl.to(heroText, { y: () => -60 * k(), autoAlpha: 0, ease: "power2.in", duration: 0.35 }, 0);
@@ -422,7 +508,10 @@ export function HeroSectionClient() {
           scale: SERVER_SCALE,
           transformOrigin: "50% 0%",
           ease: "power2.inOut",
-          duration: 0.5,
+          // stretched across the segment so the center glide reads slow and graceful
+          // (~1.1s real time with the segment's power1.out traversal); the callout wiring
+          // below waits for this to FINISH (0.75) before drawing — explicit user request
+          duration: 0.7,
         },
         0.05,
       );
@@ -433,21 +522,23 @@ export function HeroSectionClient() {
         0.4,
       );
       tl.fromTo(glow, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 0.45);
+      // the whole right-side wiring starts only AFTER the server has fully parked (0.75) —
+      // lines drawn toward a still-moving server read as misaligned (user report)
       tl.fromTo(
         box,
         { y: () => 30 * k(), autoAlpha: 0 },
         { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.25 },
-        0.55,
+        0.76,
       );
       lines.forEach((line, i) => {
-        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.18 }, 0.6 + i * 0.09);
+        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.14 }, 0.78 + i * 0.08);
       });
       labels.forEach((label, i) => {
         tl.fromTo(
           label,
           { x: () => 20 * k(), autoAlpha: 0 },
-          { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.15 },
-          0.68 + i * 0.09,
+          { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.12 },
+          0.82 + i * 0.07,
         );
       });
       tl.to({}, { duration: 0.15 }); // hold at the settled state 2
@@ -456,17 +547,24 @@ export function HeroSectionClient() {
       tl.to(secondText, { y: () => -40 * k(), autoAlpha: 0, ease: "power2.in", duration: 0.25 }, 1.2);
       tl.to(callouts, { autoAlpha: 0, ease: "power1.in", duration: 0.2 }, 1.2);
 
-      // The pieces appear exactly over the old server's own cap/base (invisible change), then the
-      // old image fades — the middle layers read as dissolving into the bottom block.
-      tl.fromTo(capPiece, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.12 }, 1.28);
-      tl.fromTo(bottomPiece, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.12 }, 1.28);
-      tl.to(serverImg, { autoAlpha: 0, duration: 0.22 }, 1.4);
-      tl.to(glow, { autoAlpha: 0, duration: 0.22 }, 1.4);
+      // The middle layers of the inline server svg simply fade away — the cap and base are the
+      // SAME artwork and just remain (no overlay swap, no z-order shuffling; user-specified
+      // approach), then the survivors drift into the stacked pose.
+      tl.to(midEls, { autoAlpha: 0, ease: "power1.in", duration: 0.35 }, 1.28);
+      tl.to(glow, { autoAlpha: 0, duration: 0.3 }, 1.3);
 
-      // Drift into the stacked pose.
-      tl.to(capPiece, { y: () => CAP_PIECE.dy * k(), ease: "power2.inOut", duration: 0.45 }, 1.6);
-      tl.to(bottomPiece, { y: () => BOTTOM_PIECE.dy * k(), ease: "power2.inOut", duration: 0.45 }, 1.6);
-      tl.fromTo(guides, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 2.02);
+      tl.to(capEls, { y: CAP_DRIFT_UNITS, ease: "power2.inOut", duration: 0.38 }, 1.64);
+      tl.to(baseEls, { y: BASE_DRIFT_UNITS, ease: "power2.inOut", duration: 0.38 }, 1.64);
+
+      // once docked, the base "powers on": the green stacked-base art (born grayscale, i.e.
+      // visually identical to the silver base it covers) fades in over it while its color
+      // returns and the ground glow blooms — reads as a pure color change, not a swap
+      tl.set(bottomPiece, { y: () => BOTTOM_PIECE.dy * k() }, 1.64);
+      tl.fromTo(bottomPiece, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 }, 2.02);
+      tl.to(bottomImg, { filter: "grayscale(0)", ease: "power1.inOut", duration: 0.28 }, 2.02);
+      tl.to(bottomGlow, { opacity: 1, ease: "power1.inOut", duration: 0.26 }, 2.04);
+      tl.set(baseEls, { opacity: 0 }, 2.24); // fully covered by the overlay — avoid doubled edges
+      tl.fromTo(guides, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 2.08);
 
       tl.fromTo(
         thirdText,
@@ -494,15 +592,20 @@ export function HeroSectionClient() {
       tl.to(thirdText, { y: () => -40 * k(), autoAlpha: 0, ease: "power2.in", duration: 0.25 }, 2.35);
       tl.to(panel, { autoAlpha: 0, ease: "power1.in", duration: 0.2 }, 2.35);
       tl.to(guides, { autoAlpha: 0, duration: 0.15 }, 2.35);
-      tl.to(capPiece, { y: () => (CAP_PIECE.dy - 40) * k(), autoAlpha: 0, ease: "power2.in", duration: 0.25 }, 2.4);
+      tl.to(
+        capEls,
+        { y: (CAP_PIECE.dy - 40) / SERVER_SCALE, autoAlpha: 0, ease: "power2.in", duration: 0.25 },
+        2.4,
+      );
       tl.to(bottomPiece, { y: () => (BOTTOM_PIECE.dy + 30) * k(), autoAlpha: 0, ease: "power2.in", duration: 0.25 }, 2.4);
 
-      // the closed Machine arrives...
+      // the closed Machine arrives... (longer than the house 0.35 — this segment's traversal is
+      // also slowed in goToState, together giving a calm ~0.5s real-time entrance)
       tl.fromTo(
         machine,
         { y: () => 70 * k(), scale: 0.92, autoAlpha: 0 },
-        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.35 },
-        2.65,
+        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
+        2.6,
       );
       // ...settles closed for a beat, then the SAME svg unfolds: the assemblies rise from their
       // collapse offsets to their natural positions, pillars/covered chips fading in as they go —
@@ -512,8 +615,8 @@ export function HeroSectionClient() {
       tl.fromTo(
         fourthText,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        2.85,
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
+        2.75,
       );
       tl.fromTo(
         panel4Line,
@@ -539,14 +642,14 @@ export function HeroSectionClient() {
       tl.fromTo(
         server5,
         { y: () => 70 * k(), scale: 0.94, autoAlpha: 0 },
-        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.35 },
-        4.85,
+        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
+        4.8,
       );
       tl.fromTo(
         fifthText,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        4.95,
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
+        4.9,
       );
       podLines.forEach((line, i) => {
         tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.18 }, 5.15 + i * 0.16);
@@ -574,19 +677,19 @@ export function HeroSectionClient() {
       tl.fromTo(
         board6,
         { y: () => 70 * k(), scale: 0.94, autoAlpha: 0 },
-        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.35 },
-        6.5,
+        { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.55 },
+        6.45,
       );
       tl.fromTo(
         sixthText,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        6.6,
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
+        6.55,
       );
       tl.fromTo(
         terminal6,
         { y: () => -40 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
         6.95,
       );
       tl.fromTo(
@@ -638,7 +741,7 @@ export function HeroSectionClient() {
           scale: BOARD6_TO7.scale,
           transformOrigin: "0% 0%",
           ease: "power2.inOut",
-          duration: 0.5,
+          duration: 0.7,
         },
         9.05,
       );
@@ -647,20 +750,20 @@ export function HeroSectionClient() {
       tl.fromTo(
         seventhText,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
         9.15,
       );
       tl.fromTo(
         agent7,
         { y: () => 60 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.35 },
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
         9.2,
       );
       tl.fromTo(
         bottom7,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        9.5,
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
+        9.45,
       );
       connectorLines.forEach((line, i) => {
         tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.2 }, 9.75 + i * 0.15);
@@ -674,12 +777,8 @@ export function HeroSectionClient() {
         { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.2 },
         10.35,
       );
-      tl.fromTo(
-        badgeLine7,
-        { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
-        { scaleY: 1, autoAlpha: 1, ease: "none", duration: 0.15 },
-        10.55,
-      );
+      // the badge's elbow draws from the badge DOWN to the board's top vertex (dash reveal)
+      tl.to(badgeLine7, { strokeDashoffset: 0, ease: "none", duration: 0.2 }, 10.55);
       tl.fromTo(
         terminal7,
         { y: () => -40 * k(), autoAlpha: 0 },
@@ -699,7 +798,7 @@ export function HeroSectionClient() {
         tl.fromTo(
           item,
           { y: () => 50 * k(), autoAlpha: 0 },
-          { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
+          { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.4 },
           11.85 + i * 0.1,
         );
       });
@@ -710,32 +809,312 @@ export function HeroSectionClient() {
       tl.fromTo(
         final9,
         { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.35 },
+        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
         13.2,
       );
       tl.to({}, { duration: 0.35 }); // hold at the settled state 9 before the pin releases
+
+      // one timeline position per SETTLED state (mid-hold times — see each state's hold above);
+      // these are the fullpage "pages" the wheel driver steps between
+      const SNAP_TIMES = [0, 1.1, 2.3, 4.25, 5.95, 8.8, 11.2, 12.6, tl.totalDuration()];
+
+      // --- fullpage transition engine ------------------------------------------------------
+      // The pin only holds the stage in place; state changes play the timeline TIME-BASED via
+      // tweenTo (slow + eased, per explicit request), never scrubbed by the wheel. The window
+      // scroll is tweened alongside purely so the pin/footer handoff geometry stays truthful —
+      // the pinned stage doesn't visually move with it.
+      const total = tl.totalDuration();
+      const TRANSITION_SECONDS = 1.8;
+      const LAST = SNAP_TIMES.length - 1;
+      let stateIndex = 0;
+      let transitionFrom = 0;
+      let transitioning = false;
+      let flightStartedAt = 0;
+      let pinST: ScrollTrigger | null = null;
+      const goToState = (i: number) => {
+        if (!pinST) return;
+        flightStartedAt = performance.now();
+        // Per-crossing traversal tuning: every state change gets real time proportional to how
+        // much its segment actually animates, with the gentle power1.out (the default power2.out
+        // compresses everything positioned early in a segment into its fast first ~20% — the
+        // recurring "ძალიან სწრაფად" complaint). Keyed by the LOWER index of an adjacent
+        // crossing; non-adjacent jumps (quantizer catch-ups) and the footer hop use the default.
+        const CROSSING_SECONDS: Record<number, number> = {
+          0: 2.6, // hero-server center glide
+          1: 2.4, // mids dissolve + stack docking + greening
+          2: 3.2, // the Machine's arrival + full unfold (longest segment)
+          3: 2.8, // pods stack rise + callout wiring
+          4: 3.2, // deploy board + terminal/push-line/cards pipeline
+          5: 3.0, // board morph into the AI composition
+          6: 2.2, // pricing reveal
+          7: 2.2, // closing CTA
+        };
+        const lo = Math.min(stateIndex, i);
+        const tuned = Math.abs(stateIndex - i) === 1 ? CROSSING_SECONDS[lo] : undefined;
+        const duration = tuned ?? TRANSITION_SECONDS;
+        const ease = tuned ? "power1.out" : "power2.out";
+        transitioning = true;
+        transitionFrom = stateIndex;
+        stateIndex = i;
+        // power2.out, NOT inOut: inOut's gentle first ~300ms read as "the animation hasn't
+        // started yet" (user feedback) — out shows motion on the very first frame and still
+        // lands softly over the full duration
+        gsap.to(window, {
+          scrollTo: pinST.start + (SNAP_TIMES[i] / total) * PIN_SCROLL_DISTANCE,
+          duration,
+          ease,
+          overwrite: true,
+          onComplete: () => {
+            window.setTimeout(() => {
+              transitioning = false;
+            }, 60);
+          },
+        });
+        tl.tweenTo(SNAP_TIMES[i], {
+          duration,
+          ease,
+          overwrite: true,
+        });
+      };
+
+      pinST = ScrollTrigger.create({
+        trigger: section,
+        // The section's top always sits exactly HEADER_HEIGHT_PX below the viewport top, so the
+        // pin is active from the very first scrolled pixel.
+        start: () => `top ${HEADER_HEIGHT_PX}px`,
+        end: `+=${PIN_SCROLL_DISTANCE}`,
+        pin: true,
+        // Explicit on purpose: <main> is display:flex, which silently disables GSAP's automatic
+        // pin spacing (documented in PROJECT.md — bit this project before).
+        pinSpacing: true,
+        invalidateOnRefresh: true,
+        // Fallback for scroll the wheel handler can't capture (scrollbar drag, keyboard,
+        // touch): whenever the raw scroll position parks nearest a DIFFERENT state, play a
+        // normal transition to it. Our own scrollTo tween is guarded out via `transitioning`.
+        onUpdate: (self) => {
+          if (transitioning) return;
+          const t = self.progress * total;
+          let nearest = 0;
+          SNAP_TIMES.forEach((snapT, i) => {
+            if (Math.abs(snapT - t) < Math.abs(SNAP_TIMES[nearest] - t)) nearest = i;
+          });
+          if (nearest !== stateIndex) goToState(nearest);
+        },
+      });
+
+      // Wheel: while inside the pin, every event is captured and one PUSH = one state. A push is
+      // recognized on its very first meaningful event — no waiting for the gesture to end (user
+      // report: "ანიმაცია scroll-ის მერე იწყება"; the old quiet-gap-only rule classified a new
+      // swipe as momentum whenever the previous swipe's tail was still emitting). A new push =
+      // a 250ms quiet gap, OR a direction flip, OR a magnitude SPIKE (momentum tails only ever
+      // decay; a fresh finger-push jumps). At the last state a down gesture is NOT captured
+      // (native scroll releases into the footer); coming back up re-captures automatically.
+      let lastWheelAt = 0;
+      let lastDelta = 0;
+      // "flick" tracking for the queue: a run of events that began after a real pause; its
+      // accumulated distance tells a deliberate second scroll apart from a single swipe's tail
+      let flickFresh = false;
+      let flickAccum = 0;
+      let flickStartAbs = 0; // the delta level right before the pause that started the flick
+      // gesture identity + decaying speed peak: an unbroken event stream is ONE gesture; the
+      // gesture that fired the current flight can only redirect it by RE-ACCELERATING past its
+      // own decaying peak (momentum only ever decays — a fresh finger push spikes above it)
+      let gestureFiredFlight = false;
+      let recentMax = 0;
+      const onWheel = (e: WheelEvent) => {
+        if (!pinST) return;
+        // scroll-position check, NOT isActive — isActive stays false at load until the first
+        // scroll event, which let the very first gesture fall through to native scrolling.
+        const sc = window.scrollY;
+        if (sc < pinST.start - 1) {
+          lastWheelAt = 0;
+          lastDelta = 0;
+          return;
+        }
+        const now = performance.now();
+        const gap = now - lastWheelAt;
+        lastWheelAt = now;
+        const prevAbs = Math.abs(lastDelta);
+        const delta = e.deltaY;
+        const flipped = delta * lastDelta < 0;
+        lastDelta = delta;
+        const dir = delta > 0 ? 1 : -1;
+        const absD = Math.abs(delta);
+        if (gap > 180) {
+          flickFresh = true;
+          flickAccum = 0;
+          flickStartAbs = prevAbs;
+          gestureFiredFlight = false; // a pause ends the gesture
+        }
+        flickAccum += absD;
+        const decayedMax = recentMax * Math.pow(0.5, gap / 300);
+        recentMax = Math.max(absD, decayedMax);
+        // the flip shortcut needs real force (≥5): trackpad tails shed 1-3px reversed jitter
+        // deltas (must stay ignored), but ≥8 also swallowed GENTLE deliberate reversals — the
+        // reported "ზემოთ ხან delay-ით ადის, ხან 2-ჯერ სჭირდება" was exactly that
+        const newPush = absD >= 2 && (gap > 250 || (flipped && absD >= 5) || absD > prevAbs * 1.4 + 2);
+        // the footer zone is a HYBRID (user feedback): DOWN stays fully native ("fullpage
+        // გათიშე, პირდაპირ ჩავიდე"), but a DELIBERATE up push glides back to the last state.
+        // +5 tolerance: state 9 parks EXACTLY on the pin end, and without the slack its own
+        // up-pushes classified as "footer" and looped back to state 9 forever.
+        if (sc > pinST.end + 5) {
+          // while the return-glide runs, swallow everything — a native delta on top of the
+          // scrollTo tween triggers ScrollToPlugin's autoKill and the glide dies mid-way
+          if (transitioning) {
+            e.preventDefault();
+            return;
+          }
+          if (dir > 0) return; // native descent
+          // STRONG push only, and no direction-flip shortcut: trackpad gestures shed tiny
+          // reversed jitter deltas as they end, which used to yank the page back up mid-descent
+          // ("ხანდახან თამაშობს მაღლა-დაბლა და მერე ჩადის")
+          const strongUp = absD >= 12 && (gap > 250 || absD > prevAbs * 1.4 + 2);
+          if (!strongUp) return; // small ups stay native inside the footer
+          e.preventDefault();
+          goToState(LAST);
+          return;
+        }
+        if (transitioning) {
+          // mid-flight: swallow everything, EXCEPT a deliberate push AGAINST the flight
+          // direction — that turns the transition around immediately (user: scrolling up then
+          // down again used to wait out the whole transition before responding).
+          // When the flight is a SAME-STATE glide (the footer return is goToState(9→9)),
+          // "turning around" must step PAST it — going back to transitionFrom re-glided to 9
+          // forever and the user couldn't climb out of state 9 after visiting the footer.
+          e.preventDefault();
+          const flightDir = stateIndex >= transitionFrom ? 1 : -1;
+          if (newPush && dir !== flightDir) {
+            const back =
+              transitionFrom !== stateIndex
+                ? transitionFrom
+                : Math.min(LAST, Math.max(0, stateIndex + dir));
+            flickFresh = false;
+            gestureFiredFlight = true;
+            goToState(back);
+          } else if (dir === flightDir) {
+            // a second push mid-flight REDIRECTS the motion to the next state IMMEDIATELY
+            // (user testing: people skim fast and won't wait for animations) — tweenTo
+            // retargets from the current playhead, so it stays one smooth motion. Two ways
+            // to qualify:
+            // (a) a NEW gesture (a >180ms pause occurred) that accumulated real distance and
+            //     exceeds the pre-pause delta level (a tail resuming after an event hiccup
+            //     keeps decaying and can't exceed it);
+            // (b) the SAME gesture RE-ACCELERATING past its own decaying peak ≥550ms into
+            //     the flight — covers a second finger-push landing inside still-running
+            //     momentum, where no pause ever appears in the event stream.
+            const freshFlick =
+              !gestureFiredFlight &&
+              flickFresh &&
+              flickAccum >= 12 &&
+              (flickStartAbs < 5 || absD > flickStartAbs);
+            const reaccel =
+              gestureFiredFlight &&
+              performance.now() - flightStartedAt > 550 &&
+              absD > decayedMax * 1.3 + 4;
+            if (freshFlick || reaccel) {
+              flickFresh = false;
+              gestureFiredFlight = true;
+              const next = stateIndex + dir;
+              if (next >= 0 && next <= LAST) goToState(next);
+            }
+          }
+          return;
+        }
+        const target = stateIndex + dir;
+        if (target < 0) return; // above the hero — native
+        if (target > LAST) return; // state 9 going down — native release into the footer
+        e.preventDefault();
+        if (newPush) {
+          flickFresh = false; // firing consumes the flick
+          gestureFiredFlight = true; // this gesture owns the flight it just started
+          goToState(target);
+        }
+      };
+      window.addEventListener("wheel", onWheel, { passive: false });
+
+      // resize: re-evaluate the timeline's function-based (scale-dependent) values and re-render
+      // the parked state with them — the old scrub's invalidateOnRefresh used to cover this
+      const onRefresh = () => {
+        tl.invalidate();
+        tl.seek(tl.time(), false);
+      };
+      ScrollTrigger.addEventListener("refresh", onRefresh);
+
+      // the left ruler's green overlay fills top-down across the ENTIRE pinned journey —
+      // added last so totalDuration() already includes every state and trailing hold
+      tl.fromTo(
+        rulerFill,
+        { clipPath: "inset(0px 0px 100% 0px)" },
+        { clipPath: "inset(0px 0px 0% 0px)", ease: "none", duration: tl.totalDuration() },
+        0,
+      );
+
+      return () => {
+        window.removeEventListener("wheel", onWheel);
+        ScrollTrigger.removeEventListener("refresh", onRefresh);
+      };
     },
     { scope: sectionRef },
   );
 
   return (
-    // 980 (was 940): the state-7 bottom board reaches y≈974 — still under the 984px the
-    // viewport offers below the 96px header at 1920×1080
-    <section ref={sectionRef} className="relative overflow-hidden" style={{ minHeight: s(980) }}>
+    <>
+    {/* The pinned stage fills the viewport below the 96px header on ANY display; the inner stage
+        div vertically centers the s(980) design canvas inside it (user report: content sat
+        "pushed up" on screens taller than the 1080p reference). All state coordinates are
+        unchanged — they're relative to the stage div now. */}
+    <section
+      ref={sectionRef}
+      className="relative overflow-hidden"
+      style={{ height: "calc(100svh - 96px)", minHeight: s(700) }}
+    >
+    <div
+      className="absolute inset-x-0"
+      style={{ top: `max(0px, calc((100% - ${s(980)}) / 2))`, height: s(980) }}
+    >
       {/* vertical ruler bar left of the text (public/navigation-bar/navigation-bar.png, 35×913
-          native — green ticks at its top). Static: present in every state. */}
-      <Image
-        src="/navigation-bar/navigation-bar.png"
-        alt=""
-        width={35}
-        height={913}
+          native — green ticks at its top). Present in every state; the green-tinted overlay copy
+          fills top-down in lockstep with the whole pinned journey (clip-path scrubbed).
+          unoptimized: the optimizer's resample+recompress wipes out this asset's 1px
+          low-opacity ruler ticks entirely — serve the raw PNG instead. */}
+      <div
         aria-hidden="true"
         className="absolute"
-        // unoptimized: the optimizer's resample+recompress wipes out this asset's 1px
-        // low-opacity ruler ticks entirely — serve the raw PNG instead.
-        unoptimized
         style={{ left: s(99), top: s(48), width: s(30), height: s(782) }}
-      />
+      >
+        {/* grayscale: the PNG has green ticks baked into its top, but the ruler must start with
+            NO green at all — only the scroll-progress fill below brings the green in */}
+        <Image
+          src="/navigation-bar/navigation-bar.png"
+          alt=""
+          width={35}
+          height={913}
+          unoptimized
+          style={{ width: "100%", height: "100%", filter: "grayscale(1)" }}
+        />
+        {/* the green fill: solid brand layers MASKED by the ruler PNG itself, so revealed ticks
+            turn pure green (a filter-tinted copy stayed invisible — the ticks' alpha is too low;
+            two stacked layers punch the alpha up) */}
+        <div
+          ref={rulerFillRef}
+          className="absolute inset-0"
+          style={{ clipPath: "inset(0px 0px 100% 0px)" }}
+        >
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="absolute inset-0"
+              style={{
+                background: "#1ed148",
+                WebkitMaskImage: "url(/navigation-bar/navigation-bar.png)",
+                maskImage: "url(/navigation-bar/navigation-bar.png)",
+                WebkitMaskSize: "100% 100%",
+                maskSize: "100% 100%",
+              }}
+            />
+          ))}
+        </div>
+      </div>
 
       {/* state 1 — hero text column */}
       <div ref={heroTextRef} className="absolute" style={{ left: s(187), top: s(216), width: s(1180) }}>
@@ -878,32 +1257,17 @@ export function HeroSectionClient() {
             filter: `blur(${s(10)})`,
           }}
         />
-        <Image
-          ref={serverImgRef}
-          src="/section-hero/new-server.svg"
-          alt=""
-          width={SERVER_NATIVE.w}
-          height={SERVER_NATIVE.h}
-          priority
-          style={{ width: "100%", height: "auto", position: "relative" }}
+        {/* the exploded server INLINE (string prop from the server component) so state 2→3 can
+            fade its middle-layer elements individually — see the classification in the effect */}
+        <div
+          ref={serverSvgRef}
+          className="relative [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: serverSvg }}
         />
       </div>
 
-      {/* state 3 — the two stack pieces, born pixel-aligned over the old server's cap/base */}
-      <div
-        ref={capPieceRef}
-        aria-hidden="true"
-        className="absolute"
-        style={{ left: s(CAP_PIECE.left), top: s(CAP_PIECE.top), width: s(CAP_PIECE.w), opacity: 0, visibility: "hidden" }}
-      >
-        <Image
-          src="/stack-section/top-server-piece.svg"
-          alt=""
-          width={CAP_PIECE.w}
-          height={CAP_PIECE.h}
-          style={{ width: "100%", height: "auto" }}
-        />
-      </div>
+      {/* state 3 — the greening overlay: the green stacked-base art, faded in over the docked
+          base at rest (born grayscale, so the moment of overlay is invisible) */}
       <div
         ref={bottomPieceRef}
         aria-hidden="true"
@@ -916,8 +1280,9 @@ export function HeroSectionClient() {
           visibility: "hidden",
         }}
       >
-        {/* the stacked pose's own, stronger ground glow */}
+        {/* the stacked pose's own, stronger ground glow — blooms in with the base's greening */}
         <div
+          data-bottom-glow
           className="pointer-events-none absolute left-1/2 -translate-x-1/2"
           style={{
             bottom: s(-24),
@@ -925,6 +1290,7 @@ export function HeroSectionClient() {
             height: s(150),
             background: "radial-gradient(ellipse at center, rgba(17,163,42,0.45) 0%, rgba(17,163,42,0) 70%)",
             filter: `blur(${s(12)})`,
+            opacity: 0,
           }}
         />
         <Image
@@ -1014,7 +1380,7 @@ export function HeroSectionClient() {
           className="absolute"
           style={{
             left: s(1322),
-            top: s(395),
+            top: s(365),
             width: s(3),
             height: s(349),
             background: "linear-gradient(180deg, #11a32a 0%, #3b82f6 100%)",
@@ -1025,7 +1391,7 @@ export function HeroSectionClient() {
         <p
           data-panel-item
           className="absolute font-mono font-medium text-white/90"
-          style={{ left: s(1346), top: s(408), fontSize: s(15), letterSpacing: "0.04em", opacity: 0, visibility: "hidden" }}
+          style={{ left: s(1346), top: s(378), fontSize: s(15), letterSpacing: "0.04em", opacity: 0, visibility: "hidden" }}
         >
           USECTL MANAGED INFRASTRUCTURE
         </p>
@@ -1457,16 +1823,16 @@ export function HeroSectionClient() {
         >
           {DEPLOY6_LINES.map((l) => (
             <path
-              key={l.sy}
+              key={l.ey}
               data-deploy-line
-              d={deployElbow(l.sx, l.sy, DEPLOY6_X - 5, l.ey)}
+              d={l.d}
               stroke="rgba(255,255,255,0.17)"
               strokeWidth="1.5"
             />
           ))}
           {DEPLOY6_LINES.map((l) => (
             <path
-              key={`${l.sy}-arrow`}
+              key={`${l.ey}-arrow`}
               data-deploy-arrow
               d={`M ${DEPLOY6_X - 5} ${l.ey - 5} L ${DEPLOY6_X + 4} ${l.ey} L ${DEPLOY6_X - 5} ${l.ey + 5} Z`}
               fill="rgba(255,255,255,0.15)"
@@ -1665,21 +2031,32 @@ export function HeroSectionClient() {
         fill="none"
       >
         {CONNECTOR7_LINES.map((l) => (
-          <path key={l.d} data-connector-line d={l.d} stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" />
+          <g key={l.d} transform={`translate(${l.tx}, ${l.ty})`}>
+            <path
+              data-connector-line
+              d={l.d}
+              transform={l.flip ? "translate(121, 0) scale(-1, 1)" : undefined}
+              stroke="rgba(255,255,255,0.25)"
+              strokeWidth="1.5"
+            />
+          </g>
         ))}
-        {CONNECTOR7_LINES.map((l) => (
+        {CONNECTOR7_LINES.filter((l) => l.arrow).map((l) => (
           <path
             key={`${l.d}-arrow`}
             data-connector-arrow
-            d={
-              l.dir === "right"
-                ? `M ${l.ax} ${l.ay - 4} L ${l.ax + 8} ${l.ay + 1} L ${l.ax - 1} ${l.ay + 5} Z`
-                : `M ${l.ax - 5} ${l.ay - 1} L ${l.ax + 3} ${l.ay - 3} L ${l.ax + 1} ${l.ay + 7} Z`
-            }
-            fill="rgba(255,255,255,0.2)"
+            d={l.arrow}
+            fill="rgba(255,255,255,0.3)"
             opacity="0"
           />
         ))}
+        {/* the badge's elbow down to the main board's top vertex (no arrowhead, per the ref) */}
+        <path
+          ref={badgeLine7Ref}
+          d={BADGE7_LINE_D}
+          stroke="rgba(255,255,255,0.22)"
+          strokeWidth="1.5"
+        />
       </svg>
 
       {/* state 7 — POD // AI AGENT badge + its line down to the ring */}
@@ -1709,21 +2086,6 @@ export function HeroSectionClient() {
           <span className="text-brand">ACTIVE</span> coding-assistant
         </p>
       </div>
-      <div
-        ref={badgeLine7Ref}
-        aria-hidden="true"
-        className="absolute"
-        style={{
-          left: s(BADGE7_LINE.x - 1),
-          top: s(BADGE7_LINE.top),
-          width: 2,
-          height: s(BADGE7_LINE.height),
-          background: "rgba(17,163,42,0.55)",
-          opacity: 0,
-          visibility: "hidden",
-        }}
-      />
-
       {/* state 7 — agent terminal window */}
       <div
         ref={terminal7Ref}
@@ -2029,14 +2391,12 @@ export function HeroSectionClient() {
         </div>
       </div>
 
-      {/* green corner ticks on the grid intersection, bottom-left (see design-ref) */}
-      <div aria-hidden="true">
-        <div className="absolute bg-brand" style={{ left: s(99), top: s(912), width: s(35), height: 2 }} />
-        <div className="absolute bg-brand/70" style={{ left: s(100), top: s(928), width: s(13), height: 2 }} />
-      </div>
-
-      {/* SSR scroll reserve for the pin — collapsed the moment the real pin-spacer exists */}
-      <div ref={ssrReserveRef} aria-hidden="true" style={{ height: PIN_SCROLL_DISTANCE }} />
+    </div>
     </section>
+    {/* SSR scroll reserve for the pin — a SIBLING of the section (the section's height is now a
+        fixed viewport calc, so an inner spacer could no longer expand the document). Collapsed
+        the moment the real pin-spacer exists. */}
+    <div ref={ssrReserveRef} aria-hidden="true" style={{ height: PIN_SCROLL_DISTANCE }} />
+    </>
   );
 }

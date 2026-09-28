@@ -1,6 +1,14 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import { s } from "@/lib/grid";
+
+gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
 // design px = ref × 1.124). A REAL section after the pinned hero: its opaque background is what
@@ -19,8 +27,28 @@ const NAV_LINKS = [
 ] as const;
 
 export function Footer() {
+  const footerRef = useRef<HTMLElement>(null);
+
+  // scroll-into-view entrance — the same staggered fade-up the pricing section had while it was
+  // standalone (user asked for that exact feel back, on the footer)
+  useGSAP(
+    () => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      gsap.from("[data-footer-reveal]", {
+        y: 40,
+        autoAlpha: 0,
+        stagger: 0.1,
+        duration: 0.7,
+        ease: "power2.out",
+        scrollTrigger: { trigger: footerRef.current, start: "top 80%" },
+      });
+    },
+    { scope: footerRef },
+  );
+
   return (
     <footer
+      ref={footerRef}
       className="relative overflow-hidden"
       style={{ height: s(800), background: "#1b1a1a", borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
@@ -57,7 +85,7 @@ export function Footer() {
       />
 
       {/* brand column */}
-      <div className="absolute" style={{ left: s(187), top: s(76) }}>
+      <div data-footer-reveal className="absolute" style={{ left: s(187), top: s(76) }}>
         <Link href="/" aria-label="usectl home" className="inline-block">
           <Image src="/logo/logo.svg" alt="usectl" width={151} height={25} style={{ width: s(172), height: "auto" }} />
         </Link>
@@ -115,7 +143,7 @@ export function Footer() {
       </div>
 
       {/* navigation column */}
-      <div className="absolute font-heading" style={{ left: s(707), top: s(76) }}>
+      <div data-footer-reveal className="absolute font-heading" style={{ left: s(707), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Navigation
         </h3>
@@ -135,7 +163,7 @@ export function Footer() {
       </div>
 
       {/* contact column */}
-      <div className="absolute font-heading" style={{ left: s(1058), top: s(76) }}>
+      <div data-footer-reveal className="absolute font-heading" style={{ left: s(1058), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Contact
         </h3>
@@ -163,7 +191,7 @@ export function Footer() {
       </div>
 
       {/* subscribe column */}
-      <div className="absolute font-heading" style={{ left: s(1439), top: s(76) }}>
+      <div data-footer-reveal className="absolute font-heading" style={{ left: s(1439), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Subscribe
         </h3>
@@ -184,6 +212,7 @@ export function Footer() {
 
       {/* copyright */}
       <p
+        data-footer-reveal
         className="absolute left-0 w-full text-center font-heading text-white/45"
         style={{ top: s(735), fontSize: s(14), letterSpacing: "0.05em" }}
       >
