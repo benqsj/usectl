@@ -1,6 +1,4 @@
 import type { CSSProperties } from "react";
-import { GridCanvas } from "@/components/layout/GridCanvas";
-import { GridTrail } from "@/components/layout/GridTrail";
 import {
   INSET_VW,
   COLUMN_PITCH,
@@ -15,9 +13,8 @@ import {
 
 const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
 
-// Geometry, colours and the hidden-column sets all live in lib/grid.ts now, so the WebGL layer
-// (lib/gridEffect/) that draws the very same grid reads the identical numbers. Re-exported here
-// because Header.tsx and this file's own ColumnLines have always been the public face of them.
+// Re-exported because Header.tsx and this file's own ColumnLines have always been the public face
+// of the hidden-column sets (the numbers themselves live in lib/grid.ts).
 export { HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
 
 const BELOW_HEADER_HIDE_WIDE = MIDDLE_COLUMNS_WIDE;
@@ -31,8 +28,7 @@ const BELOW_HEADER_HIDE_NARROW = MIDDLE_COLUMNS_NARROW;
 // `max-[Npx]` to `@media not (min-width: Npx)`, i.e. strictly LESS than N — so the old
 // `max-[1799px]` left a one-pixel hole at exactly 1799px where neither rule matched and every
 // column showed (measured 2026-09-20 at 1798/1799/1800). `max-[1800px]` is the exact complement of
-// `min-[1800px]`, which is also what the canvas evaluates (isWideViewport in lib/grid.ts), so the
-// two can no longer disagree at any width.
+// `min-[1800px]`, so the two can no longer disagree at any width.
 const HIDDEN_AT_WIDE = "min-[1800px]:hidden";
 const HIDDEN_AT_NARROW = "max-[1800px]:hidden";
 
@@ -42,18 +38,15 @@ export function ColumnLines({
   className,
   style,
   color = LINE_COLOR,
-  cssLayer = false,
 }: {
   hideWide: Set<number>;
   hideNarrow: Set<number>;
   className: string;
   style: CSSProperties;
   color?: string;
-  /** tag this instance as part of the CSS grid fallback, so it hides once the canvas takes over */
-  cssLayer?: boolean;
 }) {
   return (
-    <div className={className} style={style} {...(cssLayer ? { "data-grid-css-layer": "" } : {})}>
+    <div className={className} style={style}>
       {Array.from({ length: NUM_COLUMNS }, (_, idx) => {
         const col = idx + 1;
         const visibilityClass = [
@@ -82,13 +75,6 @@ export function ColumnLines({
 /**
  * The grid itself, as CSS gradient layers — three absolutely-positioned children that expect a
  * positioned parent spanning the viewport.
- *
- * Split out of BackgroundLines so the same markup can be reused: it is what paints on FIRST paint
- * (before any JS), it is the permanent fallback when WebGL2 is unavailable, and the lab page
- * (/lab/lines) renders a second copy of it in a loud colour to compare the canvas against.
- *
- * Every layer is tagged `data-grid-css-layer` — globals.css hides them all once the canvas has
- * actually drawn its first frame (`[data-grid-canvas="on"]` on the wrapper). See GridCanvas.tsx.
  */
 export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
   return (
@@ -106,7 +92,6 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
         hideNarrow={BELOW_HEADER_HIDE_NARROW}
         className="absolute"
         color={color}
-        cssLayer
         style={{
           left: INSET_VW,
           right: INSET_VW,
@@ -116,7 +101,6 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
       />
       {/* vertical column lines, rest of the page — full unbroken grid, no columns hidden */}
       <div
-        data-grid-css-layer=""
         className="absolute bottom-0"
         style={{
           left: INSET_VW,
@@ -128,7 +112,6 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
       />
       {/* horizontal row lines — full viewport width (left:0 to right:0), starts below the header so none land inside it */}
       <div
-        data-grid-css-layer=""
         className="absolute inset-x-0 bottom-0"
         style={{
           top: ROW_GRID_TOP,
@@ -141,22 +124,15 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
 
 export function BackgroundLines() {
   return (
-    // FIXED to the viewport, not to the page: several sections are pinned (hero, infrastructure,
-    // the machine screen), so the content deliberately stands still while the page scrolls — with a
-    // page-absolute grid you'd see the lines sliding behind static content, which read as a glitch.
-    // Fixed also means the header-band column lines always line up with the sticky header.
+    // FIXED to the viewport, not to the page — the header-band column lines always line up with the
+    // sticky header, and pinned/scrolling content never shows the grid sliding behind it.
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* Grain texture (Figma's own `feTurbulence` noise filter, exported as-is in the SVG) —
-          user reported "a lot of white dots," visible in a real browser even though this project's
-          own Playwright/Chromium screenshots never showed it (see PROJECT.md: same category of
-          browser-rendering difference already suspected for the earlier "background looks lighter"
-          report). The filter thresholds continuous turbulence noise into a binary on/off mask
-          (`feFuncA type="discrete"`, ~51% of cells fully opaque) — a stippled dot pattern by
-          construction, not a smooth grain — and some browsers rasterize a filter this complex at a
-          capped internal resolution before scaling it to the page's actual size, exaggerating the
-          dots into visible blocky speckles. Cut opacity here (CSS, not touching the Figma-exported
-          SVG itself) rather than editing the filter's own values, so it's a one-line, easily
-          reversible knob. */}
+          at full opacity its thresholded noise reads as scattered white dots in some browsers
+          (`feFuncA type="discrete"` makes a binary stipple pattern by construction, and some
+          browsers rasterize the filter at a capped resolution before scaling, exaggerating the
+          dots). Cut opacity here (CSS, not touching the Figma-exported SVG itself) so it stays a
+          one-line, easily reversible knob. */}
       <div
         className="absolute inset-0 opacity-30 mix-blend-multiply"
         style={{
@@ -166,14 +142,6 @@ export function BackgroundLines() {
         }}
       />
       <CssGridLines />
-      {/* The same grid again, on a static WebGL2 canvas (no pointer input at all — see
-          GridCanvas.tsx). It hides the CSS layers above only once it has drawn a frame (see
-          globals.css), so a browser without WebGL2 — or a failed context — simply keeps the page
-          exactly as it is today. */}
-      <GridCanvas />
-      {/* The pointer trail: a separate 2D canvas painted on top, so it can come and go without ever
-          touching the grid's own measured-to-the-grey-level rest state (grid-trail.md). */}
-      <GridTrail />
     </div>
   );
 }

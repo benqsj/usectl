@@ -1,27 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
+import { s } from "@/lib/grid";
 
-// Footer keeps its own (larger) chamfer size, independent of the shared `CHAMFER_PX` used by
-// Pricing/Infrastructure's cards — bumped per explicit request, without dragging those other
-// cards' cut along with it.
-const FOOTER_CHAMFER_PX = 80;
+// Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
+// design px = ref × 1.124). A REAL section after the pinned hero: its opaque background is what
+// ends the fixed BackgroundLines grid, exactly like the design (no grid inside the footer).
+// The App Store / Google Play badges are drawn inline (no badge assets exist in the repo);
+// x-twitter.svg was restored from git (main:public/footer/x-twitter.svg). The giant watermark is
+// logo.svg itself, desaturated via CSS filter. "© 2026 SYSTEMCTL" is what the design says — NOT
+// usectl — kept verbatim on purpose.
 
-// Built from two user-supplied screenshots (see PROJECT.md), 2026-09-18. Typography/dimensions
-// spec'd exactly are noted per-element below; anything not spec'd (column proportions, the
-// copyright bar's own styling) is eyeballed against the screenshots, same "trial-and-error against
-// a reference image" approach used throughout this project.
-//
-// Corner chamfer: no dedicated SVG asset was supplied for the cut corners (only logo.svg and
-// x-twitter.svg were), so this uses the shared `clip-path` chamfer technique from `src/lib/chamfer.ts`
-// — extended to BOTH top corners here (the reference shows both top-left and top-right cut, not
-// just one), bottom corners left square, matching the screenshot. Unlike Pricing/Infrastructure's
-// cards, this panel HAS its own background fill (`#171717`), so it doesn't need the diagonal-accent
-// div those need — the color contrast against the page background already makes the cut visible on
-// its own. Uses the shared `CHAMFER_PX` (64px, was a Footer-only 90px) so every bordered card on the
-// page cuts the same amount, per explicit "make it consistent everywhere" follow-up request.
-
-// Mirrors Header.tsx's own NAV_LINKS hrefs exactly (so both point at the same anchors), just with
-// "Doc" instead of "Documentation" per the footer screenshot's shorter label.
 const NAV_LINKS = [
   { label: "The Machine", href: "#the-machine" },
   { label: "Agents", href: "#agents" },
@@ -30,180 +18,177 @@ const NAV_LINKS = [
   { label: "Doc", href: "#documentation" },
 ] as const;
 
-const COLUMN_LABEL = "font-heading text-[calc(var(--s)*14)] leading-none font-medium text-foreground";
-const ITEM_TEXT = "font-heading text-[calc(var(--s)*14)] leading-none font-light text-white/60";
-
 export function Footer() {
   return (
-    <footer className="relative max-[1799px]:pt-[calc(var(--s)*165)] min-[1800px]:pt-[calc(var(--s)*100)] pb-0">
-      {/* The chamfer + background both live on THIS element (not a separate outer wrapper) — per
-          explicit correction: the cut belongs to the footer's own panel, not traced by a border
-          around a same-colored area (which read as "a cut drawn on the border" rather than a real
-          notch, since there was no color contrast between inside/outside the clipped shape before).
-          `#171717` only applies here now, so the page's own background/grid still shows through
-          above this panel, matching the reference screenshot.
-
-          Full-bleed (`w-full`, no side inset) per explicit follow-up request — unlike every other
-          card on the page (Infrastructure/Pricing), which deliberately stay inset. The outer
-          <footer> lost its own `px-6` too, so this really does reach the true viewport edges rather
-          than just filling a still-padded container.
-
-          `pt` here WAS originally a pixel-exact grid-snap (the panel's own top edge landing on one
-          of BackgroundLines.tsx's horizontal row lines, `rowY()`/`ROW_PITCH` in `src/lib/grid.ts`)
-          but that approach broke down: `<footer>`'s natural top (driven by everything above it,
-          all the way up through Hero/Infrastructure/Machine/Pricing/Build's own GSAP pin-spacers)
-          measured **392px apart** between two Playwright runs that only differed in whether the
-          page had been scrolled all the way through first — GSAP settles several pin-spacers'
-          reserved heights only once their own ScrollTrigger has actually fired, so an automated
-          "exact" measurement here depends on scroll history and isn't trustworthy as a one-shot
-          computation. Both `pt` values (narrow and wide bucket) are now tuned directly against the
-          user's own visual feedback in their real browser instead (150 → 190 → 180 → 200 → 97 →
-          105 → 94 → 165/100 across this conversation) — treat further reports of "slightly
-          off" as the expected way to keep tuning this, not as a sign the formula is wrong. Same
-          caveat as every other grid-snap in this project (see InfrastructureSection's own "Card
-          top snapped to a grid row line" entry in
-          PROJECT.md): `ROW_PITCH` is `vw`-fluid but this offset is a flat px constant, so it's only
-          pixel-exact at the 1920px width it was measured against — verified there via
-          `getBoundingClientRect()` (panel top landed within a few px of the target line). The
-          narrow (`max-[1799px]`) bucket's `pt` was tuned by eye across the same conversation, not
-          grid-snapped — its own alignment (if wanted) would need the same measure-and-diff pass
-          repeated at a representative narrow width. */}
+    <footer
+      className="relative overflow-hidden"
+      style={{ height: s(800), background: "#1b1a1a", borderTop: "1px solid rgba(255,255,255,0.06)" }}
+    >
+      {/* soft green wash over the watermark's right side */}
       <div
-        className="relative w-full border-t border-white/10 pb-[calc(var(--s)*16)]"
+        aria-hidden="true"
+        className="pointer-events-none absolute"
         style={{
-          backgroundColor: "#171717",
-          // The right and bottom edge points sit at `calc(100% + 1px)`, not a bare `100%` — a
-          // clip-path edge exactly on an element's own boundary gets anti-aliased away to ~0
-          // visible width (the same fencepost bug already hit and fixed for the vertical grid
-          // lines in BackgroundLines.tsx, see PROJECT.md). Without this nudge the panel's own
-          // `border` (below) rendered on the left/top but silently vanished on the right/bottom.
-          clipPath: `polygon(${FOOTER_CHAMFER_PX}px 0, calc(100% - ${FOOTER_CHAMFER_PX}px) 0, calc(100% + 1px) ${FOOTER_CHAMFER_PX}px, calc(100% + 1px) calc(100% + 1px), 0 calc(100% + 1px), 0 ${FOOTER_CHAMFER_PX}px)`,
+          left: s(1050),
+          top: s(300),
+          width: s(900),
+          height: s(560),
+          background: "radial-gradient(ellipse at center, rgba(17,163,42,0.10) 0%, rgba(17,163,42,0) 65%)",
+          filter: `blur(${s(30)})`,
         }}
-      >
-        {/* `border-t` above draws the panel's own top edge only — no left/right/bottom border on
-            the PANEL itself any more. Per explicit correction, the vertical lines instead live on
-            the two 90%-width, centered rows below (content row + copyright row), inset from the
-            panel's true edges rather than flush against them — sitting exactly at the clip-path's
-            own boundary (0%/100%) was the root cause of the vertical borders rendering
-            inconsistently across browsers/displays (see the `calc(100% + 1px)` fencepost note
-            below, which was a partial fix for the same symptom); moving the border-carrying
-            elements inward sidesteps that boundary entirely instead of fighting it. Both rows use
-            the same `w-[90%] mx-auto`, so their vertical lines always land at the same x position
-            as each other, at any viewport width. The horizontal line below "© 2026 SYSTEMCTL" is
-            its own `border-b` on that row, not the panel's outer edge — so it sits with a small
-            gap (this `pb`) above the panel's true bottom, instead of flush against it.
-            `clip-path` only clips what's
-            already painted — it doesn't draw a new stroke along the diagonal it cuts (same bug
-            documented for Pricing/Infrastructure's chamfer in src/lib/chamfer.ts). Footer's own
-            background fill makes the CUT itself visible via color contrast, but the diagonal still
-            had no border line of its own — these two accent divs bridge each clipped corner's
-            straight edges with a matching 1px `white/10` line, one per top corner (mirrored). */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute bg-white/10"
-          style={{
-            width: FOOTER_CHAMFER_PX * Math.SQRT2,
-            height: 1,
-            top: FOOTER_CHAMFER_PX / 2,
-            left: FOOTER_CHAMFER_PX / 2,
-            transform: "translate(-50%, -50%) rotate(-45deg)",
-          }}
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute bg-white/10"
-          style={{
-            width: FOOTER_CHAMFER_PX * Math.SQRT2,
-            height: 1,
-            top: FOOTER_CHAMFER_PX / 2,
-            right: FOOTER_CHAMFER_PX / 2,
-            transform: "translate(50%, -50%) rotate(45deg)",
-          }}
-        />
-        {/* height: 317px per explicit spec at the 1920 reference — bumped a bit taller for the
-            min-[1800px] (FullHD-and-up) bucket only, per explicit request, while the narrow bucket
-            keeps the original 317px. Horizontal padding widened (40px → 96px) so the
-            logo/Subscribe columns sit further in from the panel's own edges — user feedback: they
-            read as "way too far out" at the original padding. `border-l/r` per the panel-border
-            note above — inset via `marginInline: FOOTER_CHAMFER_PX` (a fixed px, matching the
-            chamfer's own unscaled unit exactly, NOT a `w-[90%]` percentage) so the vertical line's
-            top endpoint always lands exactly on the chamfer diagonal's own endpoint, at any
-            viewport width. A percentage inset and the chamfer's fixed-px cut follow different
-            scaling laws — they'd only coincide at the one width they were tuned against, same
-            "fixed vs. fluid" lesson documented elsewhere in this project (see PROJECT.md). No
-            explicit width is set — a block element with fixed left/right margins and `width: auto`
-            fills the remaining space automatically. */}
-        <div
-          className="flex flex-col gap-12 border-l border-r border-white/10 px-8 py-8 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-8 md:px-36 max-[1799px]:min-h-[calc(var(--s)*317)] min-[1800px]:min-h-[calc(var(--s)*340)]"
-          style={{ marginInline: FOOTER_CHAMFER_PX }}
-        >
-          <div>
-            <Image src="/footer/logo.svg" alt="usectl" width={173} height={28} />
-            <p className={`mt-[calc(var(--s)*24)] ${ITEM_TEXT}`}>37 Zhiuli Shartava st., Tbilisi 2209 Georgia</p>
-          </div>
+      />
 
-          <div>
-            <p className={COLUMN_LABEL}>Navigation</p>
-            <ul className="mt-[calc(var(--s)*19)] flex flex-col gap-[calc(var(--s)*12)]">
-              {NAV_LINKS.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className={`${ITEM_TEXT} transition-colors hover:text-white`}>
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+      {/* giant desaturated logo watermark */}
+      <Image
+        src="/logo/logo.svg"
+        alt=""
+        width={151}
+        height={25}
+        aria-hidden="true"
+        className="pointer-events-none absolute select-none"
+        style={{
+          left: s(140),
+          top: s(400),
+          width: s(1560),
+          height: "auto",
+          opacity: 0.05,
+          filter: "grayscale(1) brightness(2.5)",
+        }}
+      />
 
-          <div>
-            <p className={COLUMN_LABEL}>Contact</p>
-            <ul className="mt-[calc(var(--s)*19)] flex flex-col gap-[calc(var(--s)*12)]">
-              <li>
-                <a href="mailto:hello@usectl.com" className={`${ITEM_TEXT} transition-colors hover:text-white`}>
-                  hello@usectl.com
-                </a>
-              </li>
-              <li>
-                <a href="tel:+995511111111" className={`${ITEM_TEXT} transition-colors hover:text-white`}>
-                  +995 511 11 11 11
-                </a>
-              </li>
-              <li>
-                <a href="https://x.com/usectl" aria-label="usectl on X" className="inline-block opacity-60 transition-opacity hover:opacity-100">
-                  <Image src="/footer/x-twitter.svg" alt="" width={24} height={24} />
-                </a>
-              </li>
-            </ul>
-          </div>
+      {/* brand column */}
+      <div className="absolute" style={{ left: s(187), top: s(76) }}>
+        <Link href="/" aria-label="usectl home" className="inline-block">
+          <Image src="/logo/logo.svg" alt="usectl" width={151} height={25} style={{ width: s(172), height: "auto" }} />
+        </Link>
+        <p className="font-heading font-light text-white/60" style={{ marginTop: s(30), fontSize: s(16) }}>
+          37 Zhiuli Shartava st., Tbilisi 2209 Georgia
+        </p>
 
-          <div>
-            <p className={COLUMN_LABEL}>Subscribe</p>
-            <input
-              type="email"
-              placeholder="email"
-              className={`mt-[calc(var(--s)*12)] block rounded-[calc(var(--s)*8)] border border-white/20 bg-transparent px-4 ${ITEM_TEXT} text-foreground placeholder:text-white/40 focus:border-white/40 focus:outline-none`}
-              style={{ width: 234, height: 44 }}
-            />
-            <label className="mt-[calc(var(--s)*12)] flex cursor-pointer items-center gap-[calc(var(--s)*8)]">
-              <input
-                type="checkbox"
-                className="shrink-0 appearance-none rounded-[4px] border-[0.5px] border-white/40 bg-transparent checked:bg-transparent"
-                style={{ width: 18, height: 18 }}
-              />
-              <span className={ITEM_TEXT}>I agree to the terms and conditions.</span>
-            </label>
-          </div>
-        </div>
-
-        <div
-          className="border-l border-r border-t border-b border-white/10 py-6 text-center"
-          style={{ marginInline: FOOTER_CHAMFER_PX }}
-        >
-          <p className="font-heading text-[calc(var(--s)*13)] leading-none text-white/40">
-            © 2026 <span className="text-brand">SYSTEMCTL</span>
-          </p>
+        {/* store badges (inline art — no official assets in the repo) */}
+        <div className="flex items-center" style={{ marginTop: s(48), gap: s(20) }}>
+          <a
+            href="#"
+            aria-label="Download on the App Store"
+            className="flex items-center rounded-lg border border-white/25 bg-black transition-colors hover:bg-white/5"
+            style={{ height: s(44), paddingLeft: s(13), paddingRight: s(15), gap: s(9) }}
+          >
+            <svg viewBox="0 0 384 512" fill="#fff" style={{ width: s(19), height: s(24) }} aria-hidden="true">
+              <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+            </svg>
+            <span className="text-left leading-none">
+              <span className="block text-white/80" style={{ fontSize: s(9) }}>
+                Download on the
+              </span>
+              <span className="block font-medium text-white" style={{ marginTop: s(3), fontSize: s(16.5) }}>
+                App Store
+              </span>
+            </span>
+          </a>
+          <a
+            href="#"
+            aria-label="Get it on Google Play"
+            className="flex items-center rounded-lg border border-white/25 bg-black transition-colors hover:bg-white/5"
+            style={{ height: s(44), paddingLeft: s(13), paddingRight: s(15), gap: s(9) }}
+          >
+            <svg viewBox="0 0 24 26" fill="none" style={{ width: s(19), height: s(21) }} aria-hidden="true">
+              <defs>
+                <linearGradient id="play-badge-grad" x1="0" y1="0" x2="22" y2="26" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stopColor="#00d7fe" />
+                  <stop offset="0.35" stopColor="#00f076" />
+                  <stop offset="0.7" stopColor="#ffce00" />
+                  <stop offset="1" stopColor="#f63448" />
+                </linearGradient>
+              </defs>
+              <path d="M1 1.5 L22.5 13 L1 24.5 Z" fill="url(#play-badge-grad)" />
+            </svg>
+            <span className="text-left leading-none">
+              <span className="block uppercase text-white/80" style={{ fontSize: s(9), letterSpacing: "0.04em" }}>
+                Get it on
+              </span>
+              <span className="block font-medium text-white" style={{ marginTop: s(3), fontSize: s(16.5) }}>
+                Google Play
+              </span>
+            </span>
+          </a>
         </div>
       </div>
+
+      {/* navigation column */}
+      <div className="absolute font-heading" style={{ left: s(707), top: s(76) }}>
+        <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
+          Navigation
+        </h3>
+        <ul style={{ marginTop: s(28) }}>
+          {NAV_LINKS.map((link) => (
+            <li key={link.href} style={{ marginBottom: s(14) }}>
+              <Link
+                href={link.href}
+                className="font-light text-white/55 transition-colors hover:text-white"
+                style={{ fontSize: s(15.5) }}
+              >
+                {link.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* contact column */}
+      <div className="absolute font-heading" style={{ left: s(1058), top: s(76) }}>
+        <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
+          Contact
+        </h3>
+        <p style={{ marginTop: s(28) }}>
+          <a
+            href="mailto:hello@usectl.com"
+            className="font-light text-white/55 transition-colors hover:text-white"
+            style={{ fontSize: s(15.5) }}
+          >
+            hello@usectl.com
+          </a>
+        </p>
+        <p style={{ marginTop: s(14) }}>
+          <a
+            href="tel:+995511111111"
+            className="font-light text-white/55 transition-colors hover:text-white"
+            style={{ fontSize: s(15.5) }}
+          >
+            +995 511 11 11 11
+          </a>
+        </p>
+        <a href="#" aria-label="usectl on X" className="inline-block opacity-60 transition-opacity hover:opacity-100" style={{ marginTop: s(16) }}>
+          <Image src="/footer/x-twitter.svg" alt="" width={24} height={24} style={{ width: s(18), height: s(18) }} />
+        </a>
+      </div>
+
+      {/* subscribe column */}
+      <div className="absolute font-heading" style={{ left: s(1439), top: s(76) }}>
+        <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
+          Subscribe
+        </h3>
+        <input
+          type="email"
+          placeholder="email"
+          className="block rounded-lg border border-white/15 bg-transparent font-light text-white/80 outline-none placeholder:text-white/30 focus:border-white/35"
+          style={{ marginTop: s(24), width: s(232), height: s(42), paddingLeft: s(14), paddingRight: s(14), fontSize: s(14) }}
+        />
+        <label
+          className="flex cursor-pointer items-center font-light text-white/60"
+          style={{ marginTop: s(18), gap: s(9), fontSize: s(14.5) }}
+        >
+          <input type="checkbox" className="accent-brand" style={{ width: s(14), height: s(14) }} />
+          I agree to the terms and conditions.
+        </label>
+      </div>
+
+      {/* copyright */}
+      <p
+        className="absolute left-0 w-full text-center font-heading text-white/45"
+        style={{ top: s(735), fontSize: s(14), letterSpacing: "0.05em" }}
+      >
+        &copy; 2026 <span className="text-brand">SYSTEMCTL</span>
+      </p>
     </footer>
   );
 }
