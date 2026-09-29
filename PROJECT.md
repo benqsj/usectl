@@ -64,6 +64,57 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 58: pricing +/− hover colour + press ripple; pointer cursor on every button (2026-09-29)
+
+- **Cursor**: Tailwind v4's preflight leaves `<button>` with the arrow cursor. `globals.css` now has an `@layer base` rule:
+  - `pointer` on enabled buttons, `[role=button]`, `summary`, and checkbox labels;
+  - `not-allowed` on disabled buttons.
+- **Pricing +/− hover** (`STEP_BTN_CLASS`): the border goes #35c957 and the glyph #7cf09a, with a faint green wash (rgba(17,163,42,0.1)) and a soft 12px green glow. This is the scene light's green family. Disabled buttons keep their dimmed look.
+- **Press feedback, only on the +/− buttons**:
+  - `pressRipple` (onPointerDown) is an MUI-style ripple. It appends a `.press-ripple` circle under the pointer, sized to cover the button from that point.
+  - The circle grows and fades over 650ms (keyframes in globals.css), is clipped by the button's `overflow-hidden`, and removes itself on `animationend`.
+  - On top of that there is a small `active:scale-[0.92]` press-in.
+
+## Polish pass 57: hero + state-9 button pair tighter, arrow from button-arrow.svg (2026-09-29)
+
+- The gap between "Start Building" and "See how it works" went from 30 to 14 in the hero, and from 22 to 14 in state 9.
+- The `&#8599;` glyph is replaced in both places by `ButtonArrow`, which inlines `public/button/button-arrow/button-arrow.svg` (24×24).
+  - Its stroke is `currentColor` @0.7, so the arrow turns green with the label on hover.
+  - The file has 4px of inner padding, so the button's gap is 4 (was 8) and its right padding 26 (was 32).
+
+## Polish pass 56: scene lights from the team's own SVG shapes (2026-09-29)
+
+The team supplied the shape each light should have: `public/pricing/pricing-background-light.svg` (950×901), and `public/footer/background-light-for.svg` (868×739), which is byte-identical to `public/last-section/text-background-light-form.svg`. Each file is two blurred blobs: #B6F1C0 → #11A32A @16% and #11A32A → #8FC6FF @18%, with stdDeviation 100.
+
+- These replace the three hand-fitted mint radial-gradient ellipses: the state-8 pricing light (`data-pricing-glow` wrapper, still faded in by the main tl at 11.75), the state-9 light, and the footer light.
+- **New `src/components/layout/SceneLight.tsx`** draws them INLINE with the files' path, gradient and filter data verbatim, plus overflow visible and `useId`-unique ids.
+  - Why not `<img>`: the exported frames are smaller than the lights (the right blob runs to x≈1030 in an 868-wide file).
+  - As an image the file's viewport clipped them, which left a hard horizontal edge at the bottom of the state-9 light (seen in the first try).
+- **Placement**: all three are flush with the page's right edge, with the blob pair's centre on the old light's centre.
+  - Pricing: left 970, top 50.
+  - State 9: drawn at `LIGHT9_K` 0.6 of its size (blur included), because the team said it was too big behind "What will you build next?". Its centre stays on (1660, 410).
+  - Footer: left 1052, top 60.
+- The SVG files themselves are not imported; SceneLight carries their data. If the team re-exports a shape, update `LIGHTS` in SceneLight.tsx.
+
+## Phone version, model B — first preview (2026-09-29)
+
+Per RESPONSIVE-PLAN.md question 2 the user picked **B for phones** ("მანახე, თუ არ მომეწონება A-ზე გადავაკეთებთ"). Below 768px:
+- `HeroSection.tsx` renders the pinned `HeroSectionClient` inside `max-md:hidden` and the new `components/mobile/HeroMobile.tsx` inside `md:hidden`. `HeroSectionClient`'s effect returns right after collapsing the SSR spacer when `(max-width: 767px)` matches — no pin, no wheel driver, no sessionStorage restore on phones. Desktop is untouched (wheel suite re-run, 1920 screenshot identical).
+- `HeroMobile`: the 9 states as normal stacked sections, native scroll. Units `m(px)` = `calc(var(--m) * px)`, `--m: min(100vw/390, 1.1px)` on the root. Each section's entrance is a paused timeline on a ScrollTrigger (`top 70%`, `play none none reverse`): blur-rise copy, then per state — hero server rise + CSS float; state-2 stat card + three layer labels with dash-drawn connectors; state-3 cap/base pull apart + dashed guides + base greening; state-4 closed.svg → opened.svg crossfade; state-5 inline pods svg, slabs rise bottom-first (same 112/58/0 split as desktop) then float while on screen, API pod 0→80%; state-6 typed terminal → bubbles (CSS `.m-bubble`) → board + BUILD badge → POD 0→100% → link → LIVE card; state-7 inline agent svg, outline snaps green, glow, badge, typed agent terminal; state-8 live calculator (same prices); state-9 CTA + glow. Crossing 768 reloads the page.
+- `components/mobile/FooterMobile.tsx`: flow-layout footer (same content), `md:hidden`; the desktop Footer is wrapped in `max-md:hidden` in `page.tsx`.
+- Header: `overflow-x-clip` (its ColumnLines ran to x≈1216 at the 1280 floor and widened the phone layout viewport to 1216 — the real cause of the horizontal scroll) and `h-16 md:h-24`.
+- Verified at iPhone 13 (390×844): no horizontal overflow (scrollWidth 390), every section animates in and rewinds on scroll-back, zero console errors, `tsc`/`eslint` clean. Tablet (768–1279) still renders the desktop scene — next stage.
+
+## Polish pass 55: footer → state 9 no longer "sticks" on the way up (2026-09-29)
+
+User: going up from the footer took too long and felt stuck ("ჭედავს"). Measured with synthetic trackpad swipes (Playwright, 1920×1080): the return glide used the shared 1.7s `power2.out`, so it was within 10px of the pin end at ~1.3s but input stayed locked until ~1.7s, AND the footer branch of `onWheel` swallowed every same-direction push for the whole flight — a second up swipe at 700ms or 1100ms did nothing at all. Fixes (wheel driver only):
+- `goToState`: the footer → state-9 hop uses `FOOTER_RETURN_SECONDS` 0.95 (now within 10px at ~0.74s).
+- The footer branch only owns events while ON / flying TO the footer (`stateIndex > LAST || (!transitioning && sc > pinST.end + 5)`); the return glide is an ordinary flight handled by the in-pin branch, so a second up push redirects on to state 8 immediately (measured: 2nd swipe at 700ms → state 8 at 747ms).
+- Both footer-branch `goToState` calls now set `flickFresh = false; gestureFiredFlight = true`, otherwise the firing gesture's own ramp counted as a fresh flick after the fall-through and double-stepped (state-9 → footer → turnaround landed on 8 instead of 9).
+- Follow-up same day: the way DOWN (state 9 → footer) was the same 1.7s crawl ("ძალიან ნელა ჩამოდის"); `FOOTER_RETURN_SECONDS` became `FOOTER_HOP_SECONDS` and applies to both hops (`footerHop = (stateIndex > LAST) !== (i > LAST)`). Measured: 9 → footer within 10px at ~0.73s (was ~1.3s), footer → 9 ~0.75s; state 8 → 9 unchanged.
+- Second follow-up: a quick second DOWN push during 8 → 9 was dropped (the mid-flight redirect capped `next` at `LAST`), so the footer could only be reached after the whole 8 → 9 animation. The cap is now `FOOTER_INDEX` (measured: 2nd push at 600ms → footer, settled at ~1.1s). The footer's scroll-in fade-up is switched off per the user (`FOOTER_REVEAL_OFF` in Footer.tsx).
+- Regression sweep, zero page errors: a long momentum tail from the footer stops at state 9; up-then-down@400ms returns to the footer; state 9 → footer with jitter tail stays monotonic; in-pin double push unchanged.
+
 ## Polish pass 54: state-6 bubbles start sooner and reach the terminal; deploy cards in border-form.svg (2026-09-29)
 
 Team request: "ბუშტუკები უფრო მალე დააწყებინე ... თითქმის რო შეეხოს ზედა ნაწერს", plus the POD and LIVE cards inside `public/border-form.svg`, linked by `public/section-6/line-pod-connect.svg`.

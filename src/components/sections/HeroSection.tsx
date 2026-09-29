@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { HeroSectionClient } from "./HeroSectionClient";
+import { HeroMobile } from "@/components/mobile/HeroMobile";
 
 const readPublic = (file: string) => readFileSync(path.join(process.cwd(), "public", file), "utf8");
 
@@ -74,13 +75,22 @@ const rightBoardSvg = readPublic("section-6/right-bottom.svg").replace('width="3
 const bottomBoardSvg = readPublic("section-7/bottom-left-server.svg").replace(/width="348" height="\d+"/, 'width="100%"');
 
 export function HeroSection() {
+  // < 768px (phones) get the stacked, native-scroll version (RESPONSIVE-PLAN.md, model B); the
+  // pinned desktop scene is display:none there and its effect bails out before building anything.
   return (
-    <HeroSectionClient
-      serverSvg={serverSvg}
-      agentSvg={agentSvg}
-      podsSvg={podsSvg}
-      rightBoardSvg={rightBoardSvg}
-      bottomBoardSvg={bottomBoardSvg}
-    />
+    <>
+      <div className="max-md:hidden">
+        <HeroSectionClient
+          serverSvg={serverSvg}
+          agentSvg={agentSvg}
+          podsSvg={podsSvg}
+          rightBoardSvg={rightBoardSvg}
+          bottomBoardSvg={bottomBoardSvg}
+        />
+      </div>
+      <div className="md:hidden">
+        <HeroMobile serverSvg={serverSvg} podsSvg={podsSvg} agentSvg={agentSvg} rightBoardSvg={rightBoardSvg} />
+      </div>
+    </>
   );
 }

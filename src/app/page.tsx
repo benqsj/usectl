@@ -1,5 +1,6 @@
 import { HeroSection } from "@/components/sections/HeroSection";
 import { Footer } from "@/components/layout/Footer";
+import { FooterMobile } from "@/components/mobile/FooterMobile";
 
 export default function Home() {
   return (
@@ -7,7 +8,10 @@ export default function Home() {
       <HeroSection />
       {/* The footer also supplies the trailing scroll room the hero's pin end needs (the
           "last section" trap documented in PROJECT.md — the temporary spacer lived here). */}
-      <Footer />
+      <div className="max-md:hidden">
+        <Footer />
+      </div>
+      <FooterMobile />
     </main>
   );
 }

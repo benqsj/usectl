@@ -13,7 +13,7 @@ const NAV_LINKS = [
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/60 backdrop-blur-md">
+    <header className="sticky top-0 z-50 w-full overflow-x-clip border-b border-white/10 bg-background/60 backdrop-blur-md">
       {/* Rendered here (a child of <header>, above its own bg-background/60 + backdrop-blur-md
           layer) rather than in BackgroundLines.tsx's fixed background — at this grid's real
           opacity, sitting behind the header's blur washes the lines out to fully invisible. See
@@ -21,11 +21,11 @@ export function Header() {
       <ColumnLines
         hideWide={HEADER_HIDE_WIDE}
         hideNarrow={HEADER_HIDE_NARROW}
-        className="pointer-events-none absolute top-0 h-24"
+        className="pointer-events-none absolute top-0 h-16 md:h-24"
         style={{ left: INSET_VW, right: INSET_VW }}
       />
       <div
-        className="relative flex h-24 w-full items-center"
+        className="relative flex h-16 w-full items-center md:h-24"
         style={
           /* Was hardcoded "6.770833vw" / "5.15625vw" — the same 130px / 99px at the 1920 reference,
              but in raw vw they kept shrinking past the 1280 floor while the grid they line up with

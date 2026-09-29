@@ -39,6 +39,40 @@ body {
   color: var(--foreground);
 }
 
+/* Tailwind v4's preflight gives <button> the default arrow cursor; every clickable control on the
+   page should show the hand (team, 2026-09-29: "ნებისმიერ button თან ... cursor: pointer") */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  label:has(input[type="checkbox"]) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* pricing +/− press ripple (MUI-style "you pressed it" trace): a circle spawned under the pointer
+   (see pressRipple in HeroSectionClient) that grows past the button and fades out */
+@keyframes press-ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+.press-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(124, 240, 154, 0.55) 0%, rgba(53, 201, 87, 0.4) 55%, rgba(17, 163, 42, 0.12) 100%);
+  animation: press-ripple 650ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
 /* state-6 terminal: the final block cursor blinks once typing is done */
 @keyframes t6-blink {
   50% {
@@ -76,3 +110,39 @@ body {
   animation: ring7-spin 26s linear infinite reverse;
 }
 
+
+/* phone version (components/mobile): idle float of the hero server, and the state-6 bubbles
+   running down from the terminal to the board */
+@keyframes m-float {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.m-float {
+  animation: m-float 4.2s ease-in-out infinite;
+}
+@keyframes m-bubble {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+.m-bubble {
+  animation: m-bubble 1.35s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-float,
+  .m-bubble {
+    animation: none;
+  }
+}

@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 import { useGSAP } from "@gsap/react";
 import { s, readScale, HEADER_HEIGHT_PX } from "@/lib/grid";
+import { SceneLight } from "@/components/layout/SceneLight";
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, useGSAP);
 
@@ -326,6 +327,52 @@ function DeployFrame6() {
   );
 }
 
+// The "See how it works" arrow: the team's public/button/button-arrow/button-arrow.svg (24×24,
+// stroke white @0.7), inlined with currentColor so it turns green with the label on hover. The
+// file's 4px inner padding is why the button's gap/right padding are 4/26 instead of 8/32.
+function ButtonArrow() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" style={{ width: s(24), height: s(24), flexShrink: 0 }}>
+      <path
+        d="M8 16L16 8M16 14L16 8L10 8"
+        stroke="currentColor"
+        strokeOpacity={0.7}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Pricing +/− buttons (team, 2026-09-29: a nice hover colour, and a visible trace when pressed).
+// Hover: the border and glyph go brand green with a faint green wash and a soft outer glow, the
+// same green family as the scene light behind the panel. Press: an MUI-style ripple — a circle
+// spawned under the pointer that grows past the button's edge and fades (.press-ripple in
+// globals.css), plus a tiny press-in scale. Disabled buttons keep their dimmed look.
+const STEP_BTN_CLASS =
+  "relative flex items-center justify-center overflow-hidden rounded-md border border-white/20 text-white/70 " +
+  "transition-[color,border-color,background-color,box-shadow,transform] duration-200 " +
+  "enabled:hover:border-[#35c957] enabled:hover:bg-[rgba(17,163,42,0.1)] enabled:hover:text-[#7cf09a] " +
+  "enabled:hover:shadow-[0_0_12px_rgba(53,201,87,0.25)] enabled:active:scale-[0.92] disabled:opacity-40";
+function pressRipple(e: ReactPointerEvent<HTMLButtonElement>) {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+  const r = btn.getBoundingClientRect();
+  // big enough to cover the button from wherever it was pressed
+  const size = 2 * Math.hypot(Math.max(e.clientX - r.left, r.right - e.clientX), Math.max(e.clientY - r.top, r.bottom - e.clientY));
+  const dot = document.createElement("span");
+  dot.className = "press-ripple";
+  dot.style.left = `${e.clientX - r.left}px`;
+  dot.style.top = `${e.clientY - r.top}px`;
+  dot.style.width = dot.style.height = `${size}px`;
+  dot.addEventListener("animationend", () => dot.remove(), { once: true });
+  btn.appendChild(dot);
+}
+
+// State 9's scene light scale (see the SceneLight in the closing-CTA block)
+const LIGHT9_K = 0.6;
+
 // State 7: AI Infrastructure (built against Desktop/new-version/section-7/). The state-6 board
 // shrinks/glides into place as the composition's RIGHT board (right-bottom.svg is byte-identical
 // to section-7/bottom-right-server.svg — no swap needed); the main board is last-main-server.svg
@@ -557,6 +604,10 @@ export function HeroSectionClient({
       // The server-rendered placeholder reserved the pin's scroll room so the pre-hydration page
       // height already matches; collapse it before the real pin-spacer takes over (never both).
       if (ssrReserveRef.current) ssrReserveRef.current.style.height = "0px";
+
+      // phones (< 768) render HeroMobile instead and this scene is display:none — build nothing
+      // (no pin, no wheel driver, no state restore). See RESPONSIVE-PLAN.md.
+      if (window.matchMedia("(max-width: 767px)").matches) return;
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // no animation at all: just show the hero column, which is markup-hidden for the blur-in
@@ -1779,7 +1830,14 @@ export function HeroSectionClient({
         // `hurry` < 1 comes from chained pushes: each extra shove while a flight is running makes
         // the next leg shorter, so skimming several sections in a row accelerates instead of
         // queueing, while a single unhurried scroll keeps the full, calm timing.
-        const duration = (tuned ?? TRANSITION_SECONDS) * hurry;
+        // footer → state 9 is a plain ~800px scroll glide with no artwork to play, and at the
+        // shared 1.7s power2.out its last ~0.4s crawled over the final few px while input stayed
+        // locked — the reported "footer-დან ზევით ასვლას ძალიან დიდი ხანი უნდება, ჭედავს"
+        // Same for the way DOWN (state 9 → footer): it used the shared 1.7s too and read as a slow
+        // crawl ("ძალიან ნელა ჩამოდის footer-ზე") — both footer hops now share one short glide.
+        const FOOTER_HOP_SECONDS = 0.95;
+        const footerHop = (stateIndex > LAST) !== (i > LAST);
+        const duration = (footerHop ? FOOTER_HOP_SECONDS : (tuned ?? TRANSITION_SECONDS)) * hurry;
         const ease = tuned ? "power1.out" : "power2.out";
         skipDeadZone(SNAP_TIMES[i]);
         transitioning = true;
@@ -2058,12 +2116,18 @@ export function HeroSectionClient({
         // "down" right after going up did nothing at all ("ზემოთ ავდივარ, მერე უცბად ქვემოთ
         // ვაკეთებ, აღარ ჩადის"). Now it behaves like every other page: one glide down, one glide
         // back up, and a push AGAINST a running glide turns it around immediately.
-        if (sc > pinST.end + 5 || stateIndex > LAST) {
+        // Only while ON (or flying TO) the footer. Once the return glide to state 9 has started
+        // it is an ordinary flight and falls through to the in-pin branch below, so a second up
+        // push redirects straight on to state 8 instead of being swallowed until the glide ends
+        // (it used to be ignored for the whole 1.7s — the other half of the "ჭედავს" report).
+        if (stateIndex > LAST || (!transitioning && sc > pinST.end + 5)) {
           e.preventDefault();
           if (transitioning) {
             const goingToFooter = stateIndex > LAST;
             if (newPush && ((goingToFooter && dir < 0) || (!goingToFooter && dir > 0))) {
               chain++;
+              flickFresh = false;
+              gestureFiredFlight = true;
               goToState(goingToFooter ? LAST : FOOTER_INDEX, hurryNow());
             }
             return;
@@ -2071,6 +2135,10 @@ export function HeroSectionClient({
           // a deliberate push either way; tiny reversed jitter deltas from a dying gesture are
           // still ignored (they used to yank the page around mid-descent)
           if (absD < 6) return;
+          // this gesture owns the flight it starts: its own momentum tail must not count as a
+          // second push once the return glide is handled by the in-pin redirect logic
+          flickFresh = false;
+          gestureFiredFlight = true;
           if (dir < 0) goToState(LAST);
           else if (stateIndex <= LAST) goToState(FOOTER_INDEX);
           return;
@@ -2124,7 +2192,10 @@ export function HeroSectionClient({
               gestureFiredFlight = true;
               chain++;
               const next = stateIndex + dir;
-              if (next >= 0 && next <= LAST) goToState(next, hurryNow());
+              // up to FOOTER_INDEX: a second down push during 8 → 9 goes straight on to the footer
+              // (it used to be dropped, so the footer could only be reached after the whole 8 → 9
+              // animation had finished — "სწრაფად მეორე scroll-ზე დაბლა არ ჩამიშვებს")
+              if (next >= 0 && next <= FOOTER_INDEX) goToState(next, hurryNow());
             }
           }
           return;
@@ -2294,7 +2365,8 @@ export function HeroSectionClient({
           pricing.
         </p>
 
-        <div className="flex items-center" style={{ gap: s(30), marginTop: s(34) }}>
+        {/* gap 30 → 14 (team, 2026-09-29: "button ები ერთმანეთს დაშორება შეამცირე") */}
+        <div className="flex items-center" style={{ gap: s(14), marginTop: s(34) }}>
           <Link
             href="#start"
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
@@ -2305,9 +2377,9 @@ export function HeroSectionClient({
           <Link
             href="#how"
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-normal text-white/90 transition-colors hover:border-brand hover:text-brand"
-            style={{ height: s(48), paddingLeft: s(32), paddingRight: s(32), fontSize: s(16), gap: s(8) }}
+            style={{ height: s(48), paddingLeft: s(32), paddingRight: s(26), fontSize: s(16), gap: s(4) }}
           >
-            See how it works <span aria-hidden="true">&#8599;</span>
+            See how it works <ButtonArrow />
           </Link>
         </div>
       </div>
@@ -3389,29 +3461,20 @@ export function HeroSectionClient({
         className="pointer-events-none absolute inset-0 [&>[data-pricing-reveal]]:pointer-events-auto"
       >
         {/* The scene light that the calculator panel sits ON (user: "რეალურად მაგის უკან უნდა
-            იყოს განათება") — a page-level blob, NOT the panel's own background, so it spills
-            ~90px past the panel's left/right edges exactly like the design. Profile measured off
-            Desktop/new-version/background-light-form.png as green-excess (G−R) at design coords:
-            horizontally at y466 → 1159:2 1216:6 1266:10 1338:15 1409:17 1495:15 1773:7 1838:3;
-            vertically at x1495 → 251:0 358:6 466:15 594:18 716:8 801:1. That fits an ellipse
-            centred (1450,560) with radii ~400×250 and a peak of rgba(90,255,200) at α≈0.11
-            (G−R = α·165). Above the panel's top and below its bottom the light is already gone. */}
+            იყოს განათება") — a page-level light, NOT the panel's own background. Its SHAPE is the
+            team's own export, public/pricing/pricing-background-light.svg (950×901: two blurred
+            blobs, #B6F1C0 → #11A32A and #11A32A → #8FC6FF, stdDeviation 100), which replaced the
+            hand-fitted mint ellipse on 2026-09-29. Placed flush with the page's right edge (drawn
+            inline by SceneLight, so the blur is never clipped by the file's frame) with the
+            blobs' centre (~500, 495 in the file) on the old light's centre (≈1470, 545). */}
         <div
           data-pricing-glow
           aria-hidden="true"
           className="pointer-events-none absolute"
-          style={{
-            left: s(1155),
-            top: s(295),
-            width: s(705),
-            height: s(500),
-            background:
-              "radial-gradient(ellipse at center, rgba(90,255,200,0.14) 0%, rgba(90,255,200,0.095) 40%, rgba(90,255,200,0.03) 70%, rgba(90,255,200,0) 95%)",
-            filter: `blur(${s(30)})`,
-            opacity: 0,
-            visibility: "hidden",
-          }}
-        />
+          style={{ left: s(1920 - 950), top: s(50), width: s(950), height: s(901), opacity: 0, visibility: "hidden" }}
+        >
+          <SceneLight variant="pricing" style={{ inset: 0, width: "100%", height: "100%" }} />
+        </div>
 
         {/* headline — per-line gradient text */}
         <h2
@@ -3562,7 +3625,8 @@ export function HeroSectionClient({
                     aria-label={`Decrease ${row.label}`}
                     onClick={() => stepCount(row.key, -1, row.max)}
                     disabled={counts[row.key] <= 1}
-                    className="flex items-center justify-center rounded-md border border-white/20 text-white/70 transition-colors enabled:hover:bg-white/5 disabled:opacity-40"
+                    onPointerDown={pressRipple}
+                    className={STEP_BTN_CLASS}
                     style={{ width: s(26), height: s(26), fontSize: s(15) }}
                   >
                     &minus;
@@ -3575,7 +3639,8 @@ export function HeroSectionClient({
                     aria-label={`Increase ${row.label}`}
                     onClick={() => stepCount(row.key, 1, row.max)}
                     disabled={counts[row.key] >= row.max}
-                    className="flex items-center justify-center rounded-md border border-white/20 text-white/70 transition-colors enabled:hover:bg-white/5 disabled:opacity-40"
+                    onPointerDown={pressRipple}
+                    className={STEP_BTN_CLASS}
                     style={{ width: s(26), height: s(26), fontSize: s(15) }}
                   >
                     +
@@ -3626,21 +3691,18 @@ export function HeroSectionClient({
 
       {/* state 9 — closing CTA */}
       <div ref={final9Ref} className="absolute inset-0" style={{ opacity: 0, visibility: "hidden" }}>
-        {/* The scene light on this state, re-derived from Desktop/new-version/background-light-
-            forms.png the same way as state 8's: a mint blob centred design (1660,410), radii
-            ~260×190, peak rgba(90,255,200) α≈0.13. Sampled G−R off the ref: (1648,406)=16,
-            (1648,320)=10, (1505,377)=8, (1808,320)=4, (1648,577)=4, and 0 by y≈190 / x≈1360. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute"
+        {/* The scene light on this state: the team's own export, public/last-section/
+            text-background-light-form.svg (868×739, the same two blurred blobs as the footer's),
+            which replaced the hand-fitted mint ellipse on 2026-09-29. Drawn at LIGHT9_K of its
+            size (team: "ძაან დიდზე ანათებს" behind the headline), blur included since it lives in
+            the viewBox, with the blobs' centre (~605, 550 in the file) kept on (1660, 410). */}
+        <SceneLight
+          variant="footer"
           style={{
-            left: s(1425),
-            top: s(235),
-            width: s(470),
-            height: s(350),
-            background:
-              "radial-gradient(ellipse at center, rgba(90,255,200,0.13) 0%, rgba(90,255,200,0.085) 40%, rgba(90,255,200,0.03) 70%, rgba(90,255,200,0) 95%)",
-            filter: `blur(${s(30)})`,
+            left: s(1660 - 605 * LIGHT9_K),
+            top: s(410 - 550 * LIGHT9_K),
+            width: s(868 * LIGHT9_K),
+            height: s(739 * LIGHT9_K),
           }}
         />
         <p
@@ -3663,9 +3725,9 @@ export function HeroSectionClient({
           </span>{" "}
           - we&rsquo;ll handle the infrastructure behind
         </h2>
-        {/* buttons 618 → 606 and gap 30 → 22 (team feedback 2026-09-29: "ოდნავ ასაწევია ზემოთ…
-            დაშორება ოდნავ შესამცირებელია") */}
-        <div className="absolute flex items-center" style={{ left: s(187), top: s(606), gap: s(22) }}>
+        {/* buttons 618 → 606 and gap 30 → 22 → 14 (team feedback 2026-09-29: "ოდნავ ასაწევია
+            ზემოთ… დაშორება ოდნავ შესამცირებელია", then again: "დაშორება შეამცირე") */}
+        <div className="absolute flex items-center" style={{ left: s(187), top: s(606), gap: s(14) }}>
           <Link
             href="#start"
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
@@ -3676,9 +3738,9 @@ export function HeroSectionClient({
           <Link
             href="#how"
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-normal text-white/90 transition-colors hover:border-brand hover:text-brand"
-            style={{ height: s(48), paddingLeft: s(32), paddingRight: s(32), fontSize: s(16), gap: s(8) }}
+            style={{ height: s(48), paddingLeft: s(32), paddingRight: s(26), fontSize: s(16), gap: s(4) }}
           >
-            See how it works <span aria-hidden="true">&#8599;</span>
+            See how it works <ButtonArrow />
           </Link>
         </div>
       </div>

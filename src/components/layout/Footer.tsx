@@ -7,6 +7,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { s } from "@/lib/grid";
+import { SceneLight } from "./SceneLight";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -26,6 +27,8 @@ const NAV_LINKS = [
   { label: "Doc", href: "#documentation" },
 ] as const;
 
+const FOOTER_REVEAL_OFF = true;
+
 export function Footer() {
   const footerRef = useRef<HTMLElement>(null);
 
@@ -33,6 +36,9 @@ export function Footer() {
   // standalone (user asked for that exact feel back, on the footer)
   useGSAP(
     () => {
+      // entrance DISABLED (user, 2026-09-29): with the fullpage footer glide it read as a second
+      // animation to wait out. Remove this line to bring the staggered fade-up back.
+      if (FOOTER_REVEAL_OFF) return;
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       gsap.from("[data-footer-reveal]", {
         y: 40,
@@ -54,24 +60,13 @@ export function Footer() {
       className="relative overflow-hidden"
       style={{ height: s(800), background: "#1b1a1a", borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
-      {/* The scene light. Re-fitted against Desktop/new-version/background-light-forms3.png
-          (the full-width footer ref): green-excess samples at design coords — y576 → 1134:0
-          1328:8 1522:20 1716:20 1878:16; x1522 → 188:0 272:4 382:13 576:20 738:14. That is a
-          mint blob centred (1650,610) with radii ~420×340 and a peak of rgba(90,255,200) at
-          α≈0.125 (G−R = α·165). The footer's own fill stays #1b1a1a — the light does the work. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute"
-        style={{
-          left: s(1230),
-          top: s(270),
-          width: s(840),
-          height: s(680),
-          background:
-            "radial-gradient(ellipse at center, rgba(90,255,200,0.125) 0%, rgba(90,255,200,0.09) 40%, rgba(90,255,200,0.035) 70%, rgba(90,255,200,0) 95%)",
-          filter: `blur(${s(40)})`,
-        }}
-      />
+      {/* The scene light: the team's own export, public/footer/background-light-for.svg
+          (868×739 — two blurred blobs, #B6F1C0 → #11A32A and #11A32A → #8FC6FF, stdDeviation
+          100), which replaced the hand-fitted mint ellipse on 2026-09-29. Drawn inline by
+          SceneLight (never clipped by the file's frame), flush with the right edge, blobs'
+          centre (~605, 550 in the file) on the old light's centre (≈1660, 610). The footer's own
+          fill stays #1b1a1a — the light does the work. */}
+      <SceneLight variant="footer" style={{ left: s(1920 - 868), top: s(60), width: s(868), height: s(739) }} />
 
       {/* giant desaturated logo watermark */}
       <Image
