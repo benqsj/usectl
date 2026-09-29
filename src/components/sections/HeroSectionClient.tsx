@@ -241,7 +241,10 @@ const NODE6_DIM = 0.3; // the ring's unlit opacity before the pipe reaches it
 // The push "pipe" (user-approved demo B): two walls 5px either side of x, starting ~7px under the
 // terminal's bottom (it sat glued to it otherwise) and ending EXACTLY on the ring's outline
 // (it used to run into the ring's center). Green "info" dots + packets rise inside, node → terminal.
-const PIPE6 = { x: 1083, half: 5, top: 468, wall: 1.5 };
+// top 468 → 459 (team, 2026-09-29: "ოდნავ უფრო მაღლა ავიდეს თითქმის რო შეეხოს ზედა ნაწერს"):
+// the lane now ends ~2px under the terminal's bottom edge (311 + 145.6 ≈ 456.6) and the bubbles
+// stay lit almost to the end (see the fade in tick6), so they visibly reach the terminal.
+const PIPE6 = { x: 1083, half: 5, top: 459, wall: 1.5 };
 const PIPE6_BOTTOM =
   NODE6.y - Math.sqrt((NODE6.size / 2) ** 2 - PIPE6.half ** 2) - 0.6; // ≈609.2, on the ring
 const PIPE6_H = PIPE6_BOTTOM - PIPE6.top;
@@ -253,24 +256,75 @@ const PIPE6_CANVAS_K = 4; // canvas px per design px (crisp up to --s 2 at DPR 2
 const PIPE6_GLOW_PAD = 6;
 const BADGE6 = { left: 1227, top: 494 };
 const DEPLOY6_X = 1409; // cards' left edge; elbows end just short of it
+// Both cards sit in the user's hand-drawn frame, public/border-form.svg (272×90 — see
+// DeployFrame6), so they are 272 wide; POD is 120 tall (its bar row needs it, the frame
+// stretches), LIVE the frame's own 90.
+const DEPLOY6_CARD_W = 272;
+const DEPLOY6_CARD_H = { pod: 120, live: 90 };
 const DEPLOY6_CARD_TOPS = { pod: 535, live: 704 };
 const DEPLOY6_PROGRESS = 64; // the POD card's deploy bar fills to this, then the LIVE line draws
-// same rounded "right, up, right" shape as podElbow but with a free start point
-const deployElbow = (sx: number, sy: number, ex: number, ey: number) =>
-  `M ${sx} ${sy} H ${ex - 53} Q ${ex - 45} ${sy} ${ex - 45} ${sy - 8} ` +
-  `V ${ey + 8} Q ${ex - 45} ${ey} ${ex - 37} ${ey} H ${ex}`;
-// x of the straight POD→LIVE drop: the cards' horizontal centre (268 wide; was the left
-// accent bar at +21 — team, 2026-09-29: "მაგათ შუაში გაწიე")
-const DEPLOY6_LINE_X = DEPLOY6_X + 268 / 2;
+// Board → POD connector: the user's own export, public/section-6/line-pod-connect.svg (48×44,
+// stroke white @0.1): a horizontal start, an r≈11.5 turn up, a vertical run, an r≈18 turn and a
+// horizontal end. The asset is smaller than the gap it has to bridge here (66 × 89), so its two
+// corners are kept EXACTLY as drawn and only its straight runs are stretched: it leaves the
+// board's right corner (sx, sy) and ends at (ex, ey), just short of the card, where our arrow sits.
+const podConnect = (sx: number, sy: number, ex: number, ey: number) =>
+  `M ${sx} ${sy} C ${sx + 6.35127} ${sy} ${sx + 11.5} ${sy - 5.1487} ${sx + 11.5} ${sy - 11.5} ` +
+  `V ${ey + 18} C ${sx + 11.5} ${ey + 8.05887} ${sx + 19.5589} ${ey} ${sx + 29.5} ${ey} H ${ex}`;
+// x of the straight POD→LIVE drop: the cards' horizontal centre (team, 2026-09-29: "მაგათ შუაში გაწიე")
+const DEPLOY6_LINE_X = DEPLOY6_X + DEPLOY6_CARD_W / 2;
 const DEPLOY6_LINES: readonly { d: string; ey: number; arrow?: boolean; hairline?: boolean }[] = [
-  // board right corner → the deploying card
-  { d: deployElbow(1338, 656, DEPLOY6_X - 5, 567), ey: 567, arrow: true },
-  // POD//API → LIVE: the user's own export, public/section-6/line.svg (1×49 vertical hairline,
-  // stroke white @0.1, no arrowhead), inlined verbatim so it can dash-draw. It drops straight
-  // from the POD card's bottom edge (656) to the LIVE card's top (704) — the 47.7px gap between
-  // the two cards matches the asset's 49px length. Replaces the old hook-around elbow.
-  { d: `M ${DEPLOY6_LINE_X} 656 V 704`, ey: 704, hairline: true },
+  // board right corner → the deploying card (line-pod-connect.svg, see podConnect)
+  { d: podConnect(1338, 656, DEPLOY6_X - 5, 567), ey: 567, arrow: true, hairline: true },
+  // POD//API → LIVE: the user's own export, public/section-6/line.svg (vertical hairline, stroke
+  // white @0.1, no arrowhead), inlined so it can dash-draw. It drops straight from POD's bottom
+  // border (frame y ≈ 87.1 of 90 → 116.1 of 120 → 651.1) to LIVE's top border (≈ 704.8).
+  { d: `M ${DEPLOY6_LINE_X} 651.1 V 704.8`, ey: 704, hairline: true },
 ];
+// public/border-form.svg, the deploy cards' frame: its two hand-drawn border strokes stretch
+// with the card (preserveAspectRatio none + non-scaling stroke — no dash-draw on these, so that's
+// safe), while its small gradient accent bar (13.5, 17.5, 6×15) is a plain span so it never
+// squashes. Title rows start 10px right of the bar, as before.
+const DEPLOY6_FRAME_PATHS = [
+  "M0.540484 1.53223C0.540484 6.75823 0.375209 14.813 0.712537 27.3321C1.04987 39.8512 1.72452 59.5049 2.1647 70.1927C2.79014 82.0067 3.03119 83.9205 3.13963 85.3267C3.1979 85.9794 3.26274 86.5085 3.56112 88.5292",
+  "M5.54506 87.2244C12.9995 87.2244 20.4539 87.2244 63.1566 87.1373C105.859 87.0502 183.584 86.876 224.134 86.6913C264.683 86.5065 265.701 86.3165 266.522 86.1843C267.93 85.9575 269.449 85.9128 270.828 85.5961C272.005 85.3258 271.127 83.2282 270.423 70.2486C269.761 58.0405 269.218 34.3942 268.791 21.8488C268.339 8.56695 268.151 5.88734 267.842 2.90902C267.729 1.82743 266.913 1.73318 265.766 1.88537C258.699 2.82334 252.77 2.98615 247.817 2.41263C243.669 1.93225 236.225 0.918068 197.391 0.611647C158.558 0.305225 88.5655 0.699105 52.1667 0.959413C15.7678 1.21972 15.1286 1.58631 14.1522 1.58631C8.83032 1.58631 5.95284 1.49355 4.68548 1.58631C4.04646 1.63156 2.71788 1.33592 0.540649 1.53269",
+];
+function DeployFrame6() {
+  return (
+    <>
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+        viewBox="0 0 272 90"
+        preserveAspectRatio="none"
+        fill="none"
+      >
+        {DEPLOY6_FRAME_PATHS.map((d) => (
+          <path
+            key={d.slice(0, 12)}
+            d={d}
+            stroke="#3A3A3E"
+            strokeOpacity={0.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      <span
+        aria-hidden="true"
+        className="absolute"
+        style={{
+          left: s(13.5),
+          top: s(17.5),
+          width: s(6),
+          height: s(15),
+          background: "linear-gradient(180deg, #11A32A 0%, #8FC6FF 32.9%, #8FEDF7 66.7%, #11A32A 100%)",
+        }}
+      />
+    </>
+  );
+}
 
 // State 7: AI Infrastructure (built against Desktop/new-version/section-7/). The state-6 board
 // shrinks/glides into place as the composition's RIGHT board (right-bottom.svg is byte-identical
@@ -1050,7 +1104,10 @@ export function HeroSectionClient({
           // rows 1-2 lose their typing cursor when done; row 3's block stays and starts blinking
           if (cur && r < rows6.length - 1) seq6.to(cur, { autoAlpha: 0, duration: 0.01 }, at);
           if (cur && r === rows6.length - 1) seq6.call(() => cur.classList.add("t6-blink"), undefined, at);
-          pipeAt = at + 0.04;
+          // the pipe starts as soon as row 0 ("git push origin main") is typed, not after the
+          // whole log (team, 2026-09-29: "ბუშტუკები ... უფრო მალე დააწყებინე") — the other two
+          // rows keep typing while the bubbles already rise
+          if (r === 0) pipeAt = at + 0.04;
         });
         // the pipe draws down from the terminal to the ring
         seq6.fromTo(
@@ -1069,7 +1126,7 @@ export function HeroSectionClient({
         seq6.to(node6, { autoAlpha: 1, boxShadow: "0 0 18px rgba(17,163,42,0.95)", duration: 0.08, ease: "none" });
         seq6.to(node6, { boxShadow: "0 0 10px rgba(17,163,42,0.55)", duration: 0.35, ease: "power2.out" });
         // then the info starts flowing up the pipe
-        seq6.fromTo(flow6, { v: 0 }, { v: 1, duration: 0.6, ease: "power1.inOut" }, ringAt + 0.15);
+        seq6.fromTo(flow6, { v: 0 }, { v: 1, duration: 0.4, ease: "power1.inOut" }, ringAt + 0.1);
       }
       // the ring SITS on the board from the start (dim, part of the board as it rises in) and
       // only lights up when the pipe reaches it — it never "arrives" from anywhere
@@ -1145,7 +1202,8 @@ export function HeroSectionClient({
           q.ph += dt * 4;
           const x = q.x + Math.sin(q.ph) * q.wob;
           const life = 1 - q.y / PIPE6_H; // 0 at the ring → 1 at the terminal
-          const fade = Math.max(0, Math.min(1, life * 6) * Math.min(1, (1 - life) * 5));
+          // fade in over the first ~1/6 of the lane, out over only its last ~5px (reaches the terminal)
+          const fade = Math.max(0, Math.min(1, life * 6) * Math.min(1, ((1 - life) * PIPE6_H) / 5));
           ctx6.globalAlpha = q.a * fade;
           ctx6.fillStyle = life > 0.85 ? "#8ff5a4" : "#27c948";
           if (q.r) {
@@ -2993,29 +3051,20 @@ export function HeroSectionClient({
           style={{
             left: s(DEPLOY6_X),
             top: s(DEPLOY6_CARD_TOPS.pod),
-            width: s(268),
-            padding: `${s(16)} ${s(18)}`,
-            borderRadius: s(3),
-            border: "1px solid rgba(255,255,255,0.16)",
+            width: s(DEPLOY6_CARD_W),
+            height: s(DEPLOY6_CARD_H.pod),
+            padding: `${s(13)} ${s(18)} 0 ${s(29.5)}`,
             opacity: 0,
             visibility: "hidden",
           }}
         >
-          <p className="flex items-center text-brand" style={{ gap: s(10), fontSize: s(16.5) }}>
-            <span
-              className="inline-block"
-              style={{
-                width: s(6),
-                height: s(16),
-                borderRadius: s(2),
-                background: "linear-gradient(180deg, #35e05b 0%, #3b82f6 100%)",
-              }}
-            />
+          <DeployFrame6 />
+          <p className="relative flex items-center text-brand" style={{ fontSize: s(16.5) }}>
             [ POD // API ]
           </p>
           <p
             className="flex items-center text-white/85"
-            style={{ fontSize: s(14), marginTop: s(12), marginLeft: s(16), gap: s(8) }}
+            style={{ fontSize: s(14), marginTop: s(12), marginLeft: s(4.5), gap: s(8) }}
           >
             <span
               className="inline-block rounded-full"
@@ -3023,7 +3072,7 @@ export function HeroSectionClient({
             />
             DEPLOYING ... v2.1.0
           </p>
-          <div className="flex items-center" style={{ marginTop: s(10), marginLeft: s(16), gap: s(10) }}>
+          <div className="flex items-center" style={{ marginTop: s(10), marginLeft: s(4.5), gap: s(10) }}>
             <div
               className="overflow-hidden rounded-full"
               style={{ width: s(182), height: s(7), background: "rgba(255,255,255,0.18)" }}
@@ -3048,29 +3097,20 @@ export function HeroSectionClient({
           style={{
             left: s(DEPLOY6_X),
             top: s(DEPLOY6_CARD_TOPS.live),
-            width: s(268),
-            padding: `${s(16)} ${s(18)}`,
-            borderRadius: s(3),
-            border: "1px solid rgba(255,255,255,0.16)",
+            width: s(DEPLOY6_CARD_W),
+            height: s(DEPLOY6_CARD_H.live),
+            padding: `${s(13)} ${s(18)} 0 ${s(29.5)}`,
             opacity: 0,
             visibility: "hidden",
           }}
         >
-          <p className="flex items-center text-brand" style={{ gap: s(10), fontSize: s(16.5) }}>
-            <span
-              className="inline-block"
-              style={{
-                width: s(6),
-                height: s(16),
-                borderRadius: s(2),
-                background: "linear-gradient(180deg, #35e05b 0%, #3b82f6 100%)",
-              }}
-            />
+          <DeployFrame6 />
+          <p className="relative flex items-center text-brand" style={{ fontSize: s(16.5) }}>
             [ &#10003; LIVE // v2.1.0 ]
           </p>
           <p
             className="flex items-center text-white/85"
-            style={{ fontSize: s(14), marginTop: s(12), marginLeft: s(16), gap: s(9) }}
+            style={{ fontSize: s(14), marginTop: s(12), marginLeft: s(4.5), gap: s(9) }}
           >
             <svg viewBox="0 0 14 17" fill="none" style={{ width: s(12), height: s(15) }}>
               <rect x="1" y="7" width="12" height="9" rx="1.5" stroke="#11a32a" strokeWidth="1.3" />

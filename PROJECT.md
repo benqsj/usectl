@@ -64,6 +64,24 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 54: state-6 bubbles start sooner and reach the terminal; deploy cards in border-form.svg (2026-09-29)
+
+Team request: "ბუშტუკები უფრო მალე დააწყებინე ... თითქმის რო შეეხოს ზედა ნაწერს", plus the POD and LIVE cards inside `public/border-form.svg`, linked by `public/section-6/line-pod-connect.svg`.
+- **Bubbles**:
+  - The pipe/ring/flow on `seq6` now start as soon as terminal row 0 ("git push origin main") is typed, about 0.9s earlier than before. The other two rows keep typing while the bubbles rise.
+  - The flow ramps in over 0.4s instead of 0.6s.
+  - `PIPE6.top` moved from 468 to 459, about 2px under the terminal's bottom edge at ≈456.6.
+  - The fade-out in `tick6` now covers only the lane's last ~5px (it was the last 20%), so the bubbles visibly reach the terminal.
+- **Card frames**:
+  - The cards are now 272 wide, and POD is a fixed 120 tall (LIVE 90).
+  - They lost their CSS border and their own gradient bar.
+  - `DeployFrame6` draws border-form's two hand-drawn strokes stretched to the card (preserveAspectRatio none plus non-scaling stroke; there is no dash-draw on them) and its accent bar as a plain span at 13.5/17.5, 6×15, with the asset's 4-stop gradient.
+  - The title text starts at x 29.5, and the sub-rows stay at 34.
+- **Board → POD connector** (first applied to POD → LIVE by mistake; corrected the same day: "server დან რო line გამოდის და უერთდება POD // api ის ეგ line უნდა შეგეცვალა"):
+  - The old `deployElbow` is gone. `podConnect(sx, sy, ex, ey)` rebuilds line-pod-connect.svg's path (horizontal start, r≈11.5 turn up, vertical, r≈18 turn, horizontal end) with its two corners exactly as exported and only the straight runs stretched, because the asset (48×44) is smaller than the 66×89 gap from the board corner (1338, 656) to the card (1404, 567).
+  - It uses the asset's stroke (white @0.1, 1px, via `hairline`) and keeps our arrowhead.
+- **POD → LIVE** stays the straight centred hairline, now from POD's frame bottom (651.1) to LIVE's frame top (704.8). LIVE's top stays at 704.
+
 ## Polish pass 53: the state-7 power-up unwinds with animation on the way back up (2026-09-29)
 
 Team: going 7 → 6 the green lines / grown chips vanished in one frame ("უცბად ქრება"). `gate7`'s `onReverseComplete` now calls `unwindPower7()` instead of the instant reset: `seq7` is paused where it is, and a short `unwind7` timeline (`POWER7_UNWIND` 0.9s real time — the 7→6 crossing is ~2.7s and the boards are gone ~60% in, so it has to finish inside that) shrinks every chip from its CURRENT height (read from its top face's translate) back to flat while the green top fades to its grey (CSS `fill` tween so GSAP can blend rgb → hex; `resetPower7` clears `style.fill`), retracts the squiggle and then both emerald charges toward the main board, fades the arrowheads back to white and kills the leftover processor glow; only then does the silent `reset7()` + `resetPower7()` + `seq7.pause(0)` run. Coming back down mid-unwind kills it and restarts the full sequence cleanly (`resetPower7()` first).
