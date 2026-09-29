@@ -8,7 +8,7 @@ export default function Home() {
       <HeroSection />
       {/* The footer also supplies the trailing scroll room the hero's pin end needs (the
           "last section" trap documented in PROJECT.md — the temporary spacer lived here). */}
-      <div className="max-md:hidden">
+      <div className="max-lg:hidden">
         <Footer />
       </div>
       <FooterMobile />

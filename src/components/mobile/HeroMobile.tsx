@@ -2,14 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { mountMachine } from "./machineUnfold";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-// PHONE version of the hero scene (< 768px) — model "B" from RESPONSIVE-PLAN.md: the nine desktop
+// PHONE + PORTRAIT-TABLET version of the hero scene (< 1024px) — model "B" from RESPONSIVE-PLAN.md: the nine desktop
 // states become ordinary sections stacked one under another, native scroll, and each section plays
 // its OWN entrance when it scrolls into view (and rewinds when scrolled back above it). The desktop
 // pinned scene (HeroSectionClient) is not built at all on phones — see its early return.
@@ -26,6 +27,42 @@ const PRICING_ROWS = [
 type RowKey = (typeof PRICING_ROWS)[number]["key"];
 const fmtPrice = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 
+// the desktop pills (HeroSectionClient): white/25 outline, brand green border + label on hover —
+// and on press, since phones have no hover
+const PILL =
+  "flex items-center justify-center rounded-full border border-white/25 font-heading text-foreground transition-colors " +
+  "hover:border-brand hover:text-brand active:border-brand active:text-brand";
+
+// the team's public/button/button-arrow/button-arrow.svg, inlined (currentColor → turns green with
+// the label), exactly as the desktop "See how it works" button draws it
+function ButtonArrow() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" style={{ width: m(20), height: m(20), flexShrink: 0 }}>
+      <path d="M8 16L16 8M16 14L16 8L10 8" stroke="currentColor" strokeOpacity={0.7} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// pricing +/− — same classes and press ripple (.press-ripple in globals.css) as the desktop panel
+const STEP_BTN_CLASS =
+  "relative flex items-center justify-center overflow-hidden rounded-md border border-white/20 text-white/70 " +
+  "transition-[color,border-color,background-color,box-shadow,transform] duration-200 " +
+  "enabled:hover:border-[#35c957] enabled:hover:bg-[rgba(17,163,42,0.1)] enabled:hover:text-[#7cf09a] " +
+  "enabled:hover:shadow-[0_0_12px_rgba(53,201,87,0.25)] enabled:active:scale-[0.92] disabled:opacity-40";
+function pressRipple(e: ReactPointerEvent<HTMLButtonElement>) {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+  const r = btn.getBoundingClientRect();
+  const size = 2 * Math.hypot(Math.max(e.clientX - r.left, r.right - e.clientX), Math.max(e.clientY - r.top, r.bottom - e.clientY));
+  const dot = document.createElement("span");
+  dot.className = "press-ripple";
+  dot.style.left = `${e.clientX - r.left}px`;
+  dot.style.top = `${e.clientY - r.top}px`;
+  dot.style.width = dot.style.height = `${size}px`;
+  dot.addEventListener("animationend", () => dot.remove(), { once: true });
+  btn.appendChild(dot);
+}
+
 const GRADIENT_BORDER = (deg: number) =>
   `linear-gradient(#1e1d1d, #1e1d1d) padding-box, linear-gradient(${deg}deg, rgba(17,163,42,0.9), rgba(59,130,246,0.85)) border-box`;
 
@@ -35,8 +72,8 @@ const PODS_SLAB_STARTS = [112, 58, 0] as const;
 
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
-    <p data-m-copy className="flex items-center font-heading font-light text-white/60" style={{ gap: m(10), fontSize: m(13) }}>
-      <Image src="/section-hero/hatch.svg" alt="" width={36} height={12} aria-hidden="true" style={{ width: m(26), height: "auto" }} />
+    <p data-m-copy className="flex items-center font-heading font-light text-white/60" style={{ gap: m(9), fontSize: m(12) }}>
+      <Image src="/section-hero/hatch.svg" alt="" width={36} height={12} aria-hidden="true" style={{ width: m(22), height: "auto" }} />
       {children}
     </p>
   );
@@ -47,7 +84,7 @@ function Heading({ children, as: Tag = "h2" }: { children: ReactNode; as?: "h1" 
     <Tag
       data-m-copy
       className="font-heading font-medium text-white"
-      style={{ fontSize: m(34), lineHeight: 1.15, letterSpacing: "-0.02em", marginTop: m(14) }}
+      style={{ fontSize: m(28), lineHeight: 1.18, letterSpacing: "-0.02em", marginTop: m(12) }}
     >
       {children}
     </Tag>
@@ -56,7 +93,7 @@ function Heading({ children, as: Tag = "h2" }: { children: ReactNode; as?: "h1" 
 
 function Para({ children }: { children: ReactNode }) {
   return (
-    <p data-m-copy className="font-heading font-light text-white/65" style={{ fontSize: m(15.5), lineHeight: 1.45, marginTop: m(16) }}>
+    <p data-m-copy className="font-heading font-light text-white/65" style={{ fontSize: m(14), lineHeight: 1.5, marginTop: m(14) }}>
       {children}
     </p>
   );
@@ -64,20 +101,16 @@ function Para({ children }: { children: ReactNode }) {
 
 function Buttons() {
   return (
-    <div data-m-copy className="flex flex-wrap items-center" style={{ gap: m(12), marginTop: m(26) }}>
-      <Link
-        href="#start"
-        className="flex items-center justify-center rounded-full border border-white/25 font-heading font-semibold text-foreground"
-        style={{ height: m(44), paddingInline: m(22), fontSize: m(14) }}
-      >
+    <div data-m-copy className="flex flex-wrap items-center" style={{ gap: m(10), marginTop: m(22) }}>
+      <Link href="#start" className={`${PILL} font-semibold`} style={{ height: m(42), paddingInline: m(22), fontSize: m(13.5) }}>
         Start Building
       </Link>
       <Link
         href="#how"
-        className="flex items-center justify-center rounded-full border border-white/25 font-heading text-foreground"
-        style={{ height: m(44), paddingInline: m(22), fontSize: m(14), gap: m(6) }}
+        className={`${PILL} font-normal text-white/90`}
+        style={{ height: m(42), paddingLeft: m(22), paddingRight: m(17), fontSize: m(13.5), gap: m(3) }}
       >
-        See how it works <span aria-hidden="true">&#8599;</span>
+        See how it works <ButtonArrow />
       </Link>
     </div>
   );
@@ -172,7 +205,7 @@ export function HeroMobile({
       if (!root) return;
       // crossing the 768 breakpoint swaps between two different builds — simplest correct answer
       // for a preview is a reload (only happens when resizing a desktop window / rotating a tablet)
-      const mq = window.matchMedia("(max-width: 767px)");
+      const mq = window.matchMedia("(max-width: 1023px)");
       const onChange = () => window.location.reload();
       mq.addEventListener("change", onChange);
       if (!mq.matches) return () => mq.removeEventListener("change", onChange);
@@ -280,12 +313,15 @@ export function HeroMobile({
       {
         const tl = onEnter(s4);
         copyIn(tl, s4);
-        const closed = s4.querySelector("[data-m-closed]");
-        const open = s4.querySelector("[data-m-open]");
-        tl.fromTo(closed, { autoAlpha: 0, y: 36, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.8, ease: "power3.out" }, 0.25);
-        tl.fromTo(open, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.9, ease: "power2.inOut" }, 1.05);
-        tl.to(closed, { autoAlpha: 0, duration: 0.6 }, 1.25);
-        panelIn(tl, s4, 1.5);
+        // same unfold as desktop: the collapsed (≡ closed.svg) machine arrives, the platforms rise,
+        // hidden chips fade in, then the legs come down — one inline svg, no image swap
+        const host = s4.querySelector<HTMLElement>("[data-m-machine]");
+        const unfold = { p: 0 };
+        let apply: ((p: number) => void) | null = null;
+        if (host) mountMachine(host, "m-machine").then((fn) => { apply = fn; fn(unfold.p); }).catch(() => {});
+        tl.fromTo(host, { autoAlpha: 0, y: 36, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.8, ease: "power3.out" }, 0.25);
+        tl.fromTo(unfold, { p: 0 }, { p: 1, duration: 2.2, ease: "none", onUpdate: () => apply?.(unfold.p) }, 0.95);
+        panelIn(tl, s4, 1.4);
       }
 
       // 5. Pods — the three slabs rise in bottom-first, then float; cards follow, API deploys to 80%
@@ -374,10 +410,11 @@ export function HeroMobile({
     { scope: rootRef },
   );
 
-  const sectionStyle = { paddingInline: m(20), paddingTop: m(64), paddingBottom: m(64) };
+  // phones: full width; portrait tablets: --m caps at 1.3px and the column centres at 600 design px
+  const sectionStyle = { paddingInline: m(20), paddingTop: m(56), paddingBottom: m(56), maxWidth: m(600), marginInline: "auto" };
 
   return (
-    <div ref={rootRef} className="relative overflow-x-clip" style={{ ["--m" as string]: "min(calc(100vw / 390), 1.1px)" }}>
+    <div ref={rootRef} className="relative overflow-x-clip" style={{ ["--m" as string]: "min(calc(100vw / 390), 1.3px)" }}>
       {/* 1 — hero */}
       {/* hidden until the effect plays its load-in (reduced motion reveals it at once) */}
       <section data-m-section data-m-hidden className="relative" style={{ ...sectionStyle, paddingTop: m(44), visibility: "hidden" }}>
@@ -388,11 +425,11 @@ export function HeroMobile({
           production with managed infrastructure and predictable pricing.
         </Para>
         <Buttons />
-        <div className="relative mx-auto" style={{ width: m(270), marginTop: m(40) }}>
+        <div className="relative mx-auto" style={{ width: m(200), marginTop: m(34) }}>
           <div
             aria-hidden="true"
             className="absolute left-1/2 -translate-x-1/2"
-            style={{ bottom: m(-10), width: m(260), height: m(80), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.35) 0%, rgba(17,163,42,0) 70%)", filter: "blur(8px)" }}
+            style={{ bottom: m(-10), width: m(200), height: m(64), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.35) 0%, rgba(17,163,42,0) 70%)", filter: "blur(8px)" }}
           />
           <div data-m-server className="relative" dangerouslySetInnerHTML={{ __html: serverSvg }} />
         </div>
@@ -445,9 +482,9 @@ export function HeroMobile({
           Run your apps, databases, storage, and background jobs together. Everything stays connected and organized while
           usectl manages the infrastructure underneath.
         </Para>
-        <div className="relative mx-auto" style={{ width: m(260), marginTop: m(40) }}>
+        <div className="relative mx-auto" style={{ width: m(210), marginTop: m(32) }}>
           <Image data-m-top src="/stack-section/top-server-piece.svg" alt="" width={420} height={284} className="relative z-10 block w-full" style={{ height: "auto" }} />
-          <div className="relative flex justify-center" style={{ height: m(40), gap: m(56) }} aria-hidden="true">
+          <div className="relative flex justify-center" style={{ height: m(32), gap: m(46) }} aria-hidden="true">
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
@@ -480,10 +517,8 @@ export function HeroMobile({
           Keep your app and the services it depends on together, with their own resources and access settings. In usectl, we
           call this project space a Machine.
         </Para>
-        <div className="relative mx-auto" style={{ width: m(350), marginTop: m(36), aspectRatio: "834 / 694" }}>
-          <Image data-m-closed src="/machine-section/closed.svg" alt="" fill className="object-contain" />
-          <Image data-m-open src="/machine-section/opened.svg" alt="" fill className="object-contain" />
-        </div>
+        {/* one inline opened.svg that starts collapsed (≡ closed.svg) and unfolds — machineUnfold.ts */}
+        <div data-m-machine className="relative mx-auto" style={{ width: m(300), marginTop: m(28), aspectRatio: "834 / 694" }} />
         <Panel
           items={[
             { no: "01/", title: "MACHINE BOUNDARY", desc: "Zero cross-project interference" },
@@ -505,7 +540,7 @@ export function HeroMobile({
           Your frontend, API, and workers can each have their own resources and deploy separately while staying connected inside
           the same project. In usectl, each running workload is a Pod.
         </Para>
-        <div data-m-pods className="relative mx-auto" style={{ width: m(250), marginTop: m(30) }} dangerouslySetInnerHTML={{ __html: podsSvg }} />
+        <div data-m-pods className="relative mx-auto" style={{ width: m(190), marginTop: m(26) }} dangerouslySetInnerHTML={{ __html: podsSvg }} />
         <div className="font-mono" style={{ marginTop: m(24), display: "grid", gap: m(12) }}>
           {[
             { t: "[ POD // FRONTEND ]", st: "RUNNING v1.4.2", d: "Independent Deploy • 1 vCPU / 2GB" },
@@ -567,7 +602,7 @@ export function HeroMobile({
             <span key={i} className="m-bubble absolute left-1/2 rounded-full bg-brand" style={{ width: m(4), height: m(4), marginLeft: m(-2), animationDelay: `${i * 0.45}s` }} />
           ))}
         </div>
-        <div className="relative mx-auto" style={{ width: m(300) }}>
+        <div className="relative mx-auto" style={{ width: m(250) }}>
           <div data-m-board dangerouslySetInnerHTML={{ __html: rightBoardSvg }} />
           <div
             data-m-badge6
@@ -620,12 +655,12 @@ export function HeroMobile({
           Run AI agents alongside the apps, APIs, databases, and tools they use. Your coding assistant can also deploy updates
           and inspect logs through the usectl CLI.
         </Para>
-        <div className="relative mx-auto" style={{ width: m(340), marginTop: m(36) }}>
+        <div className="relative mx-auto" style={{ width: m(290), marginTop: m(30) }}>
           <div
             data-m-glow7
             aria-hidden="true"
             className="absolute left-1/2 -translate-x-1/2"
-            style={{ bottom: m(-20), width: m(320), height: m(90), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.3) 0%, rgba(17,163,42,0) 70%)", filter: "blur(10px)" }}
+            style={{ bottom: m(-18), width: m(270), height: m(76), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.3) 0%, rgba(17,163,42,0) 70%)", filter: "blur(10px)" }}
           />
           <div data-m-agent className="relative" dangerouslySetInnerHTML={{ __html: agentSvg }} />
         </div>
@@ -667,16 +702,25 @@ export function HeroMobile({
           className="font-heading"
           style={{ marginTop: m(28), padding: m(18), borderRadius: m(14), border: "1px solid rgba(255,255,255,0.09)", background: "linear-gradient(115deg, rgba(255,255,255,0.032) 0%, rgba(255,255,255,0.01) 100%)" }}
         >
-          <button type="button" onClick={() => setAnnual((a) => !a)} className="flex items-center" style={{ gap: m(10), fontSize: m(13.5) }}>
+          <div className="flex items-center justify-center" style={{ gap: m(10), fontSize: m(13.5) }}>
             <span className={annual ? "text-white/50" : "text-white/90"}>Monthly</span>
-            <span className="relative inline-block" style={{ width: m(40), height: m(20), borderRadius: m(4), background: "rgba(255,255,255,0.15)" }}>
+            {/* the desktop switch: 49×27 track r4, 22×23 #11A32A knob, travel 23 */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={annual}
+              aria-label="Bill annually"
+              onClick={() => setAnnual((a) => !a)}
+              className="relative cursor-pointer"
+              style={{ width: m(44), height: m(24), borderRadius: m(4), background: "rgba(255,255,255,0.15)" }}
+            >
               <span
-                className="absolute transition-transform"
-                style={{ top: m(2), left: m(2), width: m(16), height: m(16), borderRadius: m(3), background: "#11A32A", transform: annual ? `translateX(${m(20)})` : "none" }}
+                className="absolute transition-transform duration-200"
+                style={{ top: m(2), left: m(2), width: m(20), height: m(20), borderRadius: m(4), background: "#11A32A", transform: annual ? `translateX(${m(20)})` : "translateX(0)" }}
               />
-            </span>
+            </button>
             <span className={annual ? "text-white/90" : "text-white/50"}>Annual</span>
-          </button>
+          </div>
           {PRICING_ROWS.map((row) => (
             <div data-m-calc-row key={row.key} className="flex items-center justify-between" style={{ marginTop: m(18) }}>
               <div>
@@ -694,8 +738,9 @@ export function HeroMobile({
                     type="button"
                     aria-label={`${d < 0 ? "Decrease" : "Increase"} ${row.label}`}
                     onClick={() => step(row.key, d, row.max)}
+                    onPointerDown={pressRipple}
                     disabled={d < 0 ? counts[row.key] <= 1 : counts[row.key] >= row.max}
-                    className="flex items-center justify-center rounded-md border border-white/20 text-white/70 disabled:opacity-40"
+                    className={STEP_BTN_CLASS}
                     style={{ width: m(30), height: m(30), fontSize: m(15), order: d < 0 ? 0 : 2 }}
                   >
                     {d < 0 ? "−" : "+"}
@@ -722,11 +767,15 @@ export function HeroMobile({
             The first month is free. You don&rsquo;t need to link a card.
           </p>
         </div>
+        {/* the desktop CTA: bordered box with brighter blueprint corner brackets, brand label */}
         <a
           href="#start"
-          className="flex items-center justify-center border border-white/25 font-heading text-white/90"
+          className="relative flex items-center justify-center border border-white/20 font-heading text-brand transition-colors hover:bg-white/5 active:bg-white/5"
           style={{ marginTop: m(18), height: m(50), fontSize: m(14.5) }}
         >
+          {(["-top-px -left-px border-t border-l", "-top-px -right-px border-t border-r", "-bottom-px -left-px border-b border-l", "-bottom-px -right-px border-b border-r"] as const).map((pos) => (
+            <span key={pos} aria-hidden="true" className={`absolute ${pos} border-white/60`} style={{ width: m(10), height: m(10) }} />
+          ))}
           Start now from $15 / month
         </a>
         <p className="text-center font-heading font-light text-white/40" style={{ marginTop: m(10), fontSize: m(12.5) }}>
@@ -742,10 +791,10 @@ export function HeroMobile({
           className="pointer-events-none absolute"
           style={{ right: m(-120), top: m(20), width: m(320), height: m(320), background: "radial-gradient(circle, rgba(90,255,200,0.14) 0%, rgba(17,163,42,0.06) 45%, rgba(17,163,42,0) 70%)", filter: "blur(20px)" }}
         />
-        <p data-m-copy className="relative font-heading font-light text-white/50" style={{ fontSize: m(24), lineHeight: 1.25 }}>
+        <p data-m-copy className="relative font-heading font-light text-white/50" style={{ fontSize: m(20), lineHeight: 1.25 }}>
           What will you build next?
         </p>
-        <h2 data-m-copy className="relative font-heading font-light text-white/85" style={{ fontSize: m(30), lineHeight: 1.3, marginTop: m(14) }}>
+        <h2 data-m-copy className="relative font-heading font-light text-white/85" style={{ fontSize: m(25), lineHeight: 1.3, marginTop: m(12) }}>
           Give your next product a place to run.{" "}
           <span className="font-medium" style={{ color: "#27a138" }}>
             Keep building

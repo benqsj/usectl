@@ -27,7 +27,7 @@ export function FooterMobile() {
 
   useGSAP(
     () => {
-      if (!window.matchMedia("(max-width: 767px)").matches) return;
+      if (!window.matchMedia("(max-width: 1023px)").matches) return;
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       gsap.from("[data-mf-reveal]", {
         y: 30,
@@ -47,12 +47,12 @@ export function FooterMobile() {
   return (
     <footer
       ref={ref}
-      className="relative overflow-hidden md:hidden"
+      className="relative overflow-hidden lg:hidden"
       style={{
-        ["--m" as string]: "min(calc(100vw / 390), 1.1px)",
+        ["--m" as string]: "min(calc(100vw / 390), 1.3px)",
         background: "#1b1a1a",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        padding: `${m(48)} ${m(20)} ${m(28)}`,
+        padding: `${m(48)} max(${m(20)}, calc((100% - ${m(560)}) / 2)) ${m(28)}`,
       }}
     >
       <div

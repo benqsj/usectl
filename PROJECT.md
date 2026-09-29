@@ -96,6 +96,24 @@ The team supplied the shape each light should have: `public/pricing/pricing-back
   - Footer: left 1052, top 60.
 - The SVG files themselves are not imported; SceneLight carries their data. If the team re-exports a shape, update `LIGHTS` in SceneLight.tsx.
 
+## Phone/tablet polish round 2 (2026-09-29)
+
+User feedback on the < 1024 version and the 1024-1279 header:
+- **Header lines vs logo/nav, 1024–1279**: the ≥1280 hide-lists don't match there (logo/nav are fixed px while the grid scales), so `.header-cols` (the header ColumnLines) gets a geometric CSS mask in that range only (globals.css): clear from `s(31)-14px` to `s(31)+164px` (logo) and `50% ± 247px` (the measured 458px nav). Verified 1024/1180/1280.
+- **Grid < 1024 rebuilt**: `--grid-inset/--grid-pitch/--grid-row/--grid-edge/--header-h` CSS vars (globals.css) drive BackgroundLines' column + row layers and default to the exact old desktop values (INSET_VW / COLUMN_PITCH / ROW_PITCH / 96px — desktop unchanged, page height 14681 same). Below 1024: inset 20px, 6 columns (inset 32 + 10 columns from 640), square cells, last line drawn ON the right inset (the old desktop-pitch grid left a random-width last gap — "ბოლო ხაზი ძალიან ახლოს"), and verticals start at the 64px header (they started at 96 → a line-less band under the header).
+- **Header < 1024**: its ColumnLines is hidden; `.header-cols-m` draws the same phone grid, masked clear of the 120px logo and the 40px burger; header padding = `--grid-inset` so the logo sits on the first line and the burger's right edge on the last.
+- **Burger**: three green bars (gradient #11a32a→#35c957, middle #1ed148 shorter) in a rounded-md green-tinted box; open → X (outer bars cross, middle shrinks away); focus-visible ring in brand.
+- **HeroMobile**: heading 34→28, paragraph 15.5→14, eyebrow 13→12; art smaller (server 200, stacks 210, machine 300, pods 190, board 250, agent 290); section padding 56. Buttons = the desktop pills (`border-white/25`, brand on hover AND active) with the team's button-arrow.svg path inlined (ButtonArrow) instead of the ↗ glyph. Pricing: desktop switch (role=switch), desktop `STEP_BTN_CLASS` + `pressRipple` on +/−, desktop CTA box (corner brackets, brand label).
+- **State 4 unfold = the desktop one**: `components/mobile/machineUnfold.ts` is a copy of the desktop "Machine's real unfold" (one inline opened.svg mounted collapsed ≡ closed.svg, platforms rise, covered chips fade, legs slide out) exposed as `mountMachine(host) → apply(p)`; HeroMobile tweens p 0→1 over 2.2s. No more closed/opened image crossfade. If the desktop unfold changes, mirror it there.
+
+## Tablets: nothing clipped any more + burger menu (2026-09-29)
+
+User: on tablets the right side was cut off / ran off-screen, and there was no burger menu.
+- **1024–1279 (landscape tablets, small laptops)**: the `--s` floor dropped from 1280/1920 (0.66667) to **1024/1920 (0.53333)** (`globals.css`, `SCALE_FLOOR_WIDTH` in grid.ts). Below 1280 the desktop scene used to stay 1280 wide and lose its right edge; now it scales to fit — verified at 1024×768 and 1180×820, states 1–8 fully on screen, scrollWidth = viewport. The wheel suite passes unchanged at 1024 and 1920.
+- **< 1024 (phones + portrait tablets)** get the stacked `components/mobile` version (breakpoint moved from `md` 768 to `lg` 1024 everywhere: HeroSection/page wrappers, FooterMobile, both matchMedia checks, HeroSectionClient's early return). On tablets `--m` caps at 1.3px and each section centres at `m(600)`; FooterMobile's padding centres the same column.
+- **Burger menu** — `components/layout/MobileMenu.tsx`, `lg:hidden`, rendered in the header (header is `h-16` / `px-5` below lg, nav `lg:block`). Round 40px button, two bars (short one offset) → X. The panel is PORTALED to `<body>` (the header's backdrop-filter would otherwise be the containing block for `position: fixed`, and its overflow clip would cut it), sits under the 64px header: dark glass (`rgba(27,26,26,.94)` + blur 18), mono "NAVIGATION", links as `0N/` (brand mono) + Space Grotesk 30/38px + ↗, gradient hairlines green → blue → faint, the two pill buttons, email + © SYSTEMCTL, mint scene light low right. GSAP: panel fade, rows blur-rise stagger, hairlines draw left→right; closes on link click / Escape / resize to ≥1024; locks page scroll while open.
+- Seen while testing, NOT touched: state 8's gradient headline "Know your hosting bill before you launch." renders invisible in headless Chromium at every width (the `bg-clip-text` span is `inline-block`; see pass 41's note on why inline-block kills background-clip). Check in a real browser.
+
 ## Phone version, model B — first preview (2026-09-29)
 
 Per RESPONSIVE-PLAN.md question 2 the user picked **B for phones** ("მანახე, თუ არ მომეწონება A-ზე გადავაკეთებთ"). Below 768px:

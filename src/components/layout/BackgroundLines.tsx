@@ -9,7 +9,7 @@ import {
   NUM_COLUMNS,
 } from "@/lib/grid";
 
-const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
+const ROW_GRID_TOP = `calc(var(--header-h, ${HEADER_HEIGHT_PX}px) + var(--grid-row, ${ROW_PITCH}))`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
 
 // Re-exported because Header.tsx and this file's own ColumnLines have always been the public face
 // of the hidden-column sets (the numbers themselves live in lib/grid.ts).
@@ -89,10 +89,12 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
       <div
         className="absolute bottom-0"
         style={{
-          left: INSET_VW,
-          right: INSET_VW,
-          top: `${HEADER_HEIGHT_PX}px`,
-          backgroundImage: `repeating-linear-gradient(to right, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${COLUMN_PITCH})`,
+          // --grid-* / --header-h (globals.css) equal INSET_VW / COLUMN_PITCH / 96px on desktop; below
+          // 1024 they switch to a phone/tablet grid whose last line lands exactly on the right inset
+          left: `var(--grid-inset, ${INSET_VW})`,
+          right: `calc(var(--grid-inset, ${INSET_VW}) - var(--grid-edge, 0px))`,
+          top: `var(--header-h, ${HEADER_HEIGHT_PX}px)`,
+          backgroundImage: `repeating-linear-gradient(to right, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent var(--grid-pitch, ${COLUMN_PITCH}))`,
           backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
         }}
       />
@@ -101,7 +103,7 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
         className="absolute inset-x-0 bottom-0"
         style={{
           top: ROW_GRID_TOP,
-          backgroundImage: `repeating-linear-gradient(to bottom, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${ROW_PITCH})`,
+          backgroundImage: `repeating-linear-gradient(to bottom, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent var(--grid-row, ${ROW_PITCH}))`,
         }}
       />
     </>

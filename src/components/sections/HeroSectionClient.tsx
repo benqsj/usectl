@@ -605,9 +605,9 @@ export function HeroSectionClient({
       // height already matches; collapse it before the real pin-spacer takes over (never both).
       if (ssrReserveRef.current) ssrReserveRef.current.style.height = "0px";
 
-      // phones (< 768) render HeroMobile instead and this scene is display:none — build nothing
+      // phones + portrait tablets (< 1024) render HeroMobile instead and this scene is display:none — build nothing
       // (no pin, no wheel driver, no state restore). See RESPONSIVE-PLAN.md.
-      if (window.matchMedia("(max-width: 767px)").matches) return;
+      if (window.matchMedia("(max-width: 1023px)").matches) return;
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // no animation at all: just show the hero column, which is markup-hidden for the blur-in

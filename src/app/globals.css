@@ -4,7 +4,8 @@
    be written as `calc(var(--s) * 136)`. The design is drawn at 1920 (CANVAS_WIDTH_REF in
    lib/grid.ts): at 1920 --s is exactly 1px, so every scaled value equals its design px and the
    reference width is left untouched. Below that it shrinks with the viewport (1600 -> 0.833,
-   1440 -> 0.75) and stops at 1280/1920 = 0.66667, the narrowest width this pass designs for. Above
+   1440 -> 0.75) and stops at 1024/1920 = 0.53333 (was 1280 — lowered so landscape tablets get the
+   whole scene scaled to fit; below 1024 the stacked components/mobile version takes over). Above
    1920 it keeps growing — which is what the background grid already did on its own, so content and
    grid now scale by an identical factor and can no longer drift apart the way they used to.
 
@@ -18,11 +19,61 @@
 }
 
 :root {
-  --s: max(0.66667px, calc(100vw / 1920));
+  --s: max(0.53333px, calc(100vw / 1920));
 
   --background: #1e1d1d;
   --foreground: #ededed;
   --brand: #11a32a;
+
+  /* background grid geometry (BackgroundLines + the header's lines). On desktop these are exactly
+     the old INSET_VW / COLUMN_PITCH / ROW_PITCH / 96px header, so nothing moves there. */
+  --grid-inset: calc(var(--s) * 99);
+  --grid-pitch: calc(var(--s) * 82);
+  --grid-row: calc(var(--s) * 114);
+  --grid-edge: 0px;
+  --header-h: 96px;
+}
+
+/* < 1024 (phones, portrait tablets): own grid — 6 columns (10 on tablets) between 20px (32px)
+   insets, the last line drawn exactly ON the right inset (--grid-edge), square cells, and the
+   64px header. The old one kept the 1280-wide desktop pitch, so its last visible line sat at a
+   random distance from the edge. */
+@media (max-width: 1023.98px) {
+  :root {
+    --grid-inset: 20px;
+    --grid-pitch: calc((100vw - 40px) / 6);
+    --grid-row: var(--grid-pitch);
+    --grid-edge: 2px;
+    --header-h: 64px;
+  }
+  /* header lines clear of the 120px logo and the 40px burger */
+  .header-cols-m {
+    mask-image: linear-gradient(to right, transparent 0, transparent 136px, #000 136px, #000 calc(100% - 58px), transparent calc(100% - 58px));
+  }
+}
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  :root {
+    --grid-inset: 32px;
+    --grid-pitch: calc((100vw - 64px) / 10);
+  }
+}
+/* 1024-1279 (landscape tablets): the header's hide-lists are tuned for ≥1280, so here the lines are
+   masked off by geometry instead — clear of the logo (s(130), 150 wide) and the 458px nav */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .header-cols {
+    mask-image: linear-gradient(
+      to right,
+      #000 0,
+      #000 calc(var(--s) * 31 - 14px),
+      transparent calc(var(--s) * 31 - 14px),
+      transparent calc(var(--s) * 31 + 164px),
+      #000 calc(var(--s) * 31 + 164px),
+      #000 calc(50% - 247px),
+      transparent calc(50% - 247px),
+      transparent calc(50% + 247px),
+      #000 calc(50% + 247px)
+    );
+  }
 }
 
 @theme inline {

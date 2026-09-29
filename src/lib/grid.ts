@@ -5,8 +5,8 @@
 export const CANVAS_WIDTH_REF = 1920; // Figma canvas reference width
 
 // The narrowest width the design scales down to — below it --s stops shrinking (see globals.css).
-export const SCALE_FLOOR_WIDTH = 1280;
-export const SCALE_FLOOR = SCALE_FLOOR_WIDTH / CANVAS_WIDTH_REF; // 0.66667
+export const SCALE_FLOOR_WIDTH = 1024; // was 1280; lowered 2026-09-29 so 1024-1279 tablets (landscape) get the whole desktop scene scaled to fit instead of clipped at the right edge
+export const SCALE_FLOOR = SCALE_FLOOR_WIDTH / CANVAS_WIDTH_REF; // 0.53333
 
 // THE way to write a design measurement in CSS. `s(136)` means "136px at 1920, proportionally less
 // below, proportionally more above" — see the --s comment in globals.css. It works anywhere a length

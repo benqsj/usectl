@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ColumnLines } from "@/components/layout/BackgroundLines";
-import { INSET_VW, s, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
+import { MobileMenu } from "@/components/layout/MobileMenu";
+import { INSET_VW, s, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW, LINE_COLOR, LINE_THICKNESS_PX } from "@/lib/grid";
 
 const NAV_LINKS = [
   { label: "The Machine", href: "#the-machine" },
@@ -21,11 +22,23 @@ export function Header() {
       <ColumnLines
         hideWide={HEADER_HIDE_WIDE}
         hideNarrow={HEADER_HIDE_NARROW}
-        className="pointer-events-none absolute top-0 h-16 md:h-24"
+        className="header-cols pointer-events-none absolute top-0 h-16 max-lg:hidden lg:h-24"
         style={{ left: INSET_VW, right: INSET_VW }}
       />
+      {/* < 1024: the phone/tablet grid (globals.css --grid-*), masked clear of the logo and the
+          burger so no line runs through either */}
       <div
-        className="relative flex h-16 w-full items-center md:h-24"
+        aria-hidden="true"
+        className="header-cols-m pointer-events-none absolute inset-y-0 lg:hidden"
+        style={{
+          left: "var(--grid-inset)",
+          right: "calc(var(--grid-inset) - var(--grid-edge))",
+          backgroundImage: `repeating-linear-gradient(to right, ${LINE_COLOR} 0, ${LINE_COLOR} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent var(--grid-pitch))`,
+          backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
+        }}
+      />
+      <div
+        className="relative flex h-16 w-full items-center max-lg:px-(--grid-inset)! lg:h-24"
         style={
           /* Was hardcoded "6.770833vw" / "5.15625vw" — the same 130px / 99px at the 1920 reference,
              but in raw vw they kept shrinking past the 1280 floor while the grid they line up with
@@ -34,12 +47,12 @@ export function Header() {
         }
       >
         <Link href="/" aria-label="usectl home" className="shrink-0">
-          <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority />
+          <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority className="h-auto w-[120px] lg:w-[150px]" />
         </Link>
 
         <nav
           aria-label="Primary"
-          className="absolute left-1/2 hidden -translate-x-1/2 md:block"
+          className="absolute left-1/2 hidden -translate-x-1/2 lg:block"
         >
           <ul className="flex items-center gap-8 font-heading text-base text-white/80">
             {NAV_LINKS.map((link) => (
@@ -51,6 +64,7 @@ export function Header() {
             ))}
           </ul>
         </nav>
+        <MobileMenu links={NAV_LINKS} />
       </div>
     </header>
   );
