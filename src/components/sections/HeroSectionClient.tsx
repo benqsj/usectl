@@ -611,7 +611,7 @@ export function HeroSectionClient({
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // no animation at all: just show the hero column, which is markup-hidden for the blur-in
-        gsap.set(heroText, { opacity: 1 });
+        gsap.set([heroText, serverSvgHost], { opacity: 1 });
         return;
       }
 
@@ -1641,6 +1641,13 @@ export function HeroSectionClient({
       const unwindPower7 = () => {
         seq7.pause();
         unwind7?.kill();
+        // the ignition's transient light (flash, ring boost, outline burst, spin-up) goes out at
+        // once — leaving mid-ignition used to freeze it lit, and a quick return found the board
+        // glowing before its own ignition had even started
+        flash7?.setAttribute("opacity", "0");
+        ringBoost7?.setAttribute("opacity", "0");
+        outlineFlash7(0);
+        setRate7(1);
         const u = gsap.timeline({
           onComplete: () => {
             seq7.pause(0);
@@ -1681,6 +1688,19 @@ export function HeroSectionClient({
         u.to(g, { v: 0, duration: D * 0.5, onUpdate: () => glow7(g.v) }, 0);
         unwind7 = u;
       };
+      // runs a still-running power-down backwards, then lets the sequence carry on from where it
+      // was paused (the board stayed on screen, so it must not go dark and ignite a second time)
+      const resume7 = () => {
+        const u = unwind7;
+        if (!u || u.reversed()) return;
+        u.eventCallback("onReverseComplete", () => {
+          if (unwind7 === u) unwind7 = null;
+          seq7.play();
+        });
+        u.reverse();
+      };
+      let serverIntro: gsap.core.Timeline | null = null; // the hero server's load-in (see below)
+      const GATE7_AT = 10.9; // timeline position where state 7's ignition starts
       const gate7 = { v: 0 };
       tl.fromTo(
         gate7,
@@ -1692,17 +1712,22 @@ export function HeroSectionClient({
             // a reload that restores straight into state 7 lands on the FINISHED "on" state — the
             // spin-up / flash / charge are not replayed (team: "refresh-ის დროს არ უნდა გამოჩნდეს
             // ის ფერი რაც ჩართვის დროს აქვს"); a real arrival plays the whole sequence
-            unwind7?.kill();
-            unwind7 = null;
-            if (restoring7) seq7.progress(1, false);
-            else {
-              resetPower7();
-              seq7.restart();
+            if (restoring7) {
+              unwind7?.kill();
+              unwind7 = null;
+              seq7.progress(1, false);
+              return;
             }
+            // Came back before the board had gone dark: goToState already reversed the power-down
+            // (resume7) — the sequence carries on from where it was, no second ignition.
+            if (unwind7) resume7();
+            if (unwind7 || seq7.progress() > 0) return;
+            resetPower7();
+            seq7.restart();
           },
           onReverseComplete: () => unwindPower7(),
         },
-        10.9,
+        GATE7_AT,
       );
       tl.to({}, { duration: 0.3 }); // hold at the settled state 7
 
@@ -1801,6 +1826,23 @@ export function HeroSectionClient({
 
       const goToState = (i: number, hurry = 1) => {
         if (!pinST) return;
+        // a push during the hero server's load-in lands it at once (clean props for the glide)
+        if (serverIntro?.isActive()) serverIntro.progress(1);
+        // Arriving at state 7 from above its gate: the board must come in OFF (white outline, no
+        // glow, flat chips) and only light up when the gate starts the ignition. Whatever an
+        // earlier visit left behind — a finished "on" state, an unwind still running, a frozen
+        // mid-ignition frame — is cleared before the board fades in (user: "ჯერ ნათება მხვდება,
+        // მერე ქრება და მერე ისევ ჩნდება").
+        // An unwind still running means the board never left the screen: run it backwards right
+        // away instead (resume7), so a quick up-and-back never goes dark and re-ignites.
+        if (tl.time() < GATE7_AT && SNAP_TIMES[Math.min(i, LAST)] > GATE7_AT) {
+          if (unwind7) resume7();
+          else {
+            seq7.pause(0);
+            reset7();
+            resetPower7();
+          }
+        }
         flightStartedAt = performance.now();
         // Per-crossing traversal tuning: every state change gets real time proportional to how
         // much its segment actually animates, with the gentle power1.out (the default power2.out
@@ -2248,6 +2290,37 @@ export function HeroSectionClient({
         });
       }
 
+      // The hero server assembles itself on load (user: the copy blurs in nicely, the server just
+      // "appeared"): the base rises into place, then the lower slab, upper slab and cap drop onto
+      // it one after another with a soft landing, riding in just behind the heading. The host is
+      // markup-hidden (opacity 0) so the finished server never flashes before hydration; a reload
+      // that restores a later state just reveals it (the server has moved on by then).
+      // Per-element CSS `translate` + opacity — the same channel the state-2 float uses, so it
+      // can't fight the timeline's transforms — cleared when done or when a push cuts it short.
+      {
+        gsap.set(serverSvgHost, { opacity: 1 });
+        if (saved === 0) {
+          const [cap, upper, lower, base] = float2Layers;
+          const intro = gsap.timeline({
+            delay: 0.3,
+            onComplete: () => {
+              gsap.set(float2Layers.flat(), { clearProps: "translate,opacity" });
+              serverIntro = null;
+            },
+          });
+          intro.fromTo(base, { translate: "0px 46px", opacity: 0 }, { translate: "0px 0px", opacity: 1, duration: 1, ease: "power3.out" }, 0);
+          [lower, upper, cap].forEach((els, k) => {
+            intro.fromTo(
+              els,
+              { translate: `0px ${-70 - k * 25}px`, opacity: 0 },
+              { translate: "0px 0px", opacity: 1, duration: 0.95, ease: "back.out(1.15)" },
+              0.2 + k * 0.17,
+            );
+          });
+          serverIntro = intro;
+        }
+      }
+
       // the left ruler's green overlay fills top-down across the ENTIRE pinned journey —
       // added last so totalDuration() already includes every state and trailing hold
       tl.fromTo(
@@ -2482,6 +2555,8 @@ export function HeroSectionClient({
         <div
           ref={serverSvgRef}
           className="relative [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+          // markup-hidden until the effect plays the server's load-in (or reveals it) — see there
+          style={{ opacity: 0 }}
           dangerouslySetInnerHTML={{ __html: serverSvg }}
         />
       </div>

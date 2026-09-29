@@ -49,11 +49,6 @@ const LIGHTS = {
   },
 } as const;
 
-export const SCENE_LIGHT_SIZE = {
-  footer: { w: LIGHTS.footer.w, h: LIGHTS.footer.h },
-  pricing: { w: LIGHTS.pricing.w, h: LIGHTS.pricing.h },
-};
-
 export function SceneLight({ variant, style }: { variant: keyof typeof LIGHTS; style?: CSSProperties }) {
   const uid = useId().replace(/:/g, "");
   const { w, h, blobs } = LIGHTS[variant];

@@ -11,9 +11,6 @@ import {
 
 const ROW_GRID_TOP = `calc(var(--header-h, ${HEADER_HEIGHT_PX}px) + var(--grid-row, ${ROW_PITCH}))`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
 
-// Re-exported because Header.tsx and this file's own ColumnLines have always been the public face
-// of the hidden-column sets (the numbers themselves live in lib/grid.ts).
-export { HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
 
 // Literal class strings (not built from a template-interpolated variable) — Tailwind's build-time scanner needs the
 // exact "min-[1800px]:hidden" text to appear in the source to generate that utility; a `` `min-[${x}px]:hidden` ``
@@ -71,7 +68,7 @@ export function ColumnLines({
  * The grid itself, as CSS gradient layers — three absolutely-positioned children that expect a
  * positioned parent spanning the viewport.
  */
-export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
+function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
   return (
     <>
       {/* Header-band column lines are NOT rendered here — this whole layer sits behind the sticky

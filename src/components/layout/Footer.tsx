@@ -1,15 +1,7 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { useRef } from "react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useGSAP } from "@gsap/react";
 import { s } from "@/lib/grid";
 import { SceneLight } from "./SceneLight";
-
-gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
 // design px = ref × 1.124). A REAL section after the pinned hero: its opaque background is what
@@ -27,36 +19,14 @@ const NAV_LINKS = [
   { label: "Doc", href: "#documentation" },
 ] as const;
 
-const FOOTER_REVEAL_OFF = true;
-
+// A plain server component: its scroll-in fade-up was switched off (2026-09-29 — with the fullpage
+// footer glide it read as a second animation to wait out) and then removed with the gsap/client
+// code it needed. git history (pass 2 / pass 55) has it if it's ever wanted back.
 export function Footer() {
-  const footerRef = useRef<HTMLElement>(null);
-
-  // scroll-into-view entrance — the same staggered fade-up the pricing section had while it was
-  // standalone (user asked for that exact feel back, on the footer)
-  useGSAP(
-    () => {
-      // entrance DISABLED (user, 2026-09-29): with the fullpage footer glide it read as a second
-      // animation to wait out. Remove this line to bring the staggered fade-up back.
-      if (FOOTER_REVEAL_OFF) return;
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from("[data-footer-reveal]", {
-        y: 40,
-        autoAlpha: 0,
-        stagger: 0.1,
-        duration: 0.7,
-        ease: "power2.out",
-        scrollTrigger: { trigger: footerRef.current, start: "top 80%" },
-      });
-    },
-    { scope: footerRef },
-  );
-
   return (
     // The base stays DARK (#1b1a1a, sampled as rgb(26,26,26) in the design's own footer-light.png)
     // — the footer's brightness is not a lighter fill, it's the mint glow below.
     <footer
-      ref={footerRef}
       className="relative overflow-hidden"
       style={{ height: s(800), background: "#1b1a1a", borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
@@ -87,7 +57,7 @@ export function Footer() {
       />
 
       {/* brand column */}
-      <div data-footer-reveal className="absolute" style={{ left: s(187), top: s(76) }}>
+      <div className="absolute" style={{ left: s(187), top: s(76) }}>
         <Link href="/" aria-label="usectl home" className="inline-block">
           <Image src="/logo/logo.svg" alt="usectl" width={151} height={25} style={{ width: s(172), height: "auto" }} />
         </Link>
@@ -145,7 +115,7 @@ export function Footer() {
       </div>
 
       {/* navigation column */}
-      <div data-footer-reveal className="absolute font-heading" style={{ left: s(707), top: s(76) }}>
+      <div className="absolute font-heading" style={{ left: s(707), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Navigation
         </h3>
@@ -165,7 +135,7 @@ export function Footer() {
       </div>
 
       {/* contact column */}
-      <div data-footer-reveal className="absolute font-heading" style={{ left: s(1058), top: s(76) }}>
+      <div className="absolute font-heading" style={{ left: s(1058), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Contact
         </h3>
@@ -193,7 +163,7 @@ export function Footer() {
       </div>
 
       {/* subscribe column */}
-      <div data-footer-reveal className="absolute font-heading" style={{ left: s(1439), top: s(76) }}>
+      <div className="absolute font-heading" style={{ left: s(1439), top: s(76) }}>
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Subscribe
         </h3>
@@ -230,7 +200,7 @@ export function Footer() {
 
       {/* copyright */}
       <p
-        data-footer-reveal
+       
         className="absolute left-0 w-full text-center font-heading text-white/45"
         style={{ top: s(735), fontSize: s(14), letterSpacing: "0.05em" }}
       >

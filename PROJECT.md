@@ -22,7 +22,7 @@ Per explicit user instruction ("ყველაფერი გადაკე�
 - `src/lib/grid.ts` — scale system (`s(px)` / `vw(px)`, `CANVAS_WIDTH_REF` 1920, `SCALE_FLOOR` 1280/1920, `INSET_VW`, `HEADER_HEIGHT_PX` 96) plus the grid geometry/hide-list constants ColumnLines needs (`COLUMN_PITCH` 82, `ROW_PITCH` 114, `LINE_THICKNESS_PX` 2, `LINE_ALPHA` 0.02, `NUM_COLUMNS` 22, `START_COLUMNS`/`MIDDLE_COLUMNS_*`/`HEADER_HIDE_*`). The numeric `gridMetrics()`/`columnCenterX()`-style helpers stayed deleted with the WebGL layer.
 - `globals.css` — `--s` (registered `@property`, floor at 1280), theme tokens (`--background: #1e1d1d`, `--brand: #11a32a`), reduced-motion baseline.
 
-**Deps note**: `gsap`, `@gsap/react`, `three`, `@types/three` are still in `package.json` but currently unused — left in place since animations are likely coming back; remove if not.
+**Deps note** (updated 2026-09-29): `three` / `@types/three` were removed in the cleanup below; `gsap` + `@gsap/react` are the animation stack.
 
 Verified after the reset: `next build` clean, `eslint` clean, Playwright screenshot at 1920×1080 shows header + grid + grain rendering correctly, nothing else.
 
@@ -95,6 +95,39 @@ The team supplied the shape each light should have: `public/pricing/pricing-back
   - State 9: drawn at `LIGHT9_K` 0.6 of its size (blur included), because the team said it was too big behind "What will you build next?". Its centre stays on (1660, 410).
   - Footer: left 1052, top 60.
 - The SVG files themselves are not imported; SceneLight carries their data. If the team re-exports a shape, update `LIGHTS` in SceneLight.tsx.
+
+## Hero server load-in (2026-09-29)
+
+User: on first visit / refresh the hero copy blurs in nicely but the server svg just appears. Now it assembles itself: the base rises 46px into place (power3.out, 1s), then the lower slab, upper slab and cap drop onto it (from −70/−95/−120 svg px, `back.out(1.15)`, 0.95s, 0.17s apart), starting 0.3s after mount — riding in just behind the heading.
+- Layers = `float2Layers` (cap / upper / lower / base, the state-2 float's classification, loose chips included). Animated through per-element CSS `translate` + `opacity` — the float's channel, so it can't fight the timeline's transforms — and `clearProps`-ed at the end.
+- The server host (`serverSvgRef`) is markup-hidden (`opacity: 0`) so the finished server never flashes before hydration; the effect reveals it (also in the reduced-motion branch). The intro only plays when the page opens on state 1 (`saved === 0`); a reload that restores a later state just reveals it.
+- A wheel push during the intro lands it at once (`serverIntro.progress(1)` at the top of `goToState`). Verified: load-in frames, then 1→2→3→4 and back to 1 all correct, no errors.
+
+## State 7 no longer arrives already lit (2026-09-29)
+
+User: sometimes on reaching state 7 the board was already glowing, then went dark, then ignited ("ჯერ ნათება მხვდება, მერე ქრება და მერე ისევ ჩნდება"). The board fades in during the 6→7 crossing, before `gate7` (10.9, now `GATE7_AT`) starts the ignition, so it showed whatever an earlier visit left: a frozen mid-ignition frame (the unwind paused `seq7` but left flash/ring boost lit) or an unwind still running from a quick up-and-back; the gate then reset it dark and re-ignited.
+- `unwindPower7` zeroes the transient light at once (flash, ring boost, outline burst, spin rate).
+- `goToState`, when a flight crosses the gate from above: with no unwind running it resets the board OFF before it fades in; with an unwind still running (the board never left the screen) it calls `resume7()` — the unwind runs **backwards** and `seq7` carries on from where it was paused, so there is no dark frame and no second ignition. The gate skips its restart when `seq7` is already under way.
+- Measured (Playwright, synthetic trackpad swipes, lit = green outline or flash > 0 while the board is visible): plain arrival off → ignite; bounce mid-ignition and after ignition stay lit throughout; full leave then return: off → ignite; every case ends in the finished "on" state (charges drawn, outline green, terminal fully typed).
+
+## Cleanup + performance pass (2026-09-29)
+
+User: remove everything unused (the old build used other things) without breaking anything, and lift the Lighthouse performance score (75).
+
+**Removed** (all in git history):
+- `public/`: every file nothing loads at runtime — the Figma screenshots (4MB), `server.zip`, the old per-layer hero parts (`section-hero/Group-*`, `Line *`, `cap*`, `body*`, `part-mid*`), `closed.svg` (the unfold mounts opened.svg collapsed), `server-section.jpeg`, `section-2/`, `section-4/`, and the team exports whose shapes are already inlined in code (`border-form.svg`, `button/button-arrow`, `line*.svg`, `this-line.svg`, `line-pod-connect.svg`, the section-7 connector/board exports, `pricing/`, `footer/background-light-for.svg`, `last-section/`). `public/` went 5MB → 304KB; 13 files remain, each loaded by the page. Comments that name those files still describe where the inlined shapes came from.
+- Root: `Group 1574.png` and the old-build docs (`ANIMATION-FIX-PLAN.md`, `background-line-animations.md`, `grid-trail.md`, `hero-intro-animation.md`, `responsive-scaling.md`, `docs/old-scroll-animation.md`). Kept: `documentation.md` (spec), `RESPONSIVE-PLAN.md`, this file.
+- Empty `src/{animations,hooks,scenes,types,components/animations}` + `src/lib/.gitkeep`; `three` + `@types/three` (package.json + lock); `Claude outputs/` untracked from git (it was committed before being gitignored — files stay on disk).
+- Code: Footer's disabled reveal (it is a plain server component now, no gsap), unused exports (knip: grid.ts internals, BackgroundLines' re-exports, `SCENE_LIGHT_SIZE`).
+
+**Performance** (local Lighthouse, production build, median of 3; mobile = Moto G emulation): mobile **~57 → ~92** (LCP 5.7s → ~2.9s, TBT ~780 → ~150ms, HTML 806KB → 487KB), desktop ~90 → ~96 (noisy, TBT 110-300ms).
+- **Phone hero load-in is pure CSS** (`.m-hero` keyframes in globals.css) instead of a gsap timeline behind `visibility:hidden` — the hero copy was only painted after hydration (LCP 5.7s). Keyframes start at opacity **0.01**: Chrome ignores opacity-0 paints as LCP candidates, and the first attempt made a 10px lazy icon the LCP.
+- **Phone sections build lazily** (IntersectionObserver, 150% bottom margin → `ctx.add(build)`): building all nine timelines/ScrollTriggers at load was ~550ms of TBT.
+- **No inline svg props into HeroMobile**: every artwork was in the page twice (markup + RSC payload). Hero server and state-6 board are `<Image unoptimized>`; pods and agent svgs are fetched when their section nears, with ids prefixed (`m5-`/`m7-`) — the desktop scene's hidden inline copies have the same ids and `url(#id)` resolved to those, which had blanked the pods' green base gradient on phones (a pre-existing bug). The agent-svg processing moved to `src/lib/agentSvg.ts` (`processAgentSvg`), shared with HeroSection.
+- **Fonts**: Geist Sans dropped — only the store badges and the +/− glyphs used it; `--font-sans` is Space Grotesk. Geist Mono is `preload: false` (nothing mono above the fold).
+- Measured, not the bottleneck: the hidden desktop tree on phones (~0 TBT difference when removed).
+- **Next steps if more is needed**: the desktop scene still passes 5 inline svgs as props (markup + RSC payload ≈ 300KB of the remaining HTML) and builds its whole timeline at load (TBT 110-300ms on desktop).
+- **Testing note**: `next build` can't reach Google Fonts from the cloud sandbox; perf builds there swap `layout.tsx` to `next/font/local` with @fontsource files (measurement-only, never committed).
 
 ## Round 3: iPad Pro header, menu arrow + no sideways scroll, one-row phone buttons (2026-09-29)
 

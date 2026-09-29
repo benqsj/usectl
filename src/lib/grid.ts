@@ -2,19 +2,19 @@
 // to align with the grid should import from here instead of hardcoding its own copy of these
 // numbers, so the two can't silently drift apart.
 
-export const CANVAS_WIDTH_REF = 1920; // Figma canvas reference width
+const CANVAS_WIDTH_REF = 1920; // Figma canvas reference width
 
 // The narrowest width the design scales down to — below it --s stops shrinking (see globals.css).
-export const SCALE_FLOOR_WIDTH = 1024; // was 1280; lowered 2026-09-29 so 1024-1279 tablets (landscape) get the whole desktop scene scaled to fit instead of clipped at the right edge
-export const SCALE_FLOOR = SCALE_FLOOR_WIDTH / CANVAS_WIDTH_REF; // 0.53333
+const SCALE_FLOOR_WIDTH = 1024; // was 1280; lowered 2026-09-29 so 1024-1279 tablets (landscape) get the whole desktop scene scaled to fit instead of clipped at the right edge
+const SCALE_FLOOR = SCALE_FLOOR_WIDTH / CANVAS_WIDTH_REF; // 0.53333
 
 // THE way to write a design measurement in CSS. `s(136)` means "136px at 1920, proportionally less
 // below, proportionally more above" — see the --s comment in globals.css. It works anywhere a length
 // does: inline styles, Tailwind arbitrary values (`text-[calc(var(--s)*136)]`), inside calc().
 export const s = (px: number) => `calc(var(--s) * ${px})`;
 
-// The historical name for the same thing.
-export const vw = (px: number) => s(px);
+// The historical name for the same thing (used below for the grid geometry).
+const vw = (px: number) => s(px);
 
 // The same factor as a NUMBER, for the GSAP/JS side (px offsets, pin distances). Reads the
 // resolved custom property so the CSS stays the single source of truth; the innerWidth fallback
@@ -33,7 +33,7 @@ export const HEADER_HEIGHT_PX = 96; // Header.tsx h-24 — fixed on purpose, doe
 
 export const NUM_COLUMNS = 22; // 1722 / 82 + 1, matches the confirmed x=99..1820 span
 export const LINE_THICKNESS_PX = 2; // thicker than a hairline on purpose — with fluid (vw) pitch, 1px lines land on fractional device pixels and anti-alias unevenly (some crisp, some blurry); 2px makes that variance much less noticeable
-export const LINE_ALPHA = 0.02;
+const LINE_ALPHA = 0.02;
 export const LINE_COLOR = `rgba(255,255,255,${LINE_ALPHA})`;
 
 // Explicit hide-lists for vertical columns — replaces four failed CSS-mask attempts (mask-composite, data-URI SVG
@@ -42,9 +42,9 @@ export const LINE_COLOR = `rgba(255,255,255,${LINE_ALPHA})`;
 // "Start" columns (2-3) sit under the header logo; "middle" columns (9-14 wide / 8-15 narrow) sit under the header
 // nav text. The middle gap continues for exactly one row below the header, then the rest of the page shows the
 // full, unbroken grid.
-export const START_COLUMNS = new Set([2, 3]);
-export const MIDDLE_COLUMNS_WIDE = new Set([9, 10, 11, 12, 13, 14]); // hidden at >=1800px (FullHD-ish)
-export const MIDDLE_COLUMNS_NARROW = new Set([8, 9, 10, 11, 12, 13, 14, 15]); // hidden below 1800px
+const START_COLUMNS = new Set([2, 3]);
+const MIDDLE_COLUMNS_WIDE = new Set([9, 10, 11, 12, 13, 14]); // hidden at >=1800px (FullHD-ish)
+const MIDDLE_COLUMNS_NARROW = new Set([8, 9, 10, 11, 12, 13, 14, 15]); // hidden below 1800px
 
 export const HEADER_HIDE_WIDE = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_WIDE]);
 export const HEADER_HIDE_NARROW = new Set([...START_COLUMNS, ...MIDDLE_COLUMNS_NARROW]);

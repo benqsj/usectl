@@ -7,6 +7,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { mountMachine } from "./machineUnfold";
+import { processAgentSvg } from "@/lib/agentSvg";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -73,7 +74,7 @@ const PODS_SLAB_STARTS = [112, 58, 0] as const;
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
     <p data-m-copy className="flex items-center font-heading font-light text-white/60" style={{ gap: m(9), fontSize: m(12) }}>
-      <Image src="/section-hero/hatch.svg" alt="" width={36} height={12} aria-hidden="true" style={{ width: m(22), height: "auto" }} />
+      <Image src="/section-hero/hatch.svg" alt="" width={36} height={12} aria-hidden="true" loading="eager" unoptimized style={{ width: m(22), height: "auto" }} />
       {children}
     </p>
   );
@@ -180,17 +181,18 @@ function Terminal({ rows, dataKey }: { rows: { lead: string; parts: { t: string;
   );
 }
 
-export function HeroMobile({
-  serverSvg,
-  podsSvg,
-  agentSvg,
-  rightBoardSvg,
-}: {
-  serverSvg: string;
-  podsSvg: string;
-  agentSvg: string;
-  rightBoardSvg: string;
-}) {
+// No svg markup comes in as props any more: inlined, every artwork was in the page TWICE (markup +
+// the RSC payload), ~300KB of the ~800KB document. The hero server is a plain image (it only rises
+// and floats as a whole), the board a lazy image, and the two svgs whose parts animate (pods, agent)
+// are fetched when their section gets close.
+// ids are prefixed: the desktop scene (display:none here) inlines the same files, and a url(#id)
+// resolves to the FIRST element with that id — its hidden copy — which blanked the gradients
+const fetchSvg = (url: string, prefix: string) =>
+  fetch(url)
+    .then((r) => r.text())
+    .then((t) => t.replace(/id="([^"]+)"/g, `id="${prefix}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${prefix}$1)`));
+
+export function HeroMobile() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [counts, setCounts] = useState<Record<RowKey, number>>({ vcpu: 1, memory: 1, storage: 1 });
   const [annual, setAnnual] = useState(false);
@@ -201,7 +203,7 @@ export function HeroMobile({
     setCounts((c) => ({ ...c, [key]: Math.min(max, Math.max(1, c[key] + d)) }));
 
   useGSAP(
-    () => {
+    (ctx) => {
       const root = rootRef.current;
       if (!root) return;
       // crossing the 768 breakpoint swaps between two different builds — simplest correct answer
@@ -214,7 +216,6 @@ export function HeroMobile({
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const sections = Array.from(root.querySelectorAll<HTMLElement>("[data-m-section]"));
       if (reduced) {
-        gsap.set(root.querySelectorAll("[data-m-hidden]"), { autoAlpha: 1 });
         return () => mq.removeEventListener("change", onChange);
       }
 
@@ -271,19 +272,35 @@ export function HeroMobile({
           scrollTrigger: { trigger: section, start, toggleActions: "play none none reverse" },
         });
 
-      const [s1, s2, s3, s4, s5, s6, s7, s8, s9] = sections;
+      const [, s2, s3, s4, s5, s6, s7, s8, s9] = sections;
 
-      // 1. Hero — plays on load
-      {
-        gsap.set(s1, { visibility: "visible" });
-        const tl = gsap.timeline({ delay: 0.15 });
-        copyIn(tl, s1);
-        tl.fromTo(s1.querySelector("[data-m-server]"), { autoAlpha: 0, y: 40, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 1.1, ease: "power3.out" }, 0.35);
-        tl.add(() => s1.querySelector("[data-m-server]")?.classList.add("m-float"));
-      }
+      // Each section's timeline (and its ScrollTrigger, svg measuring, fetches…) is built LAZILY,
+      // when the section comes within ~1.5 screens of the viewport — building all nine up front
+      // was ~550ms of main-thread work at load (Lighthouse TBT). The trigger itself still starts
+      // at "top 70%", so the section is always set up well before it plays.
+      const pending = new Map<Element, () => void>();
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            io.unobserve(e.target);
+            const build = pending.get(e.target);
+            pending.delete(e.target);
+            if (build) ctx.add(build);
+          }
+        },
+        { rootMargin: "0px 0px 150% 0px" },
+      );
+      const lazy = (section: HTMLElement, build: () => void) => {
+        pending.set(section, build);
+        io.observe(section);
+      };
+
+      // 1. Hero — its load-in is pure CSS (.m-hero in globals.css): no JS on the critical path, so
+      // the hero copy is the LCP from the very first paint instead of waiting for hydration.
 
       // 2. Infrastructure Freedom — stat card, then the three layer labels wire in
-      {
+      lazy(s2, () => {
         const tl = onEnter(s2);
         copyIn(tl, s2);
         tl.fromTo(s2.querySelector("[data-m-stat]"), { autoAlpha: 0, y: 20 }, { autoAlpha: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.3);
@@ -295,10 +312,10 @@ export function HeroMobile({
           if (line) tl.to(line, { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, "<0.1");
           tl.fromTo(row.querySelector("[data-m-label-text]"), { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.4 }, "<0.25");
         });
-      }
+      });
 
       // 3. Your Stacks — the two pieces start docked and pull apart, guides draw between them
-      {
+      lazy(s3, () => {
         const tl = onEnter(s3);
         copyIn(tl, s3);
         const top = s3.querySelector("[data-m-top]");
@@ -308,10 +325,10 @@ export function HeroMobile({
         tl.fromTo(s3.querySelectorAll("[data-m-guide]"), { scaleY: 0 }, { scaleY: 1, duration: 0.6, stagger: 0.08, ease: "power2.out" }, 1.1);
         tl.fromTo(bottom, { filter: "grayscale(1) brightness(0.8)" }, { filter: "grayscale(0) brightness(1)", duration: 0.8 }, 1.1);
         panelIn(tl, s3, 1.3);
-      }
+      });
 
       // 4. Isolated Spaces — closed Machine arrives, then unfolds into the open one
-      {
+      lazy(s4, () => {
         const tl = onEnter(s4);
         copyIn(tl, s4);
         // same unfold as desktop: the collapsed (≡ closed.svg) machine arrives, the platforms rise,
@@ -323,11 +340,15 @@ export function HeroMobile({
         tl.fromTo(host, { autoAlpha: 0, y: 36, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.8, ease: "power3.out" }, 0.25);
         tl.fromTo(unfold, { p: 0 }, { p: 1, duration: 2.2, ease: "none", onUpdate: () => apply?.(unfold.p) }, 0.95);
         panelIn(tl, s4, 1.4);
-      }
+      });
 
       // 5. Pods — the three slabs rise in bottom-first, then float; cards follow, API deploys to 80%
-      {
-        const svg = s5.querySelector("[data-m-pods] svg");
+      lazy(s5, () => {
+        const host = s5.querySelector<HTMLElement>("[data-m-pods]");
+        if (!host) return;
+        fetchSvg("/section-5/server2.svg", "m5-").then((raw) => ctx.add(() => {
+        host.innerHTML = raw.replace('width="689" height="1007"', 'width="100%"');
+        const svg = host.querySelector("svg");
         const slabs: SVGGraphicsElement[][] = [[], [], []];
         if (svg) {
           Array.from(svg.children)
@@ -353,10 +374,11 @@ export function HeroMobile({
         });
         tl.eventCallback("onComplete", () => floats.forEach((f) => f.play()));
         tl.eventCallback("onReverseComplete", () => floats.forEach((f) => f.pause(0)));
-      }
+        })).catch(() => {});
+      });
 
       // 6. Continuous Deployment — typed push, bubbles run down to the board, POD deploys → LIVE
-      {
+      lazy(s6, () => {
         const tl = onEnter(s6);
         copyIn(tl, s6);
         const term = s6.querySelector("[data-m-terminal]");
@@ -374,13 +396,16 @@ export function HeroMobile({
           tl.to(link, { strokeDashoffset: 0, duration: 0.4, ease: "power2.out" }, ">");
         }
         tl.fromTo(s6.querySelector("[data-m-card-live]"), { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power2.out" }, ">-0.05");
-      }
+      });
 
       // 7. AI Infrastructure — the board arrives and lights up, the agent attaches in the terminal
-      {
+      lazy(s7, () => {
+        const board = s7.querySelector<HTMLElement>("[data-m-agent]");
+        if (!board) return;
+        fetchSvg("/section-7/fullserver.svg", "m7-").then((raw) => ctx.add(() => {
+        board.innerHTML = processAgentSvg(raw);
         const tl = onEnter(s7);
         copyIn(tl, s7);
-        const board = s7.querySelector("[data-m-agent]");
         tl.fromTo(board, { autoAlpha: 0, y: 36 }, { autoAlpha: 1, y: 0, duration: 0.9, ease: "power3.out" }, 0.25);
         const outline = board?.querySelector("[data-agent-outline]");
         if (outline) tl.to(outline, { attr: { stroke: "#11A32A", "stroke-opacity": 0.8 }, duration: 0.5 }, 1.0);
@@ -389,24 +414,28 @@ export function HeroMobile({
         const term = s7.querySelector("[data-m-terminal]");
         tl.fromTo(term, { autoAlpha: 0, y: 20 }, { autoAlpha: 1, y: 0, duration: 0.5 }, 1.3);
         typeIn(tl, term, 1.6, 44);
-      }
+        })).catch(() => {});
+      });
 
       // 8. Pricing
-      {
+      lazy(s8, () => {
         const tl = onEnter(s8);
         copyIn(tl, s8);
         tl.fromTo(s8.querySelector("[data-m-calc]"), { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.7, ease: "power3.out" }, 0.3);
         tl.fromTo(s8.querySelectorAll("[data-m-calc-row]"), { autoAlpha: 0, x: 10 }, { autoAlpha: 1, x: 0, duration: 0.4, stagger: 0.1 }, 0.6);
-      }
+      });
 
       // 9. closing CTA
-      {
+      lazy(s9, () => {
         const tl = onEnter(s9);
         copyIn(tl, s9);
         tl.fromTo(s9.querySelector("[data-m-glow9]"), { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 1.2, ease: "power2.out" }, 0);
-      }
+      });
 
-      return () => mq.removeEventListener("change", onChange);
+      return () => {
+        io.disconnect();
+        mq.removeEventListener("change", onChange);
+      };
     },
     { scope: rootRef },
   );
@@ -417,8 +446,7 @@ export function HeroMobile({
   return (
     <div ref={rootRef} className="relative overflow-x-clip" style={{ ["--m" as string]: "min(calc(100vw / 390), 1.3px)" }}>
       {/* 1 — hero */}
-      {/* hidden until the effect plays its load-in (reduced motion reveals it at once) */}
-      <section data-m-section data-m-hidden className="relative" style={{ ...sectionStyle, paddingTop: m(44), visibility: "hidden" }}>
+      <section data-m-section className="m-hero relative" style={{ ...sectionStyle, paddingTop: m(44) }}>
         <Eyebrow>Managed Kubernetes &amp; AI Agent Infrastructure</Eyebrow>
         <Heading as="h1">Build your product. We&rsquo;ll handle the infrastructure.</Heading>
         <Para>
@@ -432,7 +460,9 @@ export function HeroMobile({
             className="absolute left-1/2 -translate-x-1/2"
             style={{ bottom: m(-10), width: m(200), height: m(64), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.35) 0%, rgba(17,163,42,0) 70%)", filter: "blur(8px)" }}
           />
-          <div data-m-server className="relative" dangerouslySetInnerHTML={{ __html: serverSvg }} />
+          <div data-m-server className="relative">
+            <Image src="/section-hero/new-server.svg" alt="" width={421} height={687} priority unoptimized className="block h-auto w-full" />
+          </div>
         </div>
       </section>
 
@@ -541,7 +571,7 @@ export function HeroMobile({
           Your frontend, API, and workers can each have their own resources and deploy separately while staying connected inside
           the same project. In usectl, each running workload is a Pod.
         </Para>
-        <div data-m-pods className="relative mx-auto" style={{ width: m(190), marginTop: m(26) }} dangerouslySetInnerHTML={{ __html: podsSvg }} />
+        <div data-m-pods className="relative mx-auto" style={{ width: m(190), marginTop: m(26), aspectRatio: "689 / 1007" }} />
         <div className="font-mono" style={{ marginTop: m(24), display: "grid", gap: m(12) }}>
           {[
             { t: "[ POD // FRONTEND ]", st: "RUNNING v1.4.2", d: "Independent Deploy • 1 vCPU / 2GB" },
@@ -604,7 +634,9 @@ export function HeroMobile({
           ))}
         </div>
         <div className="relative mx-auto" style={{ width: m(250) }}>
-          <div data-m-board dangerouslySetInnerHTML={{ __html: rightBoardSvg }} />
+          <div data-m-board>
+            <Image src="/section-6/right-bottom.svg" alt="" width={348} height={220} unoptimized className="block h-auto w-full" />
+          </div>
           <div
             data-m-badge6
             className="absolute left-1/2 top-0 flex -translate-x-1/2 items-center whitespace-nowrap font-mono text-white/85"
@@ -663,7 +695,7 @@ export function HeroMobile({
             className="absolute left-1/2 -translate-x-1/2"
             style={{ bottom: m(-18), width: m(270), height: m(76), background: "radial-gradient(ellipse at center, rgba(17,163,42,0.3) 0%, rgba(17,163,42,0) 70%)", filter: "blur(10px)" }}
           />
-          <div data-m-agent className="relative" dangerouslySetInnerHTML={{ __html: agentSvg }} />
+          <div data-m-agent className="relative" style={{ aspectRatio: "521 / 329" }} />
         </div>
         <div
           data-m-badge7
