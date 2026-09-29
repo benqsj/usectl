@@ -16,6 +16,16 @@ gsap.registerPlugin(useGSAP);
 // green (the state-3/4 panels), Space Grotesk links, the mint scene light low right, and the
 // two pill buttons. Links blur-rise in with a stagger, like every text column on the page.
 
+// the hero "See how it works" arrow — the team's public/button/button-arrow/button-arrow.svg path,
+// inlined with currentColor (same as ButtonArrow in HeroSectionClient / HeroMobile)
+function MenuArrow({ size }: { size: number }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" style={{ width: size, height: size, flexShrink: 0 }}>
+      <path d="M8 16L16 8M16 14L16 8L10 8" stroke="currentColor" strokeOpacity={0.7} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 type NavLink = { label: string; href: string };
 
 export function MobileMenu({ links }: { links: readonly NavLink[] }) {
@@ -128,9 +138,12 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
             role="dialog"
             aria-modal="true"
             aria-label="Menu"
-            className="fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col overflow-y-auto lg:hidden"
+            className="fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col overflow-y-auto overflow-x-hidden overscroll-contain lg:hidden"
             style={{ visibility: "hidden", opacity: 0, background: "rgba(27,26,26,0.94)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
           >
+            {/* the light hangs off the right edge on purpose — clipped by its own layer so it
+                can never widen the panel (it did: a sideways-scrollable menu on phones/iPads) */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
             <div
               data-menu-light
               aria-hidden="true"
@@ -144,6 +157,7 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
                 filter: "blur(30px)",
               }}
             />
+            </div>
 
             <nav aria-label="Mobile" className="relative mx-auto w-full max-w-[640px] px-5 pt-8 sm:px-8">
               <p data-menu-row className="font-mono text-[11px] tracking-[0.12em] text-white/40">
@@ -160,8 +174,8 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
                     >
                       <span className="w-8 font-mono text-[12px] text-brand sm:text-[13px]">0{i + 1}/</span>
                       <span className="flex-1">{l.label}</span>
-                      <span aria-hidden="true" className="text-[18px] text-white/35 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand">
-                        &#8599;
+                      <span className="self-center text-white/50 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand group-active:text-brand">
+                        <MenuArrow size={26} />
                       </span>
                     </Link>
                     <span
@@ -176,20 +190,20 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
             </nav>
 
             <div className="relative mx-auto mt-auto w-full max-w-[640px] px-5 pb-10 pt-10 sm:px-8">
-              <div data-menu-foot className="flex flex-wrap gap-3">
+              <div data-menu-foot className="flex flex-nowrap gap-2.5">
                 <Link
                   href="#start"
                   onClick={() => setOpen(false)}
-                  className="flex h-12 items-center justify-center rounded-full border border-white/25 px-6 font-heading text-[15px] font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
+                  className="flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-white/25 px-5 font-heading text-[14px] font-semibold text-foreground transition-colors hover:border-brand hover:text-brand active:border-brand active:text-brand"
                 >
                   Start Building
                 </Link>
                 <Link
                   href="#how"
                   onClick={() => setOpen(false)}
-                  className="flex h-12 items-center justify-center gap-1.5 rounded-full border border-white/25 px-6 font-heading text-[15px] text-foreground transition-colors hover:border-brand hover:text-brand"
+                  className="flex h-11 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded-full border border-white/25 pl-5 pr-4 font-heading text-[14px] text-white/90 transition-colors hover:border-brand hover:text-brand active:border-brand active:text-brand"
                 >
-                  See how it works <span aria-hidden="true">&#8599;</span>
+                  See how it works <MenuArrow size={22} />
                 </Link>
               </div>
               <div data-menu-foot className="mt-8 flex items-center justify-between font-heading text-[13px] text-white/45">

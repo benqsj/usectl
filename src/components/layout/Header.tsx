@@ -54,7 +54,7 @@ export function Header() {
           aria-label="Primary"
           className="absolute left-1/2 hidden -translate-x-1/2 lg:block"
         >
-          <ul className="flex items-center gap-8 font-heading text-base text-white/80">
+          <ul className="flex items-center gap-8 whitespace-nowrap font-heading text-base text-white/80 max-[1279.98px]:gap-6 max-[1279.98px]:text-[15px]">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
                 <Link href={link.href} className="transition-colors hover:text-white">

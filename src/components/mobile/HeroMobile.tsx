@@ -37,7 +37,7 @@ const PILL =
 // the label), exactly as the desktop "See how it works" button draws it
 function ButtonArrow() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" style={{ width: m(20), height: m(20), flexShrink: 0 }}>
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" style={{ width: m(18), height: m(18), flexShrink: 0 }}>
       <path d="M8 16L16 8M16 14L16 8L10 8" stroke="currentColor" strokeOpacity={0.7} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -101,14 +101,15 @@ function Para({ children }: { children: ReactNode }) {
 
 function Buttons() {
   return (
-    <div data-m-copy className="flex flex-wrap items-center" style={{ gap: m(10), marginTop: m(22) }}>
-      <Link href="#start" className={`${PILL} font-semibold`} style={{ height: m(42), paddingInline: m(22), fontSize: m(13.5) }}>
+    // compact enough that both pills stay on ONE row down to a 360px phone (m() shrinks with the width)
+    <div data-m-copy className="flex flex-nowrap items-center" style={{ gap: m(8), marginTop: m(22) }}>
+      <Link href="#start" className={`${PILL} shrink-0 whitespace-nowrap font-semibold`} style={{ height: m(38), paddingInline: m(16), fontSize: m(12.5) }}>
         Start Building
       </Link>
       <Link
         href="#how"
-        className={`${PILL} font-normal text-white/90`}
-        style={{ height: m(42), paddingLeft: m(22), paddingRight: m(17), fontSize: m(13.5), gap: m(3) }}
+        className={`${PILL} shrink-0 whitespace-nowrap font-normal text-white/90`}
+        style={{ height: m(38), paddingLeft: m(16), paddingRight: m(12), fontSize: m(12.5), gap: m(2) }}
       >
         See how it works <ButtonArrow />
       </Link>

@@ -96,6 +96,13 @@ The team supplied the shape each light should have: `public/pricing/pricing-back
   - Footer: left 1052, top 60.
 - The SVG files themselves are not imported; SceneLight carries their data. If the team re-exports a shape, update `LIGHTS` in SceneLight.tsx.
 
+## Round 3: iPad Pro header, menu arrow + no sideways scroll, one-row phone buttons (2026-09-29)
+
+- **iPad mini (768×1024) with the desktop scene — tested, NOT adopted.** With the floor dropped to 768/1920 (--s 0.4) the scene fits, but body copy renders at ~8.5px and the 980-tall stage fills only ~390px of the 1024px portrait screen. Reported to the user with screenshots; < 1024 stays on the stacked version.
+- **Header nav at 1024–1279** wrapped "The Machine" onto two lines with the real Space Grotesk (the test browser had been measuring a fallback font — fonts are now injected from @fontsource in Playwright tests). The nav is `whitespace-nowrap` and uses `text-[15px]` / `gap-6` below 1280 (measured 470px wide, single line at 1024/1032/1180/1279); the `.header-cols` mask's ±247px half-width matches it.
+- **Burger menu**: rows and "See how it works" use the hero button's arrow (button-arrow.svg path, `MenuArrow`) instead of the ↗ glyph; footer pills are one compact row (h-11, 14px, nowrap). **Sideways scroll fixed**: the panel is `overflow-y-auto`, which forces x to auto too, and the mint light hangs 30% off its right edge, so the panel scrolled horizontally (scrollWidth 507 on a 390 phone). The light now sits in its own `absolute inset-0 overflow-hidden` layer, the panel is also `overflow-x-hidden overscroll-contain`; scrollWidth = viewport at 360/390/430/768/820.
+- **HeroMobile pills**: `flex-nowrap`, h m(38), 12.5px, padding 16/12, arrow m(18) — both stay on one row down to 360px (measured).
+
 ## Phone/tablet polish round 2 (2026-09-29)
 
 User feedback on the < 1024 version and the 1024-1279 header:
