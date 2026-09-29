@@ -47,22 +47,29 @@ export function Footer() {
   );
 
   return (
+    // The base stays DARK (#1b1a1a, sampled as rgb(26,26,26) in the design's own footer-light.png)
+    // — the footer's brightness is not a lighter fill, it's the mint glow below.
     <footer
       ref={footerRef}
       className="relative overflow-hidden"
       style={{ height: s(800), background: "#1b1a1a", borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
-      {/* soft green wash over the watermark's right side */}
+      {/* The scene light. Re-fitted against Desktop/new-version/background-light-forms3.png
+          (the full-width footer ref): green-excess samples at design coords — y576 → 1134:0
+          1328:8 1522:20 1716:20 1878:16; x1522 → 188:0 272:4 382:13 576:20 738:14. That is a
+          mint blob centred (1650,610) with radii ~420×340 and a peak of rgba(90,255,200) at
+          α≈0.125 (G−R = α·165). The footer's own fill stays #1b1a1a — the light does the work. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute"
         style={{
-          left: s(1050),
-          top: s(300),
-          width: s(900),
-          height: s(560),
-          background: "radial-gradient(ellipse at center, rgba(17,163,42,0.10) 0%, rgba(17,163,42,0) 65%)",
-          filter: `blur(${s(30)})`,
+          left: s(1230),
+          top: s(270),
+          width: s(840),
+          height: s(680),
+          background:
+            "radial-gradient(ellipse at center, rgba(90,255,200,0.125) 0%, rgba(90,255,200,0.09) 40%, rgba(90,255,200,0.035) 70%, rgba(90,255,200,0) 95%)",
+          filter: `blur(${s(40)})`,
         }}
       />
 
@@ -205,7 +212,23 @@ export function Footer() {
           className="flex cursor-pointer items-center font-light text-white/60"
           style={{ marginTop: s(18), gap: s(9), fontSize: s(14.5) }}
         >
-          <input type="checkbox" className="accent-brand" style={{ width: s(14), height: s(14) }} />
+          {/* the native box rendered as a heavy solid square in dark mode — this is the design's
+              own shape instead: a thin-bordered rounded square that fills green when checked */}
+          <span className="relative inline-block shrink-0" style={{ width: s(15), height: s(15) }}>
+            <input
+              type="checkbox"
+              className="peer absolute inset-0 m-0 cursor-pointer appearance-none border border-white/25 bg-transparent transition-colors checked:border-brand checked:bg-brand"
+              style={{ borderRadius: s(4) }}
+            />
+            <svg
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 hidden h-full w-full peer-checked:block"
+            >
+              <path d="M3 6.2 5.1 8.3 9 4.2" stroke="#1e1d1d" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
           I agree to the terms and conditions.
         </label>
       </div>

@@ -39,6 +39,16 @@ body {
   color: var(--foreground);
 }
 
+/* state-6 terminal: the final block cursor blinks once typing is done */
+@keyframes t6-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.t6-blink {
+  animation: t6-blink 1s steps(1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

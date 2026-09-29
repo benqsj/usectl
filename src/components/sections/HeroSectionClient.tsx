@@ -30,7 +30,9 @@ gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, useGSAP);
 const PIN_SCROLL_DISTANCE = 12800;
 
 // State 1 server placement (design px), and where state 2 moves/scales it to.
-const SERVER_STATE1 = { left: 1362, top: 85, width: 370 };
+// top 125 (was 85): lowered a bit per user request; the state-2 glide auto-compensates
+// because SERVER_DY derives from this constant
+const SERVER_STATE1 = { left: 1362, top: 125, width: 370 };
 const SERVER_NATIVE = { w: 421, h: 687 };
 const SERVER_STATE2 = { centerX: 960, top: 126 };
 const SERVER_DX = SERVER_STATE2.centerX - (SERVER_STATE1.left + SERVER_STATE1.width / 2); // -587
@@ -39,15 +41,38 @@ const SERVER_SCALE = SERVER_NATIVE.w / SERVER_STATE1.width; // ≈1.138
 
 // State 2 right-side callouts: elbow lines from the server's right edge to their labels
 // (design px, read off the reference with a coordinate grid; server top at SERVER_STATE2.top).
+// start x = each layer's pixel-measured right edge +1 (canvas scan of new-server.svg rows
+// 260/390/524 → art edge at 419/417/419 → design 1169/1167/1169): the lines TOUCH the side
+// of each layer — the original 1163 started slightly ON the face, 1195 left a visible gap
+// The callout connectors are the user's own export, public/section-2/line2.svg (196×53):
+// horizontal run → 8px rounded corner UP → vertical → 8px rounded corner → horizontal, stroked
+// white at 0.17. The asset's exact corner cubics are reproduced here (control points at
+// 0.5523·r, Figma's circle constant) so the shape is identical, and the turn sits at the same
+// 62.1% of the span as in the file (121.794 / 196). Only the endpoints are ours: each line still
+// starts on its layer's pixel-measured side edge and ends at the label's arrowhead.
+const CALLOUT_R = 8;
+const CALLOUT_C = 4.418; // 0.5523 × 8 — the corner's Bézier handle length, as exported
+const CALLOUT_TURN = 121.794 / 196; // where the vertical run sits along the span, per the asset
+const calloutElbow = (x0: number, y0: number, x1: number, y1: number) => {
+  const xt = Math.round(x0 + (x1 - x0) * CALLOUT_TURN);
+  return (
+    `M ${x0} ${y0} H ${xt - CALLOUT_R} ` +
+    `C ${xt - CALLOUT_R + CALLOUT_C} ${y0} ${xt} ${y0 - CALLOUT_R + CALLOUT_C} ${xt} ${y0 - CALLOUT_R} ` +
+    `V ${y1 + CALLOUT_R} ` +
+    `C ${xt} ${y1 + CALLOUT_R - CALLOUT_C} ${xt + CALLOUT_R - CALLOUT_C} ${y1} ${xt + CALLOUT_R} ${y1} ` +
+    `H ${x1}`
+  );
+};
 const CALLOUT_LINES = [
-  "1163,386 1285,386 1330,339 1362,339",
-  "1163,516 1250,516 1292,474 1308,474",
-  "1163,650 1265,650 1307,606 1330,606",
+  calloutElbow(1170, 386, 1362, 339),
+  calloutElbow(1168, 516, 1308, 474),
+  calloutElbow(1170, 650, 1330, 606),
 ] as const;
+// label x = line end + 16 (arrowheads sit in between — "ტექსტი ოდნავ მარჯვნივ, ზედ არ დააჯდეს")
 const CALLOUT_LABELS = [
-  { text: "Auto-scaling K8s Cluster", x: 1372, y: 330 },
-  { text: "Isolated Micro-VM Kernel", x: 1318, y: 465 },
-  { text: "Encrypted Postgres Storage", x: 1340, y: 597 },
+  { text: "Auto-scaling K8s Cluster", x: 1378, y: 330, ax: 1362, ay: 339 },
+  { text: "Isolated Micro-VM Kernel", x: 1324, y: 465, ax: 1308, ay: 474 },
+  { text: "Encrypted Postgres Storage", x: 1346, y: 597, ax: 1330, ay: 606 },
 ] as const;
 
 // State 3 stack geometry. The 2→3 transition works INSIDE the inline server svg (fade the
@@ -118,9 +143,19 @@ const PANEL4_ITEMS = [
 // page center per user feedback; at this size the svg's stack content spans section-y ≈182-798,
 // i.e. vertically centered on the s(980) canvas. Slab top-face tops land at ≈182/424/618
 // (native 178/476/715 × 560/689 scale) — the POD y values below derive from those.
-const SERVER5 = { w: 560, left: 650, top: 37, imgDy: 0 };
-const POD_LABEL_X = 1490;
-const PODS = [
+// left 650 -> 690 and POD_LABEL_X 1490 -> 1450 -> 1410 (user: svg a bit right, right-hand
+// text a bit left, then a second nudge left).
+const SERVER5 = { w: 560, left: 690, top: 37, imgDy: 0 };
+const POD_LABEL_X = 1410;
+const POD_PROGRESS = 80; // the API pod's deploy percentage - the bar/number animate up to it
+const PODS: {
+  title: string;
+  status: string;
+  percent?: number;
+  deploying: boolean;
+  desc: string;
+  y: number;
+}[] = [
   {
     title: "[ POD // FRONTEND ]",
     status: "RUNNING v1.4.2",
@@ -130,7 +165,8 @@ const PODS = [
   },
   {
     title: "[ POD // API ]",
-    status: "DEPLOYING v2.1.0 (80%)",
+    status: "DEPLOYING v2.1.0",
+    percent: POD_PROGRESS,
     deploying: true,
     desc: "Zero Downtime \u2022 2 vCPU / 4GB",
     y: 398,
@@ -142,15 +178,17 @@ const PODS = [
     desc: "Async Processing \u2022 1 vCPU / 1GB",
     y: 563,
   },
-] as const;
+];
 // rounded "right, up, right" elbow ending at the arrow tip (ex, ey) — same shape as
 // arrow-line.svg. Start point = each slab's right corner, PIXEL-MEASURED from server2.svg via
 // canvas alpha-scan (native corners x≈600/y 275,512,715 → stage (1138, 261/453/618) at the
 // 560-wide render): start x = ex-340 = 1138; start y = ey+45 = pod.y+55, so the POD y values
 // are corner_y − 55 = 206/398/563. Earlier values eyeballed off formulas missed slab 2 by 52px
 // and the base by 81px (the slabs' pitch and the base's thickness are both irregular).
+// (start x is derived from SERVER5.left so the lines keep touching the corners if the art moves)
+const POD_LINE_START_X = SERVER5.left + 488;
 const podElbow = (ex: number, ey: number) =>
-  `M ${ex - 340} ${ey + 45} H ${ex - 88} Q ${ex - 80} ${ey + 45} ${ex - 80} ${ey + 37} ` +
+  `M ${POD_LINE_START_X} ${ey + 45} H ${ex - 88} Q ${ex - 80} ${ey + 45} ${ex - 80} ${ey + 37} ` +
   `V ${ey + 8} Q ${ex - 80} ${ey} ${ex - 72} ${ey} H ${ex}`;
 
 // State 6: Continuous Deployment (built against Desktop/new-version/section-6 screenshots).
@@ -160,26 +198,45 @@ const podElbow = (ex: number, ey: number) =>
 // A terminal window ("usectl // repository-pipeline") feeds a green push line down to a node on
 // the board, a gradient-bordered BUILD badge pops, then two status cards (deploying → live) wire
 // to the board with the same rounded elbows as state 5. All numbers are design px at 1920.
-const BOARD6 = { w: 580, h: Math.round((580 * 220) / 348), left: 794, top: 530 };
+// The board and the two status cards were nudged UP 45px (user: "svg-ც და მარჯვნივ ტექსტიც
+// ოდნავ მაღლა") — the terminal stays put, so the push line just gets 45px shorter; every
+// board-anchored number below (node, elbow starts, card tops, DEPLOY6_LINES) moved with it.
+// w 580 → 500 on user request ("svg დააპატარავე ცოტა"), scaled about its own CENTRE so the
+// push pipe still lands on the same spot: left 794 → 834, top 485 → 510. Everything anchored to
+// the board moved with it — the ring (NODE6, and PIPE6_* derive from it), elbow 1's start, and
+// the status cards, which came 20px left so the connector doesn't stretch.
+const BOARD6 = { w: 500, h: Math.round((500 * 220) / 348), left: 834, top: 510 };
 const TERMINAL6 = { left: 966, top: 311, w: 268 };
-const PUSH_LINE6 = { x: 1083, top: 461, height: 200 }; // terminal bottom → the board node
-const NODE6 = { x: 1083, y: 661, size: 16 };
+const NODE6 = { x: 1083, y: 623, size: 16 };
+const NODE6_DIM = 0.3; // the ring's unlit opacity before the pipe reaches it
+// The push "pipe" (user-approved demo B): two walls 5px either side of x, starting ~7px under the
+// terminal's bottom (it sat glued to it otherwise) and ending EXACTLY on the ring's outline
+// (it used to run into the ring's center). Green "info" dots + packets rise inside, node → terminal.
+const PIPE6 = { x: 1083, half: 5, top: 468, wall: 1.5 };
+const PIPE6_BOTTOM =
+  NODE6.y - Math.sqrt((NODE6.size / 2) ** 2 - PIPE6.half ** 2) - 0.6; // ≈609.2, on the ring
+const PIPE6_H = PIPE6_BOTTOM - PIPE6.top;
+const PIPE6_INNER_W = PIPE6.half * 2 - PIPE6.wall; // particle canvas width (design px)
+const PIPE6_CANVAS_K = 4; // canvas px per design px (crisp up to --s 2 at DPR 2)
 const BADGE6 = { left: 1227, top: 494 };
-const DEPLOY6_X = 1429; // cards' left edge; elbows end just short of it
+const DEPLOY6_X = 1409; // cards' left edge; elbows end just short of it
+const DEPLOY6_CARD_TOPS = { pod: 535, live: 704 };
+const DEPLOY6_PROGRESS = 64; // the POD card's deploy bar fills to this, then the LIVE line draws
 // same rounded "right, up, right" shape as podElbow but with a free start point
 const deployElbow = (sx: number, sy: number, ex: number, ey: number) =>
   `M ${sx} ${sy} H ${ex - 53} Q ${ex - 45} ${sy} ${ex - 45} ${sy - 8} ` +
   `V ${ey + 8} Q ${ex - 45} ${ey} ${ex - 37} ${ey} H ${ex}`;
-const DEPLOY6_LINES = [
+// x of the straight POD→LIVE drop: the cards' left accent-bar centre (padding 18 + half of 6)
+const DEPLOY6_LINE_X = DEPLOY6_X + 21;
+const DEPLOY6_LINES: readonly { d: string; ey: number; arrow?: boolean; hairline?: boolean }[] = [
   // board right corner → the deploying card
-  { d: deployElbow(1378, 700, DEPLOY6_X - 5, 612), ey: 612 },
-  // the LIVE card feeds from the POD//API card ABOVE it, not from the board (user request):
-  // exit the card's left edge, drop down outside it, hook right into the LIVE card's title
-  {
-    d: `M ${DEPLOY6_X} 660 H 1410 Q 1402 660 1402 668 V 772 Q 1402 780 1410 780 H ${DEPLOY6_X - 5}`,
-    ey: 780,
-  },
-] as const;
+  { d: deployElbow(1338, 656, DEPLOY6_X - 5, 567), ey: 567, arrow: true },
+  // POD//API → LIVE: the user's own export, public/section-6/line.svg (1×49 vertical hairline,
+  // stroke white @0.1, no arrowhead), inlined verbatim so it can dash-draw. It drops straight
+  // from the POD card's bottom edge (656) to the LIVE card's top (704) — the 47.7px gap between
+  // the two cards matches the asset's 49px length. Replaces the old hook-around elbow.
+  { d: `M ${DEPLOY6_LINE_X} 656 V 704`, ey: 704, hairline: true },
+];
 
 // State 7: AI Infrastructure (built against Desktop/new-version/section-7/). The state-6 board
 // shrinks/glides into place as the composition's RIGHT board (right-bottom.svg is byte-identical
@@ -188,7 +245,12 @@ const DEPLOY6_LINES = [
 // all baked in; it replaced the empty main-server.svg tray + a hand-drawn inline overlay once the
 // user got the full export through), plus bottom-left-server.svg below and short curved
 // connectors between board edges.
-const AGENT7 = { w: 521, left: 763, top: 480 };
+// The WHOLE state-7 composition (boards, badge, terminal, connectors — everything except the
+// left text column) is lifted by S7_DY on user request; the bottom-left board used to run past
+// the stage's 980px bottom edge. Every constant below folds it in, and the connectors <svg>
+// wraps its paths in one translate(0, S7_DY) group so the hand-written path strings stay as-is.
+const S7_DY = -50;
+const AGENT7 = { w: 521, left: 763, top: 480 + S7_DY };
 // Board positions SOLVED from the connectors (user rule: "ისრები სადაც მთავრდება, მანდ უნდა
 // იჯდნენ ის ნაწილები"): arrow A's tip (1287,709) lies exactly on the right board's top-left
 // edge AND the connect-both squiggle's upper end (1330,805) on its bottom-left edge → right
@@ -197,10 +259,10 @@ const AGENT7 = { w: 521, left: 763, top: 480 };
 // squiggle itself stays put at translate(1316,805) and now BRIDGES the two boards.
 // nudged apart along the squiggle's own axis (~9px each side) so connect-both sits centered
 // with visible air on both sides ("შუაში იჯდეს") while both arrow tips stay on the edges
-const BOARD6_TO7 = { dx: 1245 - BOARD6.left, dy: 634 - BOARD6.top, scale: 348 / BOARD6.w };
-const BOTTOM7 = { w: 348, left: 1056, top: 779 };
-const BADGE7 = { left: 1005, top: 320, w: 214 };
-const TERMINAL7 = { left: 1455, top: 359, w: 360 };
+const BOARD6_TO7 = { dx: 1245 - BOARD6.left, dy: 634 + S7_DY - BOARD6.top, scale: 348 / BOARD6.w };
+const BOTTOM7 = { w: 348, left: 1056, top: 779 + S7_DY };
+const BADGE7 = { left: 1005, top: 320 + S7_DY, w: 214 };
+const TERMINAL7 = { left: 1455, top: 359 + S7_DY, w: 360 };
 // Connectors traced from the evening reference screens; all anchor coordinates are
 // pixel-measured board extremes (canvas alpha-scan): main top vertex (1007,488), main right
 // corner (1267,623), main bottom-edge midpoint (1141,709), right-board left corner (1292,640),
@@ -212,15 +274,29 @@ const TERMINAL7 = { left: 1455, top: 359, w: 360 };
 // translated so its start touches the main board's edge (S1≈(1155,565), S2≈(1215,596)).
 // The files carry no arrowheads — the triangles are ours, oriented along each path's end
 // tangent per the check-lines reference (into the right board's edge; down at the bottom board).
-const CONNECTOR7_LINES: readonly { tx: number; ty: number; d: string; arrow?: string; flip?: boolean }[] = [
+const CONNECTOR7_LINES: readonly {
+  tx: number;
+  ty: number;
+  d: string;
+  arrow?: string;
+  flip?: boolean;
+  scale?: readonly [number, number];
+}[] = [
   // main board's lower-right edge -> right board's top-left corner: the user's
   // right-bottom-line.svg UNFLIPPED (per the 7:44PM design capture: it starts right next to
   // line B — "ორივე თითქმის ერთი ადგილიდან" — dips into a bowl, then rises diagonally to the
   // board's corner, ending with its baked-in down-hook; our arrow continues that hook into
   // the board's edge)
+  // Its START now sits right beside line B's, on the same board edge (user: "მარჯვენა line-იც
+  // თითქმის იქიდან უნდა იწყებოდეს, საიდანაც მარცხენა" — 1172,726 vs B's 1168,728, ~4.5px apart).
+  // The exported shape can't be stretched by moving it, so the transform maps its two endpoints:
+  // local (0.33,43.48) → (1172,726) and local (119.83,5.98) → the UNCHANGED (1309.5,681.5), i.e.
+  // scale (1.1506, 1.1867) about that translate. The end and its arrowhead therefore stay
+  // exactly on the right board's edge; only the tail slides over to meet line B.
   {
-    tx: 1189.7,
-    ty: 675.5,
+    tx: 1171.62,
+    ty: 674.4,
+    scale: [1.1506, 1.1867],
     d: "M0.330811 43.4829L6.92649 49.3026C13.0576 54.7124 22.0648 55.3102 28.857 50.7579L100.109 3.00402C106.463 -1.25493 115.018 0.0371146 119.831 5.98291",
     arrow: "M 1306 684 L 1313 679 L 1316 690 Z",
   },
@@ -288,6 +364,8 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
   const terminal6Ref = useRef<HTMLDivElement>(null);
   const pushLine6Ref = useRef<HTMLDivElement>(null);
   const node6Ref = useRef<HTMLDivElement>(null);
+  const pipe6WrapRef = useRef<HTMLDivElement>(null);
+  const pipe6CanvasRef = useRef<HTMLCanvasElement>(null);
   const badge6Ref = useRef<HTMLDivElement>(null);
   const deploy6Ref = useRef<HTMLDivElement>(null);
   const seventhTextRef = useRef<HTMLDivElement>(null);
@@ -340,6 +418,8 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       const terminal6 = terminal6Ref.current;
       const pushLine6 = pushLine6Ref.current;
       const node6 = node6Ref.current;
+      const pipe6Wrap = pipe6WrapRef.current;
+      const pipe6Canvas = pipe6CanvasRef.current;
       const badge6 = badge6Ref.current;
       const deploy6 = deploy6Ref.current;
       const seventhText = seventhTextRef.current;
@@ -357,7 +437,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         !box || !callouts || !bottomPiece || !guides || !panel || !panelLine ||
         !fourthText || !machine || !machineOpen || !panel4 || !panel4Line ||
         !fifthText || !server5 || !pods ||
-        !sixthText || !board6 || !terminal6 || !pushLine6 || !node6 || !badge6 || !deploy6 ||
+        !sixthText || !board6 || !terminal6 || !pushLine6 || !node6 || !pipe6Wrap || !pipe6Canvas || !badge6 || !deploy6 ||
         !seventhText || !agent7 || !bottom7 || !badge7 || !badgeLine7 ||
         !terminal7 || !connectors7 || !pricing8 || !final9 || !rulerFill
       ) {
@@ -368,23 +448,120 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       // height already matches; collapse it before the real pin-spacer takes over (never both).
       if (ssrReserveRef.current) ssrReserveRef.current.style.height = "0px";
 
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        // no animation at all: just show the hero column, which is markup-hidden for the blur-in
+        gsap.set(heroText, { opacity: 1 });
+        return;
+      }
 
       const k = () => readScale();
-      const lines = Array.from(callouts.querySelectorAll<SVGPolylineElement>("polyline"));
+
+      // --- blur-stagger text (restored from the pre-reset BlurText + stepSwap pair) ----------
+      // Every left-hand column now enters word by word, un-blurring and rising, one field after
+      // another — the behaviour the user asked to bring back ("სათითაოდ და ბლურით, როგორც წინა
+      // ვერსიაში"). The words are split at RUNTIME instead of in JSX: the markup stays readable
+      // and SSR-identical, and React never re-renders these nodes, so the injected spans survive
+      // the pricing calculator's state updates. Values are the old ones (blur 12px, y 8,
+      // power3.out, per-field stagger + delay), converted from seconds to timeline units.
+      const BLUR_DUR = 0.45;
+      const BLUR_STAGGER = [0.022, 0.045, 0.01]; // eyebrow / heading / paragraph
+      const BLUR_OFFSET = [0, 0.05, 0.14];
+      const splitWords = (host: HTMLElement, inline = false) => {
+        const texts: Text[] = [];
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) texts.push(walker.currentNode as Text);
+        const words: HTMLElement[] = [];
+        texts.forEach((node) => {
+          const value = node.textContent ?? "";
+          if (!value.trim()) return;
+          // one wrapper per text node keeps the flex-item count of a row unchanged
+          const wrap = document.createElement("span");
+          value.split(/(\s+)/).forEach((part) => {
+            if (!part) return;
+            if (!part.trim()) {
+              wrap.appendChild(document.createTextNode(part));
+              return;
+            }
+            const word = document.createElement("span");
+            word.setAttribute("data-blur-word", "");
+            // inline (not inline-block) inside bg-clip-text headings: an inline-BLOCK child
+            // starts its own box, and the parent's background-clip:text then paints nothing —
+            // the state-8 gradient headline vanished completely the first time round
+            word.style.display = inline ? "inline" : "inline-block";
+            word.textContent = part;
+            wrap.appendChild(word);
+            words.push(word);
+          });
+          node.parentNode?.replaceChild(wrap, node);
+        });
+        return words;
+      };
+      // one field (a heading, a paragraph, an eyebrow row): its words stagger; any image in it
+      // (the green hatch) leads them in
+      const blurField = (field: HTMLElement, at: number, rank: number, useOffset = true) => {
+        const stagger = BLUR_STAGGER[Math.min(rank, BLUR_STAGGER.length - 1)];
+        const offset = useOffset ? BLUR_OFFSET[Math.min(rank, BLUR_OFFSET.length - 1)] : 0;
+        // button rows and bordered boxes move as ONE piece — splitting their words would animate
+        // the label while the border sat there already drawn
+        const whole = field.hasAttribute("data-blur-block") || !!field.querySelector("a,button");
+        // gradient (background-clip:text) headings must keep their words INLINE, and inline boxes
+        // can't be transformed — they fade and un-blur in place instead of rising
+        const gradient = !!field.querySelector(".bg-clip-text") || field.classList.contains("bg-clip-text");
+        const imgs = whole ? [] : Array.from(field.querySelectorAll<HTMLElement>("img"));
+        const targets = whole ? [] : [...imgs, ...splitWords(field, gradient)];
+        if (targets.length) {
+          tl.fromTo(
+            targets,
+            { opacity: 0, filter: "blur(12px)", ...(gradient ? {} : { y: () => 8 * k() }) },
+            {
+              opacity: 1,
+              filter: "blur(0px)",
+              ...(gradient ? {} : { y: 0 }),
+              duration: BLUR_DUR,
+              ease: "power3.out",
+              stagger,
+            },
+            at + offset,
+          );
+        } else {
+          tl.fromTo(
+            field,
+            { autoAlpha: 0, y: () => 14 * k() },
+            { autoAlpha: 1, y: 0, duration: BLUR_DUR, ease: "power3.out" },
+            at + offset,
+          );
+        }
+      };
+      // a whole left column: the container just becomes visible, its fields do the motion
+      const blurTextIn = (host: HTMLElement, at: number) => {
+        tl.set(host, { autoAlpha: 1 }, at);
+        Array.from(host.children).forEach((child, i) => blurField(child as HTMLElement, at, i));
+      };
+      // a single element that carries its own hidden state (the pricing headline/paragraph)
+      const blurItemIn = (el: HTMLElement, at: number, rank: number) => {
+        tl.set(el, { autoAlpha: 1 }, at);
+        blurField(el, at, rank, false);
+      };
+      const lines = Array.from(callouts.querySelectorAll<SVGPathElement>("[data-callout-line]"));
       const labels = Array.from(callouts.querySelectorAll<HTMLElement>("[data-callout-label]"));
+      const calloutArrows = Array.from(callouts.querySelectorAll<SVGPathElement>("[data-callout-arrow]"));
       const panelItems = Array.from(panel.querySelectorAll<HTMLElement>("[data-panel-item]"));
       const panel4Items = Array.from(panel4.querySelectorAll<HTMLElement>("[data-panel-item]"));
       const podLines = Array.from(pods.querySelectorAll<SVGPathElement>("[data-pod-line]"));
       const podArrows = Array.from(pods.querySelectorAll<SVGPathElement>("[data-pod-arrow]"));
       const podItems = Array.from(pods.querySelectorAll<HTMLElement>("[data-pod-item]"));
+      const podBar = pods.querySelector<HTMLElement>("[data-pod-bar]");
+      const podPercent = pods.querySelector<HTMLElement>("[data-pod-percent]");
       const deployLines = Array.from(deploy6.querySelectorAll<SVGPathElement>("[data-deploy-line]"));
       const deployArrows = Array.from(deploy6.querySelectorAll<SVGPathElement>("[data-deploy-arrow]"));
       const deployItems = Array.from(deploy6.querySelectorAll<HTMLElement>("[data-deploy-item]"));
+      const deployBar = deploy6.querySelector<HTMLElement>("[data-deploy-bar]");
+      const deployPercent = deploy6.querySelector<HTMLElement>("[data-deploy-percent]");
       const connectorLines = Array.from(connectors7.querySelectorAll<SVGPathElement>("[data-connector-line]"));
       const connectorArrows = Array.from(connectors7.querySelectorAll<SVGPathElement>("[data-connector-arrow]"));
       const board6Glow = board6.querySelector<HTMLElement>("[data-board-glow]");
       const pricingItems = Array.from(pricing8.querySelectorAll<HTMLElement>("[data-pricing-reveal]"));
+      const pricingGlow = pricing8.querySelector<HTMLElement>("[data-pricing-glow]");
       const bottomImg = bottomPiece.querySelector("img");
       const bottomGlow = bottomPiece.querySelector<HTMLElement>("[data-bottom-glow]");
 
@@ -414,6 +591,13 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         line.style.strokeDasharray = `${len}`;
         line.style.strokeDashoffset = `${len}`;
       });
+      // ...and only NOW un-hide the layers that hold them. Their SSR markup is fully drawn — the
+      // dash offsets only exist once this effect has run — so before this the browser painted
+      // every connector of every state at once for a frame on each reload (user: "refresh რომ
+      // ხდება, წამიერად თითქმის ყველა line ერთ ადგილას ჩნდება").
+      section.querySelectorAll<SVGElement>("[data-line-layer]").forEach((el) => {
+        el.style.opacity = "1";
+      });
 
       // --- the Machine's real unfold -----------------------------------------------------
       // ONE inline svg (opened.svg) plays BOTH states: closed.svg and opened.svg share the same
@@ -426,23 +610,44 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       // pillars/hidden chips fade in. Scrubbed via a proxy → freezes and reverses with scroll.
       // Index ranges are contiguous, so <g>-wrapping preserves paint order (groups verified
       // offline by tinting — see PROJECT.md).
+      const SVG_NS = "http://www.w3.org/2000/svg";
       const unfoldProxy = { p: 0 };
       const easeInOut = gsap.parseEase("power2.inOut");
       const easeOut = gsap.parseEase("power2.out");
       type Moving = { el: SVGGElement; dx: number; dy: number; win: readonly [number, number] };
       type Fading = { el: SVGGElement; win: readonly [number, number] };
+      // a leg = one pillar (4 paths): an outer <g> clipped at the pillar's own top (the
+      // platform underside) and an inner <g> that slides down out of it — landing gear
+      type Leg = { outer: SVGGElement; inner: SVGGElement; clip: string; h: number; win: readonly [number, number] };
       let movers: Moving[] | null = null;
       let faders: Fading[] | null = null;
+      let legs: Leg[] | null = null;
+      const easeLeg = gsap.parseEase("power3.out");
+      // tiny touch-down settle of the platforms while the legs land (design px in svg units)
+      const SETTLE_WIN = [0.8, 0.97] as const;
+      const SETTLE_DY = 1.5;
       const localP = (win: readonly [number, number]) =>
         Math.min(1, Math.max(0, (unfoldProxy.p - win[0]) / (win[1] - win[0])));
       const applyUnfold = () => {
         if (!movers || !faders) return;
+        const sp = localP(SETTLE_WIN);
+        const settle = sp > 0 && sp < 1 ? SETTLE_DY * Math.sin(Math.PI * sp) : 0;
         for (const m of movers) {
           const e = easeInOut(localP(m.win));
-          gsap.set(m.el, { x: m.dx * (1 - e), y: m.dy * (1 - e) });
+          gsap.set(m.el, { x: m.dx * (1 - e), y: m.dy * (1 - e) + settle });
         }
         for (const f of faders) {
           gsap.set(f.el, { opacity: easeOut(localP(f.win)) });
+        }
+        if (legs) {
+          for (const l of legs) {
+            const lp = localP(l.win);
+            gsap.set(l.inner, { y: -(l.h + 10) * (1 - easeLeg(lp)) });
+            // landed → drop the clip so the settled frame is byte-identical to opened.svg
+            // (a clipped group anti-aliases ~20 edge pixels by 1-2 levels)
+            if (lp >= 1) l.outer.removeAttribute("clip-path");
+            else l.outer.setAttribute("clip-path", l.clip);
+          }
         }
       };
       const wrapRange = (svg: SVGSVGElement, els: Element[], from: number, to: number) => {
@@ -464,29 +669,66 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           const els = Array.from(svg.children).filter((el) => el.tagName !== "defs");
           // inner fade groups FIRST (sub-ranges), then the outer moving assemblies around them
           const dbChips = wrapRange(svg, els, 49, 60); // RDS/PG — covered by WORKERS while closed
-          const wPillars = wrapRange(svg, els, 61, 76);
           const wChips = wrapRange(svg, els, 85, 96); // JOB/QUE — covered by APPS while closed
-          const aPillars = wrapRange(svg, els, 97, 112);
-          // moving assemblies: WORKERS = pillars..chips, APPS = pillars..its own chips
-          const gW = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          svg.insertBefore(gW, wPillars);
-          gW.appendChild(wPillars);
+          // Legs: each pillar (4 consecutive paths) gets outer <g clip-path> + inner sliding <g>.
+          // The clip rect covers the pillar's full bbox (+ stroke margin), so the settled frame
+          // is pixel-identical to opened.svg; hidden = inner slid up above the clip top.
+          let defs = svg.querySelector("defs");
+          if (!defs) {
+            defs = document.createElementNS(SVG_NS, "defs");
+            svg.prepend(defs);
+          }
+          const legDefs = defs;
+          const makeLeg = (from: number) => {
+            const outer = document.createElementNS(SVG_NS, "g");
+            const inner = document.createElementNS(SVG_NS, "g");
+            (els[from].parentNode as Node).insertBefore(outer, els[from]);
+            outer.appendChild(inner);
+            for (let i = from; i < from + 4; i++) inner.appendChild(els[i]);
+            const bb = inner.getBBox();
+            const cp = document.createElementNS(SVG_NS, "clipPath");
+            cp.id = `machine-leg-clip-${from}`;
+            const r = document.createElementNS(SVG_NS, "rect");
+            r.setAttribute("x", `${bb.x - 3}`);
+            r.setAttribute("y", `${bb.y - 2}`);
+            r.setAttribute("width", `${bb.width + 6}`);
+            r.setAttribute("height", `${bb.height + 6}`);
+            cp.appendChild(r);
+            legDefs.appendChild(cp);
+            outer.setAttribute("clip-path", `url(#${cp.id})`);
+            return { outer, inner, clip: `url(#${cp.id})`, h: bb.height, x: bb.x };
+          };
+          const wLegs = [61, 65, 69, 73].map(makeLeg);
+          const aLegs = [97, 101, 105, 109].map(makeLeg);
+          // moving assemblies: WORKERS = legs..chips, APPS = legs..its own chips
+          const gW = document.createElementNS(SVG_NS, "g");
+          svg.insertBefore(gW, wLegs[0].outer);
+          wLegs.forEach((l) => gW.appendChild(l.outer));
           for (let i = 77; i <= 84; i++) gW.appendChild(els[i]);
           gW.appendChild(wChips);
-          const gA = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          svg.insertBefore(gA, aPillars);
-          gA.appendChild(aPillars);
+          const gA = document.createElementNS(SVG_NS, "g");
+          svg.insertBefore(gA, aLegs[0].outer);
+          aLegs.forEach((l) => gA.appendChild(l.outer));
           for (let i = 113; i <= 132; i++) gA.appendChild(els[i]);
+          // Sequence (user-approved demo, "ჯერ გაიშალოს და მერე ფეხები ჩამოვიდეს"): the
+          // platforms unfold together WITHOUT legs, covered chips reveal, THEN the legs slide
+          // down out of each platform's underside (both levels together, pairs staggered L→R)
           movers = [
-            { el: gW, dx: 38.5, dy: 81.2, win: [0.05, 0.55] },
-            { el: gA, dx: 78, dy: 163.2, win: [0.3, 0.9] },
+            { el: gW, dx: 38.5, dy: 81.2, win: [0.03, 0.55] },
+            { el: gA, dx: 78, dy: 163.2, win: [0.03, 0.55] },
           ];
           faders = [
-            { el: wPillars, win: [0.15, 0.5] },
-            { el: aPillars, win: [0.42, 0.85] },
-            { el: dbChips, win: [0.35, 0.6] },
-            { el: wChips, win: [0.6, 0.85] },
+            { el: dbChips, win: [0.35, 0.55] },
+            { el: wChips, win: [0.35, 0.55] },
           ];
+          legs = [wLegs, aLegs].flatMap((set) =>
+            [...set]
+              .sort((a, b) => a.x - b.x)
+              .map((l, i) => {
+                const start = 0.6 + (i % 2) * 0.03 + Math.floor(i / 2) * 0.08;
+                return { outer: l.outer, inner: l.inner, clip: l.clip, h: l.h, win: [start, start + 0.25] as const };
+              }),
+          );
           // sync to wherever the scrubbed proxy already is (fresh mount = fully collapsed ≡ closed)
           applyUnfold();
         })
@@ -515,12 +757,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         },
         0.05,
       );
-      tl.fromTo(
-        secondText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        0.4,
-      );
+      blurTextIn(secondText, 0.4);
       tl.fromTo(glow, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 0.45);
       // the whole right-side wiring starts only AFTER the server has fully parked (0.75) —
       // lines drawn toward a still-moving server read as misaligned (user report)
@@ -532,6 +769,9 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       );
       lines.forEach((line, i) => {
         tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.14 }, 0.78 + i * 0.08);
+      });
+      calloutArrows.forEach((arrow, i) => {
+        tl.fromTo(arrow, { opacity: 0 }, { opacity: 1, duration: 0.06 }, 0.92 + i * 0.055);
       });
       labels.forEach((label, i) => {
         tl.fromTo(
@@ -566,12 +806,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       tl.set(baseEls, { opacity: 0 }, 2.24); // fully covered by the overlay — avoid doubled edges
       tl.fromTo(guides, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 2.08);
 
-      tl.fromTo(
-        thirdText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        1.8,
-      );
+      blurTextIn(thirdText, 1.8);
       tl.fromTo(
         panelLine,
         { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
@@ -612,24 +847,24 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       // scrubbed 1:1 with scroll via the proxy above. No image swap anywhere.
       tl.to(unfoldProxy, { p: 1, ease: "none", duration: 1.0, onUpdate: applyUnfold }, 3.1);
 
-      tl.fromTo(
-        fourthText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
-        2.75,
-      );
+      blurTextIn(fourthText, 2.75);
+      // The right panel used to wait for the WHOLE unfold (3.75, i.e. 65% into it), so for most
+      // of the state-4 crossing nothing happened but the machine opening — user: "სანამ ეგ არ
+      // იშლება არაფერი არ ხდება, არც მარჯვნივ ტექსტები არ გამოდის". It now starts a short beat
+      // AFTER the unfold begins (3.1 + 0.25) and is fully in by 3.83, while the machine is still
+      // opening until 4.1 — the two motions overlap instead of queueing.
       tl.fromTo(
         panel4Line,
         { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
         { scaleY: 1, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
-        3.75,
+        3.35,
       );
       panel4Items.forEach((item, i) => {
         tl.fromTo(
           item,
           { x: () => 24 * k(), autoAlpha: 0 },
           { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.2 },
-          3.8 + i * 0.08,
+          3.45 + i * 0.09,
         );
       });
       tl.to({}, { duration: 0.2 }); // hold at the settled state 4
@@ -645,26 +880,50 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
         4.8,
       );
-      tl.fromTo(
-        fifthText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
-        4.9,
-      );
+      blurTextIn(fifthText, 4.9);
+      // slower and slightly further apart (user: "ტექსტები ძაან მალე გამოდის, ოდნავ შეანელე") —
+      // the whole run still has to land before state 5's 5.95 snap
       podLines.forEach((line, i) => {
-        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.18 }, 5.15 + i * 0.16);
+        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.22 }, 5.05 + i * 0.18);
       });
       podArrows.forEach((arrow, i) => {
-        tl.fromTo(arrow, { opacity: 0 }, { opacity: 1, duration: 0.08 }, 5.3 + i * 0.16);
+        tl.fromTo(arrow, { opacity: 0 }, { opacity: 1, duration: 0.08 }, 5.24 + i * 0.18);
       });
       podItems.forEach((item, i) => {
         tl.fromTo(
           item,
           { x: () => 20 * k(), autoAlpha: 0 },
-          { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.18 },
-          5.32 + i * 0.16,
+          { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.26 },
+          5.26 + i * 0.18,
         );
       });
+      // the API pod's deploy bar must FILL on arrival, not appear already full (user request):
+      // scaleX 0→1 over the width that represents POD_PROGRESS, with the % number counting along.
+      if (podBar) {
+        gsap.set(podBar, { transformOrigin: "left center", scaleX: 0 });
+        tl.fromTo(
+          podBar,
+          { scaleX: 0 },
+          { scaleX: 1, ease: "power1.out", duration: 0.28 },
+          5.62,
+        );
+      }
+      if (podPercent) {
+        const counter = { v: 0 };
+        podPercent.textContent = "0";
+        tl.to(
+          counter,
+          {
+            v: POD_PROGRESS,
+            ease: "power1.out",
+            duration: 0.28,
+            onUpdate: () => {
+              podPercent.textContent = String(Math.round(counter.v));
+            },
+          },
+          5.62,
+        );
+      }
       tl.to({}, { duration: 0.25 }); // hold at the settled state 5
 
       // ---- state 5 → state 6 -------------------------------------------------------------
@@ -680,56 +939,227 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.55 },
         6.45,
       );
-      tl.fromTo(
-        sixthText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
-        6.55,
-      );
+      blurTextIn(sixthText, 6.55);
       tl.fromTo(
         terminal6,
         { y: () => -40 * k(), autoAlpha: 0 },
         { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
-        6.95,
+        6.85,
       );
+      // ---- state 6's terminal → pipe → node sequence (its OWN time-based timeline) ----------
+      // Typing needs real seconds, not the crossing's compressed timeline units, so this runs
+      // on `seq6`, started by a gate at 6.9 on the way in and reset when the playhead goes back
+      // past it. The main tl only fades the pipe's WRAPPER out at 9.0 (never the inner parts).
+      const typeEls = Array.from(terminal6.querySelectorAll<HTMLElement>("[data-type6]"));
+      const typeTexts = typeEls.map((el) => el.dataset.type6 ?? "");
+      const rows6 = Array.from(terminal6.querySelectorAll<HTMLElement>("[data-row6]"));
+      const curs6 = Array.from(terminal6.querySelectorAll<HTMLElement>("[data-cur6]"));
+      const dot6 = terminal6.querySelector<HTMLElement>("[data-dot6]");
+      const flow6 = { v: 0 };
+      const flowGate6 = { on: 1 };
+      const reset6 = () => {
+        typeEls.forEach((el) => (el.textContent = ""));
+        curs6.forEach((el) => el.classList.remove("t6-blink"));
+      };
+      reset6();
+      const seq6 = gsap.timeline({ paused: true });
+      {
+        // row r: [start, per-char seconds]; typing segments are grouped by their row index
+        const ROW_T = [
+          [0.05, 0.028],
+          [0.73, 0.009],
+          [1.23, 0.01],
+        ] as const;
+        let pipeAt = 0;
+        rows6.forEach((row, r) => {
+          const [start, perChar] = ROW_T[r];
+          let at = start;
+          seq6.fromTo(row, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.01 }, at);
+          const cur = curs6[r];
+          if (cur) seq6.fromTo(cur, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.01 }, at);
+          if (r === 1 && dot6) {
+            seq6.fromTo(dot6, { scale: 0.3, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, ease: "back.out(2)", duration: 0.15 }, at);
+            at += 0.1;
+          }
+          typeEls.forEach((el, i) => {
+            if (Number(el.dataset.typeRow6) !== r) return;
+            const text = typeTexts[i];
+            const o = { n: 0 };
+            const dur = text.length * perChar;
+            seq6.to(o, { n: text.length, duration: dur, ease: "none", onUpdate: () => {
+              el.textContent = text.slice(0, Math.round(o.n));
+            } }, at);
+            at += dur;
+          });
+          // rows 1-2 lose their typing cursor when done; row 3's block stays and starts blinking
+          if (cur && r < rows6.length - 1) seq6.to(cur, { autoAlpha: 0, duration: 0.01 }, at);
+          if (cur && r === rows6.length - 1) seq6.call(() => cur.classList.add("t6-blink"), undefined, at);
+          pipeAt = at + 0.04;
+        });
+        // the pipe draws down from the terminal to the ring
+        seq6.fromTo(
+          pushLine6,
+          { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
+          { scaleY: 1, autoAlpha: 1, ease: "none", duration: 0.3 },
+          pipeAt,
+        );
+        // the ring does NOT move or scale — it is already there and simply IGNITES in place
+        // (user: "არ შემოვიდეს გვერდიდან, სადაც ზის მანდ იჯდეს და მანდვე აენთოს")
+        const ringAt = pipeAt + 0.28;
+        seq6.fromTo(node6, { autoAlpha: NODE6_DIM, boxShadow: "0 0 0px rgba(17,163,42,0)" },
+          { autoAlpha: 0.8, boxShadow: "0 0 16px rgba(17,163,42,0.9)", duration: 0.06, ease: "none",
+            immediateRender: false }, ringAt);
+        seq6.to(node6, { autoAlpha: 0.4, duration: 0.06, ease: "none" });
+        seq6.to(node6, { autoAlpha: 1, boxShadow: "0 0 18px rgba(17,163,42,0.95)", duration: 0.08, ease: "none" });
+        seq6.to(node6, { boxShadow: "0 0 10px rgba(17,163,42,0.55)", duration: 0.35, ease: "power2.out" });
+        // then the info starts flowing up the pipe
+        seq6.fromTo(flow6, { v: 0 }, { v: 1, duration: 0.6, ease: "power1.inOut" }, ringAt + 0.15);
+      }
+      // the ring SITS on the board from the start (dim, part of the board as it rises in) and
+      // only lights up when the pipe reaches it — it never "arrives" from anywhere
+      // (user: "სადაც თავიდან ზის მანდ იყოს, სხვა წერტილიდან ნუ მოგაქვს")
+      tl.fromTo(node6, { autoAlpha: 0 }, { autoAlpha: NODE6_DIM, ease: "power1.out", duration: 0.3 }, 6.6);
+      const gate6 = { v: 0 };
       tl.fromTo(
-        pushLine6,
-        { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
-        { scaleY: 1, autoAlpha: 1, ease: "none", duration: 0.25 },
-        7.3,
+        gate6,
+        { v: 0 },
+        {
+          v: 1,
+          duration: 0.01,
+          onComplete: () => {
+            seq6.restart();
+          },
+          onReverseComplete: () => {
+            seq6.pause(0);
+            reset6();
+          },
+        },
+        6.9,
       );
-      tl.fromTo(
-        node6,
-        { scale: 0.4, autoAlpha: 0 },
-        { scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.12 },
-        7.55,
-      );
+
+      // particles: dots + small "packets" rising from the ring to the terminal, drawn in design
+      // px on a fixed-resolution canvas (CSS stretches it with --s)
+      const ctx6 = pipe6Canvas.getContext("2d");
+      type P6 = { x: number; y: number; vy: number; r: number; h: number; ph: number; wob: number; a: number };
+      let parts6: P6[] = [];
+      let spawnAcc6 = 0;
+      let dirty6 = false;
+      const spawn6 = (yOff = 0) => {
+        const packet = Math.random() < 0.35;
+        parts6.push({
+          x: PIPE6_INNER_W / 2 + (Math.random() * 2 - 1) * (PIPE6_INNER_W / 2 - 1.6),
+          y: PIPE6_H - 1 + yOff,
+          vy: 38 + Math.random() * 34,
+          r: packet ? 0 : 0.9 + Math.random() * 0.9,
+          h: packet ? 3 + Math.random() * 3 : 0,
+          ph: Math.random() * 6.28,
+          wob: 0.4 + Math.random() * 0.9,
+          a: 0.55 + Math.random() * 0.45,
+        });
+      };
+      const tick6 = (_t: number, deltaMs: number) => {
+        if (!ctx6) return;
+        const f = flow6.v * flowGate6.on;
+        if (f <= 0 && parts6.length === 0) {
+          if (dirty6) {
+            ctx6.clearRect(0, 0, pipe6Canvas.width, pipe6Canvas.height);
+            dirty6 = false;
+          }
+          return;
+        }
+        const dt = Math.min(0.05, deltaMs / 1000);
+        if (f > 0) {
+          spawnAcc6 += dt * 13 * f;
+          while (spawnAcc6 >= 1) {
+            spawn6();
+            spawnAcc6--;
+          }
+          // an occasional little "train" of info
+          if (Math.random() < dt * 0.35 * f) [0, 4, 8].forEach((o) => spawn6(o));
+        }
+        const K = PIPE6_CANVAS_K;
+        ctx6.setTransform(1, 0, 0, 1, 0, 0);
+        ctx6.clearRect(0, 0, pipe6Canvas.width, pipe6Canvas.height);
+        ctx6.setTransform(K, 0, 0, K, 0, 0);
+        ctx6.shadowColor = "rgba(40,220,80,0.9)";
+        ctx6.shadowBlur = 4 * K;
+        parts6 = parts6.filter((q) => q.y > -6);
+        for (const q of parts6) {
+          q.y -= q.vy * dt;
+          q.ph += dt * 4;
+          const x = q.x + Math.sin(q.ph) * q.wob;
+          const life = 1 - q.y / PIPE6_H; // 0 at the ring → 1 at the terminal
+          const fade = Math.max(0, Math.min(1, life * 6) * Math.min(1, (1 - life) * 5));
+          ctx6.globalAlpha = q.a * fade;
+          ctx6.fillStyle = life > 0.85 ? "#8ff5a4" : "#27c948";
+          if (q.r) {
+            ctx6.beginPath();
+            ctx6.arc(x, q.y, q.r, 0, Math.PI * 2);
+            ctx6.fill();
+          } else {
+            ctx6.fillRect(x - 0.8, q.y - q.h / 2, 1.6, q.h);
+          }
+        }
+        ctx6.globalAlpha = 1;
+        dirty6 = true;
+      };
+      gsap.ticker.add(tick6);
+
       tl.fromTo(
         badge6,
         { y: () => 16 * k(), autoAlpha: 0 },
         { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.2 },
-        7.7,
+        7.52,
       );
+      // The pipeline now reads as cause → effect (user: "როცა pod შეივსება, მერე უნდა შეუერთდეს
+      // ხაზი LIVE-ს"): line 1 + the POD card land first, the deploy bar fills, and only THEN does
+      // line 2 draw down to the LIVE card, which fades in behind its arrowhead. Everything must
+      // finish before state 6's snap at 8.8, hence the whole run was pulled ~0.2 earlier.
+      const DEPLOY_LINE_T = [7.75, 8.5];
+      const DEPLOY_ARROW_T = [7.95, 8.68];
+      const DEPLOY_ITEM_T = [7.97, 8.64];
       deployLines.forEach((line, i) => {
-        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.2 }, 7.95 + i * 0.3);
+        tl.to(line, { strokeDashoffset: 0, ease: "none", duration: 0.2 }, DEPLOY_LINE_T[i]);
       });
       deployArrows.forEach((arrow, i) => {
-        tl.fromTo(arrow, { opacity: 0 }, { opacity: 1, duration: 0.08 }, 8.15 + i * 0.3);
+        tl.fromTo(arrow, { opacity: 0 }, { opacity: 1, duration: 0.08 }, DEPLOY_ARROW_T[i]);
       });
       deployItems.forEach((item, i) => {
         tl.fromTo(
           item,
           { x: () => 20 * k(), autoAlpha: 0 },
-          { x: 0, autoAlpha: 1, ease: "power2.out", duration: 0.18 },
-          8.17 + i * 0.3,
+          { x: 0, autoAlpha: 1, ease: "power2.out", duration: i === 0 ? 0.18 : 0.14 },
+          DEPLOY_ITEM_T[i],
         );
       });
+      if (deployBar) {
+        gsap.set(deployBar, { transformOrigin: "left center", scaleX: 0 });
+        tl.fromTo(deployBar, { scaleX: 0 }, { scaleX: 1, ease: "power1.out", duration: 0.3 }, 8.18);
+      }
+      if (deployPercent) {
+        const counter6 = { v: 0 };
+        deployPercent.textContent = "0";
+        tl.to(
+          counter6,
+          {
+            v: DEPLOY6_PROGRESS,
+            ease: "power1.out",
+            duration: 0.3,
+            onUpdate: () => {
+              deployPercent.textContent = String(Math.round(counter6.v));
+            },
+          },
+          8.18,
+        );
+      }
       tl.to({}, { duration: 0.3 }); // hold at the settled state 6
 
       // ---- state 6 → state 7 -------------------------------------------------------------
       tl.to(sixthText, { y: () => -40 * k(), autoAlpha: 0, ease: "power2.in", duration: 0.25 }, 9.0);
       tl.to(deploy6, { autoAlpha: 0, ease: "power1.in", duration: 0.2 }, 9.0);
-      tl.to([badge6, terminal6, pushLine6, node6], { autoAlpha: 0, ease: "power1.in", duration: 0.2 }, 9.0);
+      tl.to([badge6, terminal6, pipe6Wrap], { autoAlpha: 0, ease: "power1.in", duration: 0.2 }, 9.0);
+      // stop feeding the pipe once state 6 is left (resumes if we come back — reversible)
+      tl.fromTo(flowGate6, { on: 1 }, { on: 0, duration: 0.01 }, 9.0);
 
       // the state-6 board shrinks and glides into place as this composition's right board
       // (same art as bottom-right-server.svg — no swap, the element itself travels)
@@ -747,12 +1177,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       );
       if (board6Glow) tl.to(board6Glow, { autoAlpha: 0, duration: 0.25 }, 9.05);
 
-      tl.fromTo(
-        seventhText,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.45 },
-        9.15,
-      );
+      blurTextIn(seventhText, 9.15);
       tl.fromTo(
         agent7,
         { y: () => 60 * k(), autoAlpha: 0 },
@@ -785,6 +1210,78 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.3 },
         10.75,
       );
+      // ---- state 7's terminal types itself in, exactly like state 6's --------------------
+      // Same reason for its own time-based timeline: typing needs real seconds, not the
+      // crossing's compressed timeline units. A gate tween starts it once the window is in and
+      // resets it when the playhead reverses past that point.
+      const typeEls7 = Array.from(terminal7.querySelectorAll<HTMLElement>("[data-type7]"));
+      const typeTexts7 = typeEls7.map((el) => el.dataset.type7 ?? "");
+      const rows7 = Array.from(terminal7.querySelectorAll<HTMLElement>("[data-row7]"));
+      const curs7 = Array.from(terminal7.querySelectorAll<HTMLElement>("[data-cur7]"));
+      const dot7 = terminal7.querySelector<HTMLElement>("[data-dot7]");
+      const reset7 = () => {
+        typeEls7.forEach((el) => (el.textContent = ""));
+        curs7.forEach((el) => el.classList.remove("t6-blink"));
+      };
+      reset7();
+      const seq7 = gsap.timeline({ paused: true });
+      {
+        const ROW_T7 = [
+          [0.05, 0.026],
+          [1.05, 0.012],
+          [1.7, 0.012],
+        ] as const;
+        rows7.forEach((row, r) => {
+          const [start, perChar] = ROW_T7[r];
+          let at = start;
+          seq7.fromTo(row, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.01 }, at);
+          const cur = curs7[r];
+          if (cur) seq7.fromTo(cur, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.01 }, at);
+          if (r === 1 && dot7) {
+            seq7.fromTo(dot7, { scale: 0.3, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, ease: "back.out(2)", duration: 0.15 }, at);
+            at += 0.1;
+          }
+          typeEls7.forEach((el, i) => {
+            if (Number(el.dataset.typeRow7) !== r) return;
+            const text = typeTexts7[i];
+            const o = { n: 0 };
+            const dur = text.length * perChar;
+            seq7.to(
+              o,
+              {
+                n: text.length,
+                duration: dur,
+                ease: "none",
+                onUpdate: () => {
+                  el.textContent = text.slice(0, Math.round(o.n));
+                },
+              },
+              at,
+            );
+            at += dur;
+          });
+          // the finished rows drop their caret; the last one keeps a blinking block
+          if (cur && r < rows7.length - 1) seq7.to(cur, { autoAlpha: 0, duration: 0.01 }, at);
+          if (cur && r === rows7.length - 1) seq7.call(() => cur.classList.add("t6-blink"), undefined, at);
+        });
+      }
+      const gate7 = { v: 0 };
+      tl.fromTo(
+        gate7,
+        { v: 0 },
+        {
+          v: 1,
+          duration: 0.01,
+          onComplete: () => {
+            seq7.restart();
+          },
+          onReverseComplete: () => {
+            seq7.pause(0);
+            reset7();
+          },
+        },
+        10.9,
+      );
       tl.to({}, { duration: 0.3 }); // hold at the settled state 7
 
       // ---- state 7 → state 8 -------------------------------------------------------------
@@ -794,24 +1291,28 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       tl.to(bottom7, { y: () => 40 * k(), autoAlpha: 0, ease: "power2.in", duration: 0.3 }, 11.5);
       tl.to(board6, { autoAlpha: 0, ease: "power1.in", duration: 0.25 }, 11.5);
 
+      // the scene light comes up first and does NOT ride the item stagger (it is background,
+      // and keeping it out of pricingItems also keeps the last item inside the 12.6 snap)
+      if (pricingGlow) {
+        tl.fromTo(pricingGlow, { autoAlpha: 0 }, { autoAlpha: 1, ease: "power2.out", duration: 0.5 }, 11.75);
+      }
       pricingItems.forEach((item, i) => {
-        tl.fromTo(
-          item,
-          { y: () => 50 * k(), autoAlpha: 0 },
-          { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.4 },
-          11.85 + i * 0.1,
-        );
+        const at = 11.85 + i * 0.1;
+        // 0 = headline, 1 = paragraph: same blur stagger as every other left column
+        if (i < 2) blurItemIn(item, at, i === 0 ? 1 : 2);
+        else
+          tl.fromTo(
+            item,
+            { y: () => 50 * k(), autoAlpha: 0 },
+            { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.4 },
+            at,
+          );
       });
       tl.to({}, { duration: 0.3 }); // hold at the settled state 8
 
       // ---- state 8 → state 9 -------------------------------------------------------------
       tl.to(pricing8, { autoAlpha: 0, ease: "power1.in", duration: 0.25 }, 12.9);
-      tl.fromTo(
-        final9,
-        { y: () => 50 * k(), autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
-        13.2,
-      );
+      blurTextIn(final9, 13.2);
       tl.to({}, { duration: 0.35 }); // hold at the settled state 9 before the pin releases
 
       // one timeline position per SETTLED state (mid-hold times — see each state's hold above);
@@ -824,14 +1325,59 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       // scroll is tweened alongside purely so the pin/footer handoff geometry stays truthful —
       // the pinned stage doesn't visually move with it.
       const total = tl.totalDuration();
-      const TRANSITION_SECONDS = 1.8;
+      const TRANSITION_SECONDS = 1.7;
       const LAST = SNAP_TIMES.length - 1;
+      const FOOTER_INDEX = LAST + 1; // the footer is one more fullpage "page" past state 9
+      const STATE_KEY = "usectl:state"; // session-scoped, so a reload reopens on the same page
       let stateIndex = 0;
       let transitionFrom = 0;
       let transitioning = false;
       let flightStartedAt = 0;
+      // Every flight gets an id so its unlock timer can't clear a LATER flight's lock. Without
+      // this, a redirect that lands just after the previous leg finished (very likely now that
+      // chained pushes shorten each leg) inherited a 60ms stale timer, `transitioning` went
+      // false mid-flight, and the next momentum event fell through to the "new push" branch —
+      // which is what produced the occasional extra state and the twitch at the range edges.
+      let flightId = 0;
       let pinST: ScrollTrigger | null = null;
-      const goToState = (i: number) => {
+
+      // --- dead-zone index -----------------------------------------------------------------
+      // Every state parks in a HOLD: its content ends before the snap time, and the next
+      // segment's tweens start after it (measured gaps, in timeline units: 0.05 / 0.10 / 0.04 /
+      // 0.20 / 0.15 / 0.20 / 0.25 / 0.30 going down). Traversed at the same speed as the rest of
+      // the crossing, that empty stretch is up to ~20% of the transition spent rendering NOTHING
+      // — the reported "თითქოს delay-ით იწყება". Nothing animates there, so the flight simply
+      // SEEKS across it before tweening: motion now starts on the very first frame, both ways.
+      const contentSpans = tl
+        .getChildren(false)
+        .filter((c) => {
+          if (c.duration() <= 0.02) return false;
+          // the `tl.to({}, {duration})` holds carry no animated properties
+          return Object.keys(c.vars).some((k) => k !== "duration" && k !== "ease");
+        })
+        .map((c) => ({ start: c.startTime(), end: c.startTime() + c.duration() }));
+      const nextContentStart = (t: number) => {
+        let best = Infinity;
+        for (const sp of contentSpans) if (sp.start > t + 0.001 && sp.start < best) best = sp.start;
+        return best;
+      };
+      const prevContentEnd = (t: number) => {
+        let best = -Infinity;
+        for (const sp of contentSpans) if (sp.end < t - 0.001 && sp.end > best) best = sp.end;
+        return best;
+      };
+      const skipDeadZone = (to: number) => {
+        const from = tl.time();
+        if (to > from) {
+          const edge = nextContentStart(from);
+          if (edge < to && edge - from > 0.03) tl.time(edge);
+        } else if (to < from) {
+          const edge = prevContentEnd(from);
+          if (edge > to && from - edge > 0.03) tl.time(edge);
+        }
+      };
+
+      const goToState = (i: number, hurry = 1) => {
         if (!pinST) return;
         flightStartedAt = performance.now();
         // Per-crossing traversal tuning: every state change gets real time proportional to how
@@ -839,38 +1385,58 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         // compresses everything positioned early in a segment into its fast first ~20% — the
         // recurring "ძალიან სწრაფად" complaint). Keyed by the LOWER index of an adjacent
         // crossing; non-adjacent jumps (quantizer catch-ups) and the footer hop use the default.
+        // Cut ~25% off the original crossings (user: "უფრო მალე ქნა, მაგრამ ლამაზად", then
+        // "ოდნავ შეანელე" — these are the first values ×1.22). The relative weighting is kept,
+        // so the busy segments still get the most time, and with the dead zones now skipped the
+        // SEEN motion is barely shorter than the original, much slower timing.
+        // Another ~15% back on everything ("ოდნავ შეანელე ზოგადად"), and crossing 4 gets more
+        // than that: it is by far the densest segment (2.68 timeline units of content vs ~1.5
+        // elsewhere), so at the shared pace it read as a jump — "section-5-დან section-6-მდე
+        // უცბად გადადის". At 3.2s it runs at roughly the same units-per-second as its neighbours.
         const CROSSING_SECONDS: Record<number, number> = {
-          0: 2.6, // hero-server center glide
-          1: 2.4, // mids dissolve + stack docking + greening
-          2: 3.2, // the Machine's arrival + full unfold (longest segment)
+          0: 2.2, // hero-server center glide
+          1: 2.1, // mids dissolve + stack docking + greening
+          2: 3.3, // the Machine's arrival + full unfold (user asked for a calmer unfold)
           3: 2.8, // pods stack rise + callout wiring
-          4: 3.2, // deploy board + terminal/push-line/cards pipeline
-          5: 3.0, // board morph into the AI composition
-          6: 2.2, // pricing reveal
-          7: 2.2, // closing CTA
+          4: 3.2, // deploy board + terminal/push-line/cards pipeline (densest segment)
+          5: 2.7, // board morph into the AI composition
+          6: 2.0, // pricing reveal
+          7: 2.0, // closing CTA
         };
         const lo = Math.min(stateIndex, i);
         const tuned = Math.abs(stateIndex - i) === 1 ? CROSSING_SECONDS[lo] : undefined;
-        const duration = tuned ?? TRANSITION_SECONDS;
+        // `hurry` < 1 comes from chained pushes: each extra shove while a flight is running makes
+        // the next leg shorter, so skimming several sections in a row accelerates instead of
+        // queueing, while a single unhurried scroll keeps the full, calm timing.
+        const duration = (tuned ?? TRANSITION_SECONDS) * hurry;
         const ease = tuned ? "power1.out" : "power2.out";
+        skipDeadZone(SNAP_TIMES[i]);
         transitioning = true;
+        try {
+          sessionStorage.setItem(STATE_KEY, String(i));
+        } catch {
+          /* private mode — the restore is a nicety, never a hard dependency */
+        }
+        const myFlight = ++flightId;
         transitionFrom = stateIndex;
         stateIndex = i;
         // power2.out, NOT inOut: inOut's gentle first ~300ms read as "the animation hasn't
         // started yet" (user feedback) — out shows motion on the very first frame and still
         // lands softly over the full duration
         gsap.to(window, {
-          scrollTo: pinST.start + (SNAP_TIMES[i] / total) * PIN_SCROLL_DISTANCE,
+          // the footer is page LAST+1: the timeline stays parked at its end and only the scroll
+          // travels, so the footer arrives as one glide instead of a native crawl
+          scrollTo: i > LAST ? "max" : pinST.start + (SNAP_TIMES[i] / total) * PIN_SCROLL_DISTANCE,
           duration,
           ease,
           overwrite: true,
           onComplete: () => {
             window.setTimeout(() => {
-              transitioning = false;
+              if (flightId === myFlight) transitioning = false;
             }, 60);
           },
         });
-        tl.tweenTo(SNAP_TIMES[i], {
+        tl.tweenTo(SNAP_TIMES[Math.min(i, LAST)], {
           duration,
           ease,
           overwrite: true,
@@ -893,6 +1459,19 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         // normal transition to it. Our own scrollTo tween is guarded out via `transitioning`.
         onUpdate: (self) => {
           if (transitioning) return;
+          // parked on the footer page: progress is pinned at 1, so any quantising here would
+          // immediately drag us back to state 9. Only re-adopt state 9 if the user has actually
+          // scrolled back inside the pin (scrollbar drag / keyboard).
+          if (stateIndex > LAST) {
+            if (self.progress > 0.999) return;
+            stateIndex = LAST;
+          }
+          // scrollbar drag / keyboard that lands PAST the pin is a move to the footer page, not
+          // something to quantise back to state 9
+          if (self.progress > 0.999 && pinST && window.scrollY > pinST.end + 5) {
+            stateIndex = FOOTER_INDEX;
+            return;
+          }
           const t = self.progress * total;
           let nearest = 0;
           SNAP_TIMES.forEach((snapT, i) => {
@@ -901,6 +1480,51 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           if (nearest !== stateIndex) goToState(nearest);
         },
       });
+
+      // --- restore the page the user was on across a reload ---------------------------------
+      // The browser puts the scroll position back, but the timeline always started at 0, so a
+      // refresh mid-journey showed state 1's artwork at state 6's scroll offset until the next
+      // wheel event quantised it (user: "refresh რომ გავაკეთებ, რომელ გვერდზეც ვდგავარ, იმ
+      // გვერდზევე უნდა გამაჩინოს"). Two rAFs: scroll restoration and ScrollTrigger's own first
+      // refresh both land before them, and the SSR spacer above has been collapsed by then.
+      // Reading window.scrollY here is unreliable — the browser's own restoration can land
+      // before OR after this effect, and when it lost the race the page snapped back to state 1.
+      // The state index is saved on every transition instead and replayed verbatim.
+      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+      let saved = 0;
+      try {
+        saved = Number(sessionStorage.getItem(STATE_KEY)) || 0;
+      } catch {
+        saved = 0;
+      }
+      if (saved > 0) {
+        // The pin's spacer only exists after ScrollTrigger's first refresh, so for the first few
+        // frames the document is too short and a scrollTo would be CLAMPED — which is what the
+        // first attempt did: it landed short, the quantiser saw a mismatch and animated back to
+        // state 1. So wait (up to ~30 frames) until the page is actually tall enough, and hold
+        // `transitioning` across the jump so the quantiser stays out of it.
+        transitioning = true;
+        const restore = (tries: number) => {
+          if (!pinST) return;
+          const i = Math.min(Math.max(0, Math.round(saved)), FOOTER_INDEX);
+          const targetY =
+            i > LAST
+              ? document.documentElement.scrollHeight
+              : pinST.start + (SNAP_TIMES[i] / total) * PIN_SCROLL_DISTANCE;
+          const maxY = document.documentElement.scrollHeight - window.innerHeight;
+          if (maxY < targetY - 2 && tries < 30) {
+            requestAnimationFrame(() => restore(tries + 1));
+            return;
+          }
+          stateIndex = i;
+          tl.time(SNAP_TIMES[Math.min(i, LAST)]);
+          window.scrollTo(0, targetY);
+          window.setTimeout(() => {
+            transitioning = false;
+          }, 120);
+        };
+        requestAnimationFrame(() => restore(0));
+      }
 
       // Wheel: while inside the pin, every event is captured and one PUSH = one state. A push is
       // recognized on its very first meaningful event — no waiting for the gesture to end (user
@@ -921,6 +1545,10 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       // own decaying peak (momentum only ever decays — a fresh finger push spikes above it)
       let gestureFiredFlight = false;
       let recentMax = 0;
+      // consecutive pushes that landed while a flight was running — each one shortens the next
+      // leg (see `hurry` in goToState). Reset by any real idle gap.
+      let chain = 0;
+      const hurryNow = () => Math.max(0.4, Math.pow(0.62, chain));
       const onWheel = (e: WheelEvent) => {
         if (!pinST) return;
         // scroll-position check, NOT isActive — isActive stays false at load until the first
@@ -940,38 +1568,51 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         lastDelta = delta;
         const dir = delta > 0 ? 1 : -1;
         const absD = Math.abs(delta);
-        if (gap > 180) {
+        if (gap > 150) {
           flickFresh = true;
           flickAccum = 0;
           flickStartAbs = prevAbs;
           gestureFiredFlight = false; // a pause ends the gesture
         }
+        if (gap > 400) chain = 0; // idle → back to the unhurried, full-length timing
         flickAccum += absD;
         const decayedMax = recentMax * Math.pow(0.5, gap / 300);
         recentMax = Math.max(absD, decayedMax);
         // the flip shortcut needs real force (≥5): trackpad tails shed 1-3px reversed jitter
         // deltas (must stay ignored), but ≥8 also swallowed GENTLE deliberate reversals — the
         // reported "ზემოთ ხან delay-ით ადის, ხან 2-ჯერ სჭირდება" was exactly that
-        const newPush = absD >= 2 && (gap > 250 || (flipped && absD >= 5) || absD > prevAbs * 1.4 + 2);
+        // Deliberately SYMMETRIC and more sensitive than before: up-swipes are physically
+        // gentler than down-swipes, so the old "gap > 250 || spike" rule fired readily going
+        // down but made going up feel late / need a second shove. A 150ms gap with any real
+        // delta now counts, as does a modest spike.
+        const newPush =
+          absD >= 2 &&
+          (gap > 300 || (gap > 150 && absD >= 4) || (flipped && absD >= 5) || absD > prevAbs * 1.35 + 2);
         // the footer zone is a HYBRID (user feedback): DOWN stays fully native ("fullpage
         // გათიშე, პირდაპირ ჩავიდე"), but a DELIBERATE up push glides back to the last state.
         // +5 tolerance: state 9 parks EXACTLY on the pin end, and without the slack its own
         // up-pushes classified as "footer" and looped back to state 9 forever.
-        if (sc > pinST.end + 5) {
-          // while the return-glide runs, swallow everything — a native delta on top of the
-          // scrollTo tween triggers ScrollToPlugin's autoKill and the glide dies mid-way
+        // ---- the footer is page LAST+1 ------------------------------------------------
+        // It used to be a NATIVE descent, which meant ~320px per flick (three or four flicks to
+        // see it) and, worse, every event was swallowed while the return-glide ran — so a quick
+        // "down" right after going up did nothing at all ("ზემოთ ავდივარ, მერე უცბად ქვემოთ
+        // ვაკეთებ, აღარ ჩადის"). Now it behaves like every other page: one glide down, one glide
+        // back up, and a push AGAINST a running glide turns it around immediately.
+        if (sc > pinST.end + 5 || stateIndex > LAST) {
+          e.preventDefault();
           if (transitioning) {
-            e.preventDefault();
+            const goingToFooter = stateIndex > LAST;
+            if (newPush && ((goingToFooter && dir < 0) || (!goingToFooter && dir > 0))) {
+              chain++;
+              goToState(goingToFooter ? LAST : FOOTER_INDEX, hurryNow());
+            }
             return;
           }
-          if (dir > 0) return; // native descent
-          // STRONG push only, and no direction-flip shortcut: trackpad gestures shed tiny
-          // reversed jitter deltas as they end, which used to yank the page back up mid-descent
-          // ("ხანდახან თამაშობს მაღლა-დაბლა და მერე ჩადის")
-          const strongUp = absD >= 12 && (gap > 250 || absD > prevAbs * 1.4 + 2);
-          if (!strongUp) return; // small ups stay native inside the footer
-          e.preventDefault();
-          goToState(LAST);
+          // a deliberate push either way; tiny reversed jitter deltas from a dying gesture are
+          // still ignored (they used to yank the page around mid-descent)
+          if (absD < 6) return;
+          if (dir < 0) goToState(LAST);
+          else if (stateIndex <= LAST) goToState(FOOTER_INDEX);
           return;
         }
         if (transitioning) {
@@ -990,7 +1631,8 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
                 : Math.min(LAST, Math.max(0, stateIndex + dir));
             flickFresh = false;
             gestureFiredFlight = true;
-            goToState(back);
+            chain++;
+            goToState(back, hurryNow());
           } else if (dir === flightDir) {
             // a second push mid-flight REDIRECTS the motion to the next state IMMEDIATELY
             // (user testing: people skim fast and won't wait for animations) — tweenTo
@@ -1002,32 +1644,38 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
             // (b) the SAME gesture RE-ACCELERATING past its own decaying peak ≥550ms into
             //     the flight — covers a second finger-push landing inside still-running
             //     momentum, where no pause ever appears in the event stream.
+            // `absD >= prevAbs` is the important half: a real finger push RAMPS UP, a momentum
+            // tail only ever decays. Without it, an event-stream hiccup late in a tail (gap
+            // >150ms, then a few small deltas) looked like a fresh flick and stole an extra
+            // state — which is exactly what a double-step on the way up looked like.
             const freshFlick =
               !gestureFiredFlight &&
               flickFresh &&
-              flickAccum >= 12 &&
+              flickAccum >= 8 &&
+              absD >= 4 &&
+              absD >= prevAbs &&
               (flickStartAbs < 5 || absD > flickStartAbs);
             const reaccel =
               gestureFiredFlight &&
-              performance.now() - flightStartedAt > 550 &&
-              absD > decayedMax * 1.3 + 4;
+              performance.now() - flightStartedAt > 260 &&
+              absD > decayedMax * 1.18 + 3;
             if (freshFlick || reaccel) {
               flickFresh = false;
               gestureFiredFlight = true;
+              chain++;
               const next = stateIndex + dir;
-              if (next >= 0 && next <= LAST) goToState(next);
+              if (next >= 0 && next <= LAST) goToState(next, hurryNow());
             }
           }
           return;
         }
         const target = stateIndex + dir;
         if (target < 0) return; // above the hero — native
-        if (target > LAST) return; // state 9 going down — native release into the footer
         e.preventDefault();
         if (newPush) {
           flickFresh = false; // firing consumes the flick
           gestureFiredFlight = true; // this gesture owns the flight it just started
-          goToState(target);
+          goToState(Math.min(target, FOOTER_INDEX));
         }
       };
       window.addEventListener("wheel", onWheel, { passive: false });
@@ -1040,6 +1688,35 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       };
       ScrollTrigger.addEventListener("refresh", onRefresh);
 
+      // State 1's column is visible at t=0, so its blur-in can't live on the pinned timeline —
+      // it plays once, in real seconds, right after mount (same look as every other column).
+      {
+        gsap.set(heroText, { opacity: 1 });
+        const HERO_STAGGER = [0.03, 0.06, 0.012];
+        const HERO_DELAY = [0.15, 0.3, 0.5, 0.75];
+        Array.from(heroText.children).forEach((node, i) => {
+          const field = node as HTMLElement;
+          const rank = Math.min(i, 2);
+          const whole = field.hasAttribute("data-blur-block") || !!field.querySelector("a,button");
+          const targets = whole
+            ? [field]
+            : [...Array.from(field.querySelectorAll<HTMLElement>("img")), ...splitWords(field)];
+          gsap.fromTo(
+            targets,
+            { opacity: 0, y: 14, ...(whole ? {} : { filter: "blur(12px)" }) },
+            {
+              opacity: 1,
+              y: 0,
+              ...(whole ? {} : { filter: "blur(0px)" }),
+              duration: 0.8,
+              ease: "power3.out",
+              stagger: whole ? 0 : HERO_STAGGER[rank],
+              delay: HERO_DELAY[Math.min(i, HERO_DELAY.length - 1)],
+            },
+          );
+        });
+      }
+
       // the left ruler's green overlay fills top-down across the ENTIRE pinned journey —
       // added last so totalDuration() already includes every state and trailing hold
       tl.fromTo(
@@ -1050,6 +1727,8 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       );
 
       return () => {
+        gsap.ticker.remove(tick6);
+        seq6.kill();
         window.removeEventListener("wheel", onWheel);
         ScrollTrigger.removeEventListener("refresh", onRefresh);
       };
@@ -1116,8 +1795,15 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         </div>
       </div>
 
-      {/* state 1 — hero text column */}
-      <div ref={heroTextRef} className="absolute" style={{ left: s(187), top: s(216), width: s(1180) }}>
+      {/* state 1 — hero text column. opacity 0 in the markup: the blur-in can only start once
+          the effect has split the words, and without this the SSR frame showed the finished
+          column for a moment before it faded back out and re-animated (user: "ჩნდება, ქრება და
+          მერე იწყებს თავიდან"). The reduced-motion branch of the effect reveals it immediately. */}
+      <div
+        ref={heroTextRef}
+        className="absolute"
+        style={{ left: s(187), top: s(216), width: s(1180), opacity: 0 }}
+      >
         <p className="flex items-center font-heading font-light text-white/60" style={{ gap: s(12), fontSize: s(17) }}>
           <Image
             src="/section-hero/hatch.svg"
@@ -1351,13 +2037,24 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         </div>
 
         <svg
+          data-line-layer
           className="absolute left-0 top-0"
-          style={{ width: s(1920), height: s(940) }}
+          style={{ width: s(1920), height: s(940), opacity: 0 }}
           viewBox="0 0 1920 940"
           fill="none"
         >
-          {CALLOUT_LINES.map((points) => (
-            <polyline key={points} points={points} stroke="rgba(255,255,255,0.28)" strokeWidth="1.5" />
+          {CALLOUT_LINES.map((d) => (
+            <path key={d} data-callout-line d={d} stroke="white" strokeOpacity="0.17" strokeWidth="1" />
+          ))}
+          {CALLOUT_LABELS.map((label) => (
+            <path
+              key={`${label.text}-arrow`}
+              data-callout-arrow
+              d={`M ${label.ax} ${label.ay - 4.33} L ${label.ax + 7.5} ${label.ay} L ${label.ax} ${label.ay + 4.33} Z`}
+              fill="white"
+              fillOpacity="0.15"
+              opacity="0"
+            />
           ))}
         </svg>
 
@@ -1564,8 +2261,9 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       {/* state 5 — pod status callouts with elbow arrows */}
       <div ref={podsRef} aria-hidden="true" className="pointer-events-none absolute inset-0">
         <svg
+          data-line-layer
           className="absolute left-0 top-0"
-          style={{ width: s(1920), height: s(940) }}
+          style={{ width: s(1920), height: s(940), opacity: 0 }}
           viewBox="0 0 1920 940"
           fill="none"
         >
@@ -1609,14 +2307,28 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
                   border: pod.deploying ? `1px solid #11a32a` : "none",
                 }}
               />
-              {pod.status}
+              <span>
+                {pod.status}
+                {pod.percent !== undefined ? (
+                  <>
+                    {" ("}
+                    <span data-pod-percent>{pod.percent}</span>
+                    {"%)"}
+                  </>
+                ) : null}
+              </span>
             </p>
             {pod.deploying && (
               <div
                 className="overflow-hidden rounded-full"
                 style={{ width: s(150), height: s(6), marginTop: s(10), background: "rgba(255,255,255,0.15)" }}
               >
-                <div className="h-full rounded-full bg-brand" style={{ width: "80%" }} />
+                {/* scaleX-animated from 0 → 1 in the timeline; width is the settled fill */}
+                <div
+                  data-pod-bar
+                  className="h-full rounded-full bg-brand"
+                  style={{ width: `${POD_PROGRESS}%` }}
+                />
               </div>
             )}
             <p className="text-white/45" style={{ fontSize: s(13), marginTop: s(10) }}>
@@ -1732,19 +2444,36 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         </div>
         {/* 11.5px: at 12.5 the "Code push detected:commit-a7f3d" row wraps inside the 268px window */}
         <div className="font-mono" style={{ padding: `${s(12)} ${s(16)} ${s(16)}`, fontSize: s(11.5), lineHeight: 2.2 }}>
-          <p className="text-white/85">
-            <span className="text-brand">&gt;</span> git push origin main
-          </p>
-          <p className="text-white/85">
+          {/* typed in by seq6 (see the effect): each [data-type6] span starts empty and types its
+              data-type6 text; [data-cur6] is that row's cursor (row 3's block ends up blinking) */}
+          <p data-row6="" className="whitespace-nowrap text-white/85">
+            <span className="text-brand">&gt;</span>{" "}
+            <span data-type6="git push origin main" data-type-row6="0">git push origin main</span>
             <span
+              data-cur6=""
+              className="inline-block align-middle"
+              style={{ width: s(7), height: s(14), marginLeft: s(2), background: "#11a32a" }}
+            />
+          </p>
+          <p data-row6="" className="whitespace-nowrap text-white/85">
+            <span
+              data-dot6=""
               className="inline-block rounded-full align-middle"
               style={{ width: s(8), height: s(8), marginRight: s(6), background: "#11a32a" }}
             />
-            Code push detected:<span className="text-brand">commit-a7f3d</span>
-          </p>
-          <p className="text-white/85">
-            <span className="text-brand">&lt;</span> Automatic build triggered{" "}
+            <span data-type6="Code push detected:" data-type-row6="1">Code push detected:</span>
+            <span data-type6="commit-a7f3d" data-type-row6="1" className="text-brand">commit-a7f3d</span>
             <span
+              data-cur6=""
+              className="inline-block align-middle"
+              style={{ width: s(7), height: s(14), marginLeft: s(2), background: "#11a32a" }}
+            />
+          </p>
+          <p data-row6="" className="whitespace-nowrap text-white/85">
+            <span className="text-brand">&lt;</span>{" "}
+            <span data-type6="Automatic build triggered" data-type-row6="2">Automatic build triggered</span>{" "}
+            <span
+              data-cur6=""
               className="inline-block align-middle"
               style={{ width: s(7), height: s(14), background: "#11a32a" }}
             />
@@ -1752,22 +2481,41 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
         </div>
       </div>
 
-      {/* state 6 — the push line + the node it lands on */}
+      {/* state 6 — the push pipe + the ring it lands on (wrapper = what the main tl fades out) */}
+      <div ref={pipe6WrapRef} aria-hidden="true" className="pointer-events-none absolute inset-0">
       <div
         ref={pushLine6Ref}
-        aria-hidden="true"
         className="absolute"
         style={{
-          left: s(PUSH_LINE6.x - 1),
-          top: s(PUSH_LINE6.top),
-          width: 2,
-          height: s(PUSH_LINE6.height),
-          background: "rgba(17,163,42,0.8)",
-          boxShadow: "0 0 6px rgba(17,163,42,0.5)",
+          left: s(PIPE6.x - PIPE6.half - PIPE6.wall / 2),
+          top: s(PIPE6.top),
+          width: s(PIPE6.half * 2 + PIPE6.wall),
+          height: s(PIPE6_H),
           opacity: 0,
           visibility: "hidden",
         }}
-      />
+      >
+        <div className="absolute inset-0" style={{ background: "rgba(17,163,42,0.06)" }} />
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="absolute top-0 bottom-0"
+            style={{
+              [i ? "right" : "left"]: 0,
+              width: s(PIPE6.wall),
+              background: "rgba(30,190,60,0.95)",
+              boxShadow: "0 0 5px rgba(17,163,42,0.6)",
+            }}
+          />
+        ))}
+        <canvas
+          ref={pipe6CanvasRef}
+          width={Math.round(PIPE6_INNER_W * PIPE6_CANVAS_K)}
+          height={Math.round(PIPE6_H * PIPE6_CANVAS_K)}
+          className="absolute top-0 h-full"
+          style={{ left: s(PIPE6.wall / 2 + PIPE6.wall / 2), width: s(PIPE6_INNER_W) }}
+        />
+      </div>
       <div
         ref={node6Ref}
         aria-hidden="true"
@@ -1778,11 +2526,12 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           width: s(NODE6.size),
           height: s(NODE6.size),
           border: "1.5px solid #11a32a",
-          boxShadow: "0 0 10px rgba(17,163,42,0.55)",
+          boxShadow: "0 0 0px rgba(17,163,42,0)",
           opacity: 0,
           visibility: "hidden",
         }}
       />
+      </div>
 
       {/* state 6 — BUILD status badge (gradient border, same two-layer trick as the state-2 box) */}
       <div
@@ -1816,8 +2565,9 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       {/* state 6 — deploy status cards wired to the board */}
       <div ref={deploy6Ref} aria-hidden="true" className="pointer-events-none absolute inset-0">
         <svg
+          data-line-layer
           className="absolute left-0 top-0"
-          style={{ width: s(1920), height: s(940) }}
+          style={{ width: s(1920), height: s(940), opacity: 0 }}
           viewBox="0 0 1920 940"
           fill="none"
         >
@@ -1826,11 +2576,12 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
               key={l.ey}
               data-deploy-line
               d={l.d}
-              stroke="rgba(255,255,255,0.17)"
-              strokeWidth="1.5"
+              stroke={l.hairline ? "white" : "rgba(255,255,255,0.17)"}
+              strokeOpacity={l.hairline ? 0.1 : undefined}
+              strokeWidth={l.hairline ? 1 : 1.5}
             />
           ))}
-          {DEPLOY6_LINES.map((l) => (
+          {DEPLOY6_LINES.filter((l) => l.arrow).map((l) => (
             <path
               key={`${l.ey}-arrow`}
               data-deploy-arrow
@@ -1847,7 +2598,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           className="absolute font-heading"
           style={{
             left: s(DEPLOY6_X),
-            top: s(580),
+            top: s(DEPLOY6_CARD_TOPS.pod),
             width: s(268),
             padding: `${s(16)} ${s(18)}`,
             borderRadius: s(3),
@@ -1883,10 +2634,15 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
               className="overflow-hidden rounded-full"
               style={{ width: s(182), height: s(7), background: "rgba(255,255,255,0.18)" }}
             >
-              <div className="h-full rounded-full bg-brand" style={{ width: "64%" }} />
+              {/* scaleX-animated 0 → 1 in the timeline; the LIVE line draws only once it lands */}
+              <div
+                data-deploy-bar
+                className="h-full rounded-full bg-brand"
+                style={{ width: `${DEPLOY6_PROGRESS}%` }}
+              />
             </div>
             <span className="whitespace-nowrap text-white/60" style={{ fontSize: s(13) }}>
-              64&nbsp;%
+              <span data-deploy-percent>{DEPLOY6_PROGRESS}</span>&nbsp;%
             </span>
           </div>
         </div>
@@ -1897,7 +2653,7 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           className="absolute font-heading"
           style={{
             left: s(DEPLOY6_X),
-            top: s(749),
+            top: s(DEPLOY6_CARD_TOPS.live),
             width: s(268),
             padding: `${s(16)} ${s(18)}`,
             borderRadius: s(3),
@@ -2025,38 +2781,46 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       <svg
         ref={connectors7Ref}
         aria-hidden="true"
+        data-line-layer
         className="pointer-events-none absolute left-0 top-0"
-        style={{ width: s(1920), height: s(940) }}
+        style={{ width: s(1920), height: s(940), opacity: 0 }}
         viewBox="0 0 1920 940"
         fill="none"
       >
-        {CONNECTOR7_LINES.map((l) => (
-          <g key={l.d} transform={`translate(${l.tx}, ${l.ty})`}>
+        {/* one group lifts every state-7 path by S7_DY, so the traced path strings stay verbatim */}
+        <g transform={`translate(0, ${S7_DY})`}>
+          {CONNECTOR7_LINES.map((l) => (
+            <g
+              key={l.d}
+              transform={`translate(${l.tx}, ${l.ty})${l.scale ? ` scale(${l.scale[0]}, ${l.scale[1]})` : ""}`}
+            >
+              <path
+                data-connector-line
+                d={l.d}
+                transform={l.flip ? "translate(121, 0) scale(-1, 1)" : undefined}
+                stroke="rgba(255,255,255,0.25)"
+                strokeWidth="1.5"
+                vectorEffect={l.scale ? "non-scaling-stroke" : undefined}
+              />
+            </g>
+          ))}
+          {CONNECTOR7_LINES.filter((l) => l.arrow).map((l) => (
             <path
-              data-connector-line
-              d={l.d}
-              transform={l.flip ? "translate(121, 0) scale(-1, 1)" : undefined}
-              stroke="rgba(255,255,255,0.25)"
-              strokeWidth="1.5"
+              key={`${l.d}-arrow`}
+              data-connector-arrow
+              d={l.arrow}
+              fill="rgba(255,255,255,0.3)"
+              opacity="0"
             />
-          </g>
-        ))}
-        {CONNECTOR7_LINES.filter((l) => l.arrow).map((l) => (
+          ))}
+          {/* the badge's elbow down to the main board's top vertex (no arrowhead, per the ref) */}
           <path
-            key={`${l.d}-arrow`}
-            data-connector-arrow
-            d={l.arrow}
-            fill="rgba(255,255,255,0.3)"
-            opacity="0"
+            ref={badgeLine7Ref}
+            d={BADGE7_LINE_D}
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth="1.5"
           />
-        ))}
-        {/* the badge's elbow down to the main board's top vertex (no arrowhead, per the ref) */}
-        <path
-          ref={badgeLine7Ref}
-          d={BADGE7_LINE_D}
-          stroke="rgba(255,255,255,0.22)"
-          strokeWidth="1.5"
-        />
+        </g>
       </svg>
 
       {/* state 7 — POD // AI AGENT badge + its line down to the ring */}
@@ -2121,19 +2885,39 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
             usectl // repository-pipeline
           </span>
         </div>
+        {/* typed in by seq7 — same mechanism as the state-6 terminal (user: "ტექსტი
+            ტერმინალში უნდა დაიწეროს, ისე როგორც ზევით ვქენით") */}
         <div className="font-mono" style={{ padding: `${s(12)} ${s(16)} ${s(16)}`, fontSize: s(11), lineHeight: 2.2 }}>
-          <p className="text-white/85">
-            <span className="text-brand">&gt;</span> usectl agent attach --role coding-assistant
-          </p>
-          <p className="text-white/85">
+          <p data-row7="" className="whitespace-nowrap text-white/85">
+            <span className="text-brand">&gt;</span>{" "}
+            <span data-type7="usectl agent attach --role coding-assistant" data-type-row7="0" />
             <span
+              data-cur7=""
+              className="inline-block align-middle"
+              style={{ width: s(6.5), height: s(13), marginLeft: s(2), background: "#11a32a" }}
+            />
+          </p>
+          <p data-row7="" className="whitespace-nowrap text-white/85">
+            <span
+              data-dot7=""
               className="inline-block rounded-full align-middle"
               style={{ width: s(8), height: s(8), marginRight: s(6), background: "#11a32a" }}
             />
-            Executing updates &amp; inspecting logs ...
+            <span data-type7="Executing updates & inspecting logs ..." data-type-row7="1" />
+            <span
+              data-cur7=""
+              className="inline-block align-middle"
+              style={{ width: s(6.5), height: s(13), marginLeft: s(2), background: "#11a32a" }}
+            />
           </p>
-          <p className="text-white/85">
-            <span className="text-brand">&lt;</span> Status: Synchronized with machine env-prod-01
+          <p data-row7="" className="whitespace-nowrap text-white/85">
+            <span className="text-brand">&lt;</span>{" "}
+            <span data-type7="Status: Synchronized with machine env-prod-01" data-type-row7="2" />
+            <span
+              data-cur7=""
+              className="inline-block align-middle"
+              style={{ width: s(6.5), height: s(13), marginLeft: s(2), background: "#11a32a" }}
+            />
           </p>
         </div>
       </div>
@@ -2141,6 +2925,31 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
       {/* state 8 — the pricing calculator (interactive: NO pointer-events-none on purpose;
           the hidden visibility of each block keeps it inert until the state arrives) */}
       <div ref={pricing8Ref} className="absolute inset-0">
+        {/* The scene light that the calculator panel sits ON (user: "რეალურად მაგის უკან უნდა
+            იყოს განათება") — a page-level blob, NOT the panel's own background, so it spills
+            ~90px past the panel's left/right edges exactly like the design. Profile measured off
+            Desktop/new-version/background-light-form.png as green-excess (G−R) at design coords:
+            horizontally at y466 → 1159:2 1216:6 1266:10 1338:15 1409:17 1495:15 1773:7 1838:3;
+            vertically at x1495 → 251:0 358:6 466:15 594:18 716:8 801:1. That fits an ellipse
+            centred (1450,560) with radii ~400×250 and a peak of rgba(90,255,200) at α≈0.11
+            (G−R = α·165). Above the panel's top and below its bottom the light is already gone. */}
+        <div
+          data-pricing-glow
+          aria-hidden="true"
+          className="pointer-events-none absolute"
+          style={{
+            left: s(1155),
+            top: s(295),
+            width: s(705),
+            height: s(500),
+            background:
+              "radial-gradient(ellipse at center, rgba(90,255,200,0.14) 0%, rgba(90,255,200,0.095) 40%, rgba(90,255,200,0.03) 70%, rgba(90,255,200,0) 95%)",
+            filter: `blur(${s(30)})`,
+            opacity: 0,
+            visibility: "hidden",
+          }}
+        />
+
         {/* headline — per-line gradient text */}
         <h2
           data-pricing-reveal
@@ -2218,13 +3027,18 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
           className="absolute"
           style={{
             left: s(1250),
-            top: s(253),
+            // up 40 ("ფასები ოდნავ მაღლა"), then back down 5 ("კალკულატორის card პანელი ჩაწიე")
+            top: s(218),
             width: s(492),
             height: s(567),
             borderRadius: s(16),
-            border: "1px solid rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.09)",
+            // Glass, no tint — the colour comes from the scene light BEHIND it (above). The veil
+            // is NOT flat: scanning the design's R channel across the panel at design y300 gives
+            // +7 over the page at the left edge fading to +2 at the right (and +3 by y760), i.e.
+            // a diagonal white gradient ~0.035 → 0.004. A flat 0.015 made the surface disappear.
             background:
-              "linear-gradient(160deg, rgba(255,255,255,0.03) 0%, rgba(17,163,42,0.05) 40%, rgba(255,255,255,0.02) 100%)",
+              "linear-gradient(115deg, rgba(255,255,255,0.032) 0%, rgba(255,255,255,0.013) 50%, rgba(255,255,255,0.005) 100%)",
             opacity: 0,
             visibility: "hidden",
           }}
@@ -2235,23 +3049,32 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
             style={{ top: s(44), gap: s(12), fontSize: s(15) }}
           >
             <span className={annual ? "text-white/50" : "text-white/90"}>Monthly</span>
+            {/* exact design box: 49×27 track, r4; 22×23 knob in #11A32A, r4, inset 2px —
+                travel = 49 − 2 − 22 − 2 = 23 */}
             <button
               type="button"
               role="switch"
               aria-checked={annual}
               aria-label="Bill annually"
               onClick={() => setAnnual((a) => !a)}
-              className="relative rounded-full"
-              style={{ width: s(44), height: s(24), background: "rgba(255,255,255,0.15)" }}
+              className="relative"
+              style={{
+                width: s(49),
+                height: s(27),
+                borderRadius: s(4),
+                background: "rgba(255,255,255,0.15)",
+              }}
             >
               <span
-                className="absolute rounded-md bg-brand transition-transform duration-200"
+                className="absolute transition-transform duration-200"
                 style={{
-                  top: s(3),
-                  left: s(3),
-                  width: s(18),
-                  height: s(18),
-                  transform: annual ? `translateX(${s(20)})` : "translateX(0)",
+                  top: s(2),
+                  left: s(2),
+                  width: s(22),
+                  height: s(23),
+                  borderRadius: s(4),
+                  background: "#11A32A",
+                  transform: annual ? `translateX(${s(23)})` : "translateX(0)",
                 }}
               />
             </button>
@@ -2340,17 +3163,21 @@ export function HeroSectionClient({ serverSvg }: { serverSvg: string }) {
 
       {/* state 9 — closing CTA */}
       <div ref={final9Ref} className="absolute inset-0" style={{ opacity: 0, visibility: "hidden" }}>
-        {/* soft green glow hugging the right edge */}
+        {/* The scene light on this state, re-derived from Desktop/new-version/background-light-
+            forms.png the same way as state 8's: a mint blob centred design (1660,410), radii
+            ~260×190, peak rgba(90,255,200) α≈0.13. Sampled G−R off the ref: (1648,406)=16,
+            (1648,320)=10, (1505,377)=8, (1808,320)=4, (1648,577)=4, and 0 by y≈190 / x≈1360. */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute"
           style={{
-            right: s(-160),
-            top: s(140),
-            width: s(700),
-            height: s(560),
-            background: "radial-gradient(ellipse at center, rgba(17,163,42,0.14) 0%, rgba(17,163,42,0) 65%)",
-            filter: `blur(${s(20)})`,
+            left: s(1425),
+            top: s(235),
+            width: s(470),
+            height: s(350),
+            background:
+              "radial-gradient(ellipse at center, rgba(90,255,200,0.13) 0%, rgba(90,255,200,0.085) 40%, rgba(90,255,200,0.03) 70%, rgba(90,255,200,0) 95%)",
+            filter: `blur(${s(30)})`,
           }}
         />
         <p
