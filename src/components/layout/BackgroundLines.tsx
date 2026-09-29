@@ -7,8 +7,6 @@ import {
   LINE_COLOR,
   LINE_THICKNESS_PX,
   NUM_COLUMNS,
-  MIDDLE_COLUMNS_WIDE,
-  MIDDLE_COLUMNS_NARROW,
 } from "@/lib/grid";
 
 const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first horizontal line sits one full (vw-scaled) row pitch below the header, so that gap matches every later gap at any viewport width — none render inside the header row itself (its own border-b is the only line at that seam)
@@ -16,9 +14,6 @@ const ROW_GRID_TOP = `calc(${HEADER_HEIGHT_PX}px + ${ROW_PITCH})`; // first hori
 // Re-exported because Header.tsx and this file's own ColumnLines have always been the public face
 // of the hidden-column sets (the numbers themselves live in lib/grid.ts).
 export { HEADER_HIDE_WIDE, HEADER_HIDE_NARROW } from "@/lib/grid";
-
-const BELOW_HEADER_HIDE_WIDE = MIDDLE_COLUMNS_WIDE;
-const BELOW_HEADER_HIDE_NARROW = MIDDLE_COLUMNS_NARROW;
 
 // Literal class strings (not built from a template-interpolated variable) — Tailwind's build-time scanner needs the
 // exact "min-[1800px]:hidden" text to appear in the source to generate that utility; a `` `min-[${x}px]:hidden` ``
@@ -86,26 +81,17 @@ export function CssGridLines({ color = LINE_COLOR }: { color?: string }) {
           visible pixels through the header, while the identical override one row below painted
           cleanly). Rendered instead as a child of <header> itself, above its blur/tint layer, so it
           reads at the same weight as the rest of the page's grid instead of being dampened by it. */}
-      {/* vertical column lines, one row directly below the header — the middle (nav) gap continues just this once */}
-      <ColumnLines
-        hideWide={BELOW_HEADER_HIDE_WIDE}
-        hideNarrow={BELOW_HEADER_HIDE_NARROW}
-        className="absolute"
-        color={color}
-        style={{
-          left: INSET_VW,
-          right: INSET_VW,
-          top: `${HEADER_HEIGHT_PX}px`,
-          height: ROW_PITCH,
-        }}
-      />
-      {/* vertical column lines, rest of the page — full unbroken grid, no columns hidden */}
+      {/* vertical column lines — the full, unbroken grid from the header's bottom edge down.
+          There used to be a one-row band right under the header in which the middle (nav)
+          columns stayed hidden; team feedback 2026-09-29 ("ხაზების ბოლომდე აწევა header-თან")
+          asked for every column to run all the way up to the header instead. Inside the header
+          itself the nav gap stays (Header.tsx's own ColumnLines). */}
       <div
         className="absolute bottom-0"
         style={{
           left: INSET_VW,
           right: INSET_VW,
-          top: ROW_GRID_TOP,
+          top: `${HEADER_HEIGHT_PX}px`,
           backgroundImage: `repeating-linear-gradient(to right, ${color} 0, ${color} ${LINE_THICKNESS_PX}px, transparent ${LINE_THICKNESS_PX}px, transparent ${COLUMN_PITCH})`,
           backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
         }}

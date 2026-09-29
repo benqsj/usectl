@@ -59,3 +59,20 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* state-7 agent board: the ring around the processor (swapped in by HeroSection.tsx). The
+   circles live inside an isometric frame, so a plain rotate() about their own centre (the
+   frame's origin — SVG elements default to transform-origin 0 0) is a true isometric spin.
+   The solid gradient ring and the dashed ring turn in opposite directions. */
+@keyframes ring7-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ring7-spin {
+  animation: ring7-spin 6s linear infinite;
+}
+.ring7-spin-rev {
+  animation: ring7-spin 26s linear infinite reverse;
+}
+
