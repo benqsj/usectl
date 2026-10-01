@@ -8,6 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 import { useGSAP } from "@gsap/react";
 import { s, readScale, HEADER_HEIGHT_PX } from "@/lib/grid";
+import { NAV_STATE_BY_HASH } from "@/lib/nav";
 import { SceneLight } from "@/components/layout/SceneLight";
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, useGSAP);
@@ -496,6 +497,7 @@ export function HeroSectionClient({
   bottomBoardSvg: string;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const heroTextRef = useRef<HTMLDivElement>(null);
   const secondTextRef = useRef<HTMLDivElement>(null);
   const thirdTextRef = useRef<HTMLDivElement>(null);
@@ -659,8 +661,15 @@ export function HeroSectionClient({
       };
       // one field (a heading, a paragraph, an eyebrow row): its words stagger; any image in it
       // (the green hatch) leads them in
-      const blurField = (field: HTMLElement, at: number, rank: number, useOffset = true) => {
-        const stagger = BLUR_STAGGER[Math.min(rank, BLUR_STAGGER.length - 1)];
+      const blurField = (
+        field: HTMLElement,
+        at: number,
+        rank: number,
+        useOffset = true,
+        endBy?: number,
+      ) => {
+        let stagger = BLUR_STAGGER[Math.min(rank, BLUR_STAGGER.length - 1)];
+        let dur = BLUR_DUR;
         const offset = useOffset ? BLUR_OFFSET[Math.min(rank, BLUR_OFFSET.length - 1)] : 0;
         // button rows and bordered boxes move as ONE piece — splitting their words would animate
         // the label while the border sat there already drawn
@@ -670,6 +679,17 @@ export function HeroSectionClient({
         const gradient = !!field.querySelector(".bg-clip-text") || field.classList.contains("bg-clip-text");
         const imgs = whole ? [] : Array.from(field.querySelectorAll<HTMLElement>("img"));
         const targets = whole ? [] : [...imgs, ...splitWords(field, gradient)];
+        // A long paragraph at the house stagger runs PAST its state's snap time, and the
+        // playhead parks there — so the tail words stayed blurred for good (user: "section-3-ში
+        // ტექსტი ბოლომდე სუფთად არ გამოდის, blur-ში ტოვებს"; state 3's window is only 0.5
+        // units wide for ~30 words). Given the state's deadline, the stagger (and, if it still
+        // doesn't fit, the per-word duration) is compressed so the LAST word lands before it.
+        if (endBy !== undefined) {
+          const available = endBy - (at + offset);
+          if (available < dur) dur = Math.max(0.18, available);
+          const n = Math.max(1, targets.length || 1);
+          if (n > 1) stagger = Math.min(stagger, Math.max(0, (available - dur) / (n - 1)));
+        }
         if (targets.length) {
           tl.fromTo(
             targets,
@@ -678,7 +698,7 @@ export function HeroSectionClient({
               opacity: 1,
               filter: "blur(0px)",
               ...(gradient ? {} : { y: 0 }),
-              duration: BLUR_DUR,
+              duration: dur,
               ease: "power3.out",
               stagger,
             },
@@ -688,15 +708,17 @@ export function HeroSectionClient({
           tl.fromTo(
             field,
             { autoAlpha: 0, y: () => 14 * k() },
-            { autoAlpha: 1, y: 0, duration: BLUR_DUR, ease: "power3.out" },
+            { autoAlpha: 1, y: 0, duration: dur, ease: "power3.out" },
             at + offset,
           );
         }
       };
       // a whole left column: the container just becomes visible, its fields do the motion
-      const blurTextIn = (host: HTMLElement, at: number) => {
+      const blurTextIn = (host: HTMLElement, at: number, endBy?: number) => {
         tl.set(host, { autoAlpha: 1 }, at);
-        Array.from(host.children).forEach((child, i) => blurField(child as HTMLElement, at, i));
+        Array.from(host.children).forEach((child, i) =>
+          blurField(child as HTMLElement, at, i, true, endBy),
+        );
       };
       // a single element that carries its own hidden state (the pricing headline/paragraph)
       const blurItemIn = (el: HTMLElement, at: number, rank: number) => {
@@ -918,7 +940,7 @@ export function HeroSectionClient({
         },
         0.05,
       );
-      blurTextIn(secondText, 0.4);
+      blurTextIn(secondText, 0.4, 1.06);
       tl.fromTo(glow, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, 0.45);
       // the whole right-side wiring starts only AFTER the server has fully parked (0.75) —
       // lines drawn toward a still-moving server read as misaligned (user report)
@@ -967,7 +989,7 @@ export function HeroSectionClient({
       tl.set(baseEls, { opacity: 0 }, 2.24); // fully covered by the overlay — avoid doubled edges
       tl.fromTo(guides, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 2.08);
 
-      blurTextIn(thirdText, 1.8);
+      blurTextIn(thirdText, 1.8, 2.26);
       tl.fromTo(
         panelLine,
         { scaleY: 0, autoAlpha: 0, transformOrigin: "50% 0%" },
@@ -1008,7 +1030,7 @@ export function HeroSectionClient({
       // scrubbed 1:1 with scroll via the proxy above. No image swap anywhere.
       tl.to(unfoldProxy, { p: 1, ease: "none", duration: 1.0, onUpdate: applyUnfold }, 3.1);
 
-      blurTextIn(fourthText, 2.75);
+      blurTextIn(fourthText, 2.75, 4.2);
       // The right panel used to wait for the WHOLE unfold (3.75, i.e. 65% into it), so for most
       // of the state-4 crossing nothing happened but the machine opening — user: "სანამ ეგ არ
       // იშლება არაფერი არ ხდება, არც მარჯვნივ ტექსტები არ გამოდის". It now starts a short beat
@@ -1041,7 +1063,7 @@ export function HeroSectionClient({
         { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.5 },
         4.8,
       );
-      blurTextIn(fifthText, 4.9);
+      blurTextIn(fifthText, 4.9, 5.9);
       // slower and slightly further apart (user: "ტექსტები ძაან მალე გამოდის, ოდნავ შეანელე") —
       // the whole run still has to land before state 5's 5.95 snap
       podLines.forEach((line, i) => {
@@ -1100,7 +1122,7 @@ export function HeroSectionClient({
         { y: 0, scale: 1, autoAlpha: 1, ease: "power2.out", duration: 0.55 },
         6.45,
       );
-      blurTextIn(sixthText, 6.55);
+      blurTextIn(sixthText, 6.55, 8.7);
       tl.fromTo(
         terminal6,
         { y: () => -40 * k(), autoAlpha: 0 },
@@ -1342,7 +1364,7 @@ export function HeroSectionClient({
       );
       if (board6Glow) tl.to(board6Glow, { autoAlpha: 0, duration: 0.25 }, 9.05);
 
-      blurTextIn(seventhText, 9.15);
+      blurTextIn(seventhText, 9.15, 11.1);
       tl.fromTo(
         agent7,
         { y: () => 60 * k(), autoAlpha: 0 },
@@ -1759,7 +1781,7 @@ export function HeroSectionClient({
 
       // ---- state 8 → state 9 -------------------------------------------------------------
       tl.to(pricing8, { autoAlpha: 0, ease: "power1.in", duration: 0.25 }, 12.9);
-      blurTextIn(final9, 13.2);
+      blurTextIn(final9, 13.2, 13.75);
       tl.to({}, { duration: 0.35 }); // hold at the settled state 9 before the pin releases
 
       // one timeline position per SETTLED state (mid-hold times — see each state's hold above);
@@ -1914,6 +1936,47 @@ export function HeroSectionClient({
         });
       };
 
+      // Header navigation lands DIRECTLY on its page (user: "ყველა გვერდი კი არ ჩაიაროს, არამედ
+      // პირდაპირ ის გვერდი გამოიტანოს… ოღონდ მხოლოდ მაშინ, როცა ნავიგაციიდან დააჭერ"). A scroll
+      // gesture still glides through the crossings — only this path cuts. The timeline is SEEKED,
+      // not tweened, so none of the in-between artwork plays; events are left ON during the seek
+      // so the state-6/7 gates (terminal typing, board ignition) still fire for the page we land
+      // on, and the stage fades back in over 0.3s so the cut doesn't pop.
+      const jumpToState = (i: number) => {
+        if (!pinST) return;
+        const target = Math.min(Math.max(0, Math.round(i)), LAST);
+        if (target === stateIndex && !transitioning) return;
+        if (serverIntro?.isActive()) serverIntro.progress(1);
+        // same state-7 housekeeping as a glide: arrive with the board OFF, ready to ignite
+        if (tl.time() < GATE7_AT && SNAP_TIMES[target] > GATE7_AT) {
+          if (unwind7) resume7();
+          else {
+            seq7.pause(0);
+            reset7();
+            resetPower7();
+          }
+        }
+        gsap.killTweensOf(window);
+        gsap.killTweensOf(tl);
+        transitioning = true;
+        const myFlight = ++flightId;
+        transitionFrom = stateIndex;
+        stateIndex = target;
+        try {
+          sessionStorage.setItem(STATE_KEY, String(target));
+        } catch {
+          /* private mode */
+        }
+        tl.time(SNAP_TIMES[target]);
+        window.scrollTo(0, pinST.start + (SNAP_TIMES[target] / total) * PIN_SCROLL_DISTANCE);
+        if (stageRef.current) {
+          gsap.fromTo(stageRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
+        }
+        window.setTimeout(() => {
+          if (flightId === myFlight) transitioning = false;
+        }, 200);
+      };
+
       pinST = ScrollTrigger.create({
         trigger: section,
         // The section's top always sits exactly HEADER_HEIGHT_PX below the viewport top, so the
@@ -1968,6 +2031,9 @@ export function HeroSectionClient({
       } catch {
         saved = 0;
       }
+      // an explicit deep link (usectl.dev/#pricing) wins over the restored session state
+      const deepLink = NAV_STATE_BY_HASH[window.location.hash];
+      if (deepLink !== undefined) saved = Math.min(Math.max(0, deepLink), LAST);
       if (saved > 0) {
         // The pin's spacer only exists after ScrollTrigger's first refresh, so for the first few
         // frames the document is too short and a scrollTo would be CLAMPED — which is what the
@@ -2253,6 +2319,38 @@ export function HeroSectionClient({
       };
       window.addEventListener("wheel", onWheel, { passive: false });
 
+      // --- header navigation ------------------------------------------------------------
+      // The header's links are plain hashes and there is no element with those ids on desktop
+      // (the mobile sections carry them, and they are display:none here), so the jump is ours:
+      // map the hash to a page and glide to it. Clicks are INTERCEPTED rather than only
+      // listening for `hashchange`, so clicking the same item twice still works, and the hash is
+      // written with replaceState so the back button isn't filled with in-page steps.
+      const goToHash = (hash: string) => {
+        const i = NAV_STATE_BY_HASH[hash];
+        if (i === undefined) return false;
+        jumpToState(i);
+        return true;
+      };
+      // CAPTURE phase on purpose: next/link's own click handler runs first otherwise, calls
+      // preventDefault for the hash navigation, and a `defaultPrevented` guard here then skipped
+      // every nav click (the hash changed, the page didn't move).
+      const onNavClick = (e: MouseEvent) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const anchor = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+        const href = anchor?.getAttribute("href") ?? "";
+        if (!href.startsWith("#")) return;
+        if (goToHash(href)) {
+          e.preventDefault();
+          history.replaceState(null, "", href);
+        }
+      };
+      const onHashChange = () => {
+        goToHash(window.location.hash);
+      };
+      document.addEventListener("click", onNavClick, true);
+      window.addEventListener("hashchange", onHashChange);
+      // (a deep link is applied by the restore block above — it shares the same code path)
+
       // resize: re-evaluate the timeline's function-based (scale-dependent) values and re-render
       // the parked state with them — the old scrub's invalidateOnRefresh used to cover this
       const onRefresh = () => {
@@ -2336,6 +2434,8 @@ export function HeroSectionClient({
         unwind7?.kill();
         seq6.kill();
         window.removeEventListener("wheel", onWheel);
+        document.removeEventListener("click", onNavClick, true);
+        window.removeEventListener("hashchange", onHashChange);
         ScrollTrigger.removeEventListener("refresh", onRefresh);
       };
     },
@@ -2354,6 +2454,7 @@ export function HeroSectionClient({
       style={{ height: "calc(100svh - 96px)", minHeight: s(700) }}
     >
     <div
+      ref={stageRef}
       className="absolute inset-x-0"
       style={{ top: `max(0px, calc((100% - ${s(980)}) / 2))`, height: s(980) }}
     >

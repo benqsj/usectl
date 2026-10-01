@@ -3,14 +3,7 @@ import Link from "next/link";
 import { ColumnLines } from "@/components/layout/BackgroundLines";
 import { MobileMenu } from "@/components/layout/MobileMenu";
 import { INSET_VW, s, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW, LINE_COLOR, LINE_THICKNESS_PX } from "@/lib/grid";
-
-const NAV_LINKS = [
-  { label: "The Machine", href: "#the-machine" },
-  { label: "Agents", href: "#agents" },
-  { label: "Features", href: "#features" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "Documentation", href: "#documentation" },
-] as const;
+import { NAV_LINKS } from "@/lib/nav";
 
 export function Header() {
   return (
@@ -57,8 +50,17 @@ export function Header() {
           <ul className="flex items-center gap-8 whitespace-nowrap font-heading text-base text-white/80 max-[1279.98px]:gap-6 max-[1279.98px]:text-[15px]">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} className="transition-colors hover:text-white">
+                {/* hover: the label warms to the brand green while a green rule sweeps in from
+                    the left under it (the page's own accent, not a plain white highlight) */}
+                <Link
+                  href={link.href}
+                  className="group relative inline-block py-1 transition-colors duration-300 ease-out hover:text-brand"
+                >
                   {link.label}
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-brand transition-transform duration-300 ease-out group-hover:scale-x-100"
+                  />
                 </Link>
               </li>
             ))}

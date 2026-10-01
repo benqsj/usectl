@@ -502,7 +502,7 @@ export function HeroMobile() {
       </section>
 
       {/* 3 — Your Stacks */}
-      <section data-m-section className="relative" style={sectionStyle}>
+      <section id="features" data-m-section className="scroll-mt-[calc(var(--header-h)+16px)] relative" style={sectionStyle}>
         <Eyebrow>Infrastructure Freedom</Eyebrow>
         <Heading>
           Your Stacks,
@@ -537,7 +537,7 @@ export function HeroMobile() {
       </section>
 
       {/* 4 — Isolated Spaces (Machine) */}
-      <section data-m-section className="relative" style={sectionStyle}>
+      <section id="the-machine" data-m-section className="scroll-mt-[calc(var(--header-h)+16px)] relative" style={sectionStyle}>
         <Eyebrow>Isolated Spaces</Eyebrow>
         <Heading>
           Give every project
@@ -677,7 +677,7 @@ export function HeroMobile() {
       </section>
 
       {/* 7 — AI Infrastructure */}
-      <section data-m-section className="relative" style={sectionStyle}>
+      <section id="agents" data-m-section className="scroll-mt-[calc(var(--header-h)+16px)] relative" style={sectionStyle}>
         <Eyebrow>AI Infrastructure</Eyebrow>
         <Heading>
           Give your agent
@@ -720,7 +720,7 @@ export function HeroMobile() {
       </section>
 
       {/* 8 — Pricing */}
-      <section data-m-section className="relative" style={sectionStyle}>
+      <section id="pricing" data-m-section className="scroll-mt-[calc(var(--header-h)+16px)] relative" style={sectionStyle}>
         <Heading>
           Know your hosting bill
           <br />

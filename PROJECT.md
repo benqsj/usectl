@@ -64,6 +64,29 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 60: nav lands DIRECTLY on its page (2026-09-30)
+
+Clicking a nav item used to run `goToState`, which tweens the timeline — so the whole journey between the two pages played at speed ("ყველა გვერდი კი არ ჩაიაროს, არამედ პირდაპირ ის გვერდი გამოიტანოს… ოღონდ მხოლოდ მაშინ, როცა ნავიგაციიდან დააჭერ"). A new `jumpToState` is used by the header navigation ONLY — every scroll gesture still glides through its crossing exactly as before.
+
+- It **seeks** (`tl.time(SNAP_TIMES[i])`) instead of tweening, kills any in-flight scroll/timeline tween, sets the scroll directly, and fades the stage back in over 0.3s so the cut doesn't pop. Measured: a click lands in ~230ms.
+- Events are deliberately NOT suppressed on the seek, so the gates that live on the timeline (state-6/7 terminal typing, the state-7 ignition) still fire for the page being landed on — verified: jumping straight to Agents arrives with the terminal fully typed (43/39/45 chars) and the board lit.
+- It reuses the same state-7 housekeeping as a glide (arrive with the board OFF, resume a running unwind) so a jump over the gate can't leave it half-lit.
+- `transitioning` is held for 200ms and released through the `flightId` token, so the wheel driver can't act on the jump's own scroll.
+
+Verified: seven nav clicks in both directions all land exactly (11439 / 2089 / 10168 / 3859 …) with zero half-blurred words at every landing, navigating out of the footer works, and a wheel flick straight after a jump continues from the new page. The eight-case gesture suite is unchanged.
+
+## Polish pass 59: header nav actually navigates, brand hover, blur deadline (2026-09-30)
+
+**1. The nav works.** `src/lib/nav.ts` is now the single source for the links and, for each one, the PAGE it lands on — `state` is an index into both the desktop pinned scene's `SNAP_TIMES` and the mobile stacked sections, which run in the same order: The Machine → 3, Agents → 6, Features → 2, Pricing → 7. Documentation deliberately has no target yet.
+- Desktop: `HeroSectionClient` maps the hash to a state and glides there. The listener is on `document` in the **CAPTURE** phase — next/link's own handler runs first otherwise and calls `preventDefault`, and a `defaultPrevented` guard silently skipped every nav click (the hash changed, the page didn't move — that cost one debugging round). The hash is written with `replaceState` so the back button isn't filled with in-page steps, and a deep link (`/#pricing`) opens straight on that page by feeding the restore block.
+- Mobile: the four matching `<section>`s got those ids + `scroll-mt-[calc(var(--header-h)+16px)]`, so the burger menu's links are plain native hash scrolls that clear the sticky header. Verified: the pricing section lands at y=80 under the 64px header.
+
+**2. Header hover is the brand green** with a rule that sweeps in from the left under the label (`group` + `origin-left scale-x-0 → 100`, 300ms) instead of the old plain white.
+
+**3. Long paragraphs no longer freeze half-blurred.** A column's blur stagger could run PAST its state's snap time, and since the playhead parks exactly there, the tail words stayed at `blur(12px)` forever — state 3's window is only ~0.5 units wide for a ~30-word paragraph ("section-3-ში ტექსტი ბოლომდე სუფთად არ გამოდის"). `blurTextIn`/`blurField` now take an `endBy` deadline (each call site passes its snap time minus a hair) and compress the stagger — and, if that still doesn't fit, the per-word duration — so the last word always lands first. Verified by sweeping all eight states and asserting every VISIBLE `[data-blur-word]` is at opacity 1 / blur ≤ 0.3px (`checkVisibility` is essential: hidden states' words sit in the viewport box too and made the first run report false positives everywhere).
+
+Note: the deadline changed the timeline's total slightly again — the snaps are now 1000/2089/3859/5399/7982/10168/11439/12801.
+
 ## Polish pass 58: pricing +/− hover colour + press ripple; pointer cursor on every button (2026-09-29)
 
 - **Cursor**: Tailwind v4's preflight leaves `<button>` with the arrow cursor. `globals.css` now has an `@layer base` rule:
