@@ -1577,11 +1577,16 @@ export function HeroSectionClient({
         chips7(bottom7.querySelector("[data-board7='bottom']")),
       ];
       const lineLen7 = (el: SVGPathElement) => el.getTotalLength() + 2;
+      // Hiding a dashed path at EXACTLY its dash length puts the on→off boundary on the path's
+      // first point, and these strokes have round caps — Chrome paints that zero-length dash as
+      // a DOT. That was the green speck left over the state-7 squiggle, still visible on other
+      // pages (the connector layer is only faded out from state 8 on). +1 pushes the boundary
+      // into the gap, so nothing is painted at all.
+      const lineHide7 = (el: SVGPathElement) => lineLen7(el) + 1;
       const resetPower7 = () => {
         [...connectorGreens, ...connectorGlows].forEach((el) => {
-          const L = lineLen7(el);
-          el.style.strokeDasharray = `${L} ${L}`;
-          el.style.strokeDashoffset = `${L}`;
+          el.style.strokeDasharray = `${lineLen7(el)} ${lineLen7(el)}`;
+          el.style.strokeDashoffset = `${lineHide7(el)}`;
         });
         connectorArrows.forEach((a) => a.setAttribute("fill", "rgba(255,255,255,0.3)"));
         boards7.flat().forEach((c) => {
@@ -1623,7 +1628,7 @@ export function HeroSectionClient({
           const at = POWER7_ON + k * 0.12;
           [connectorGreens[k], connectorGlows[k]].forEach((el) => {
             if (!el) return;
-            seq7.fromTo(el, { strokeDashoffset: lineLen7(el) }, { strokeDashoffset: 0, ease: "power2.inOut", duration: POWER7_LINE_D }, at);
+            seq7.fromTo(el, { strokeDashoffset: lineHide7(el) }, { strokeDashoffset: 0, ease: "power2.inOut", duration: POWER7_LINE_D }, at);
           });
           const arrow = connectorArrows[k];
           if (arrow) {
@@ -1648,7 +1653,7 @@ export function HeroSectionClient({
         const sqAt = POWER7_ON + POWER7_LINE_D + 0.15;
         [connectorGreens[2], connectorGlows[2]].forEach((el) => {
           if (!el) return;
-          seq7.fromTo(el, { strokeDashoffset: lineLen7(el) }, { strokeDashoffset: 0, ease: "power2.inOut", duration: 0.7 }, sqAt);
+          seq7.fromTo(el, { strokeDashoffset: lineHide7(el) }, { strokeDashoffset: 0, ease: "power2.inOut", duration: 0.7 }, sqAt);
         });
       }
       let restoring7 = false; // set by the reload-restore below while it jumps the timeline
@@ -1696,7 +1701,7 @@ export function HeroSectionClient({
         // lines: the squiggle first, then both charges retract toward the main board
         const retract = (el: SVGPathElement | undefined, at: number, dur: number) => {
           if (!el) return;
-          u.to(el, { strokeDashoffset: lineLen7(el), ease: "power2.in", duration: dur }, at);
+          u.to(el, { strokeDashoffset: lineHide7(el), ease: "power2.in", duration: dur }, at);
         };
         retract(connectorGreens[2], 0, D * 0.4);
         retract(connectorGlows[2], 0, D * 0.4);
@@ -1846,6 +1851,17 @@ export function HeroSectionClient({
         }
       };
 
+      // Per-crossing traversal tuning (also used by the nav jump's entrance replay).
+      const CROSSING_SECONDS: Record<number, number> = {
+        0: 2.2, // hero-server center glide
+        1: 2.1, // mids dissolve + stack docking + greening
+        2: 3.3, // the Machine's arrival + full unfold (user asked for a calmer unfold)
+        3: 2.8, // pods stack rise + callout wiring
+        4: 3.2, // deploy board + terminal/push-line/cards pipeline (densest segment)
+        5: 2.7, // board morph into the AI composition
+        6: 2.0, // pricing reveal
+        7: 2.0, // closing CTA
+      };
       const goToState = (i: number, hurry = 1) => {
         if (!pinST) return;
         // a push during the hero server's load-in lands it at once (clean props for the glide)
@@ -1879,16 +1895,6 @@ export function HeroSectionClient({
         // than that: it is by far the densest segment (2.68 timeline units of content vs ~1.5
         // elsewhere), so at the shared pace it read as a jump — "section-5-დან section-6-მდე
         // უცბად გადადის". At 3.2s it runs at roughly the same units-per-second as its neighbours.
-        const CROSSING_SECONDS: Record<number, number> = {
-          0: 2.2, // hero-server center glide
-          1: 2.1, // mids dissolve + stack docking + greening
-          2: 3.3, // the Machine's arrival + full unfold (user asked for a calmer unfold)
-          3: 2.8, // pods stack rise + callout wiring
-          4: 3.2, // deploy board + terminal/push-line/cards pipeline (densest segment)
-          5: 2.7, // board morph into the AI composition
-          6: 2.0, // pricing reveal
-          7: 2.0, // closing CTA
-        };
         const lo = Math.min(stateIndex, i);
         const tuned = Math.abs(stateIndex - i) === 1 ? CROSSING_SECONDS[lo] : undefined;
         // `hurry` < 1 comes from chained pushes: each extra shove while a flight is running makes
@@ -1942,13 +1948,42 @@ export function HeroSectionClient({
       // not tweened, so none of the in-between artwork plays; events are left ON during the seek
       // so the state-6/7 gates (terminal typing, board ignition) still fire for the page we land
       // on, and the stage fades back in over 0.3s so the cut doesn't pop.
+      // where each page's OWN entrance begins — i.e. the first tween that brings its artwork in,
+      // after the previous page's exits. A nav jump seeks here and plays forward to the snap, so
+      // the page arrives animating instead of already finished (user: "the machine… svg უკვე
+      // ანიმირებულია, დასრულებული ანიმაციით შემოდის"). State 0's load-in isn't on the timeline —
+      // it is replayed directly (playHeroText / playServerIntro).
+      const ENTER_TIMES = [0, 0.05, 1.28, 2.6, 4.8, 6.45, 9.05, 11.75, 13.2];
       const jumpToState = (i: number) => {
         if (!pinST) return;
         const target = Math.min(Math.max(0, Math.round(i)), LAST);
-        if (target === stateIndex && !transitioning) return;
-        if (serverIntro?.isActive()) serverIntro.progress(1);
+        gsap.killTweensOf(window);
+        gsap.killTweensOf(tl);
+        serverIntro?.kill();
+        serverIntro = null;
+        transitioning = true;
+        flightStartedAt = performance.now();
+        // a jump ends any chained-push acceleration and any half-finished gesture bookkeeping
+        chain = 0;
+        flickFresh = false;
+        gestureFiredFlight = true;
+        const myFlight = ++flightId;
+        // A jump is a LANDING, not a flight you can turn around from: `transitionFrom` is the
+        // page we just landed on. Left as the previous state, an up-push during the entrance read
+        // as "turn around" and went back to where we came from (a flick after navigating out of
+        // the footer went straight back down to it).
+        transitionFrom = target;
+        stateIndex = target;
+        try {
+          sessionStorage.setItem(STATE_KEY, String(target));
+        } catch {
+          /* private mode */
+        }
+        // land on the page first (scroll + the start of its entrance), then play it in
+        const enter = Math.min(ENTER_TIMES[target] ?? SNAP_TIMES[target], SNAP_TIMES[target]);
+        tl.time(enter);
         // same state-7 housekeeping as a glide: arrive with the board OFF, ready to ignite
-        if (tl.time() < GATE7_AT && SNAP_TIMES[target] > GATE7_AT) {
+        if (enter < GATE7_AT && SNAP_TIMES[target] > GATE7_AT) {
           if (unwind7) resume7();
           else {
             seq7.pause(0);
@@ -1956,25 +1991,28 @@ export function HeroSectionClient({
             resetPower7();
           }
         }
-        gsap.killTweensOf(window);
-        gsap.killTweensOf(tl);
-        transitioning = true;
-        const myFlight = ++flightId;
-        transitionFrom = stateIndex;
-        stateIndex = target;
-        try {
-          sessionStorage.setItem(STATE_KEY, String(target));
-        } catch {
-          /* private mode */
-        }
-        tl.time(SNAP_TIMES[target]);
         window.scrollTo(0, pinST.start + (SNAP_TIMES[target] / total) * PIN_SCROLL_DISTANCE);
         if (stageRef.current) {
           gsap.fromTo(stageRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
         }
+        const span = SNAP_TIMES[target] - enter;
+        // the entrance plays at the same pace a scrolled crossing would give it
+        const full = SNAP_TIMES[target] - (target > 0 ? SNAP_TIMES[target - 1] : 0);
+        const seconds =
+          span <= 0.001
+            ? 0
+            : Math.max(0.6, ((CROSSING_SECONDS[target - 1] ?? TRANSITION_SECONDS) * span) / (full || span));
+        if (seconds > 0) tl.tweenTo(SNAP_TIMES[target], { duration: seconds, ease: "power1.out", overwrite: true });
+        if (target === 0) {
+          // the hero introduces itself again — its load-in never lived on the timeline
+          playHeroText(0.6);
+          playServerIntro(0.15);
+        }
+        // the lock only has to outlive the click's own momentum — a wheel push during the
+        // entrance should be able to interrupt it (goToState retargets from the live playhead)
         window.setTimeout(() => {
           if (flightId === myFlight) transitioning = false;
-        }, 200);
+        }, 350);
       };
 
       pinST = ScrollTrigger.create({
@@ -2337,11 +2375,24 @@ export function HeroSectionClient({
       const onNavClick = (e: MouseEvent) => {
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         const anchor = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-        const href = anchor?.getAttribute("href") ?? "";
-        if (!href.startsWith("#")) return;
-        if (goToHash(href)) {
+        if (!anchor) return;
+        const href = anchor.getAttribute("href") ?? "";
+        if (href.startsWith("#")) {
+          if (goToHash(href)) {
+            e.preventDefault();
+            history.replaceState(null, "", href);
+          }
+          return;
+        }
+        // the logo (header and footer both link to "/"): bring the hero back the same way a nav
+        // item brings its page back — land on it and let it introduce itself, rather than racing
+        // the scroll to the top (user: "ზემოთ სწრაფად კი არ ამიყვანოს, ეგრევე section-hero
+        // შემოვიდეს")
+        const url = new URL(anchor.href, window.location.href);
+        if (url.origin === window.location.origin && url.pathname === window.location.pathname && !url.hash) {
           e.preventDefault();
-          history.replaceState(null, "", href);
+          history.replaceState(null, "", url.pathname);
+          jumpToState(0);
         }
       };
       const onHashChange = () => {
@@ -2360,18 +2411,25 @@ export function HeroSectionClient({
       ScrollTrigger.addEventListener("refresh", onRefresh);
 
       // State 1's column is visible at t=0, so its blur-in can't live on the pinned timeline —
-      // it plays once, in real seconds, right after mount (same look as every other column).
-      {
-        gsap.set(heroText, { opacity: 1 });
-        const HERO_STAGGER = [0.03, 0.06, 0.012];
-        const HERO_DELAY = [0.15, 0.3, 0.5, 0.75];
-        Array.from(heroText.children).forEach((node, i) => {
-          const field = node as HTMLElement;
-          const rank = Math.min(i, 2);
-          const whole = field.hasAttribute("data-blur-block") || !!field.querySelector("a,button");
-          const targets = whole
+      // it plays in real seconds, right after mount. It is a FUNCTION because the logo replays
+      // it: clicking the logo lands on the hero and the page introduces itself again, instead of
+      // arriving finished (user: "ზემოთ სწრაფად კი არ ამიყვანოს, ეგრევე section-hero შემოვიდეს").
+      const HERO_STAGGER = [0.03, 0.06, 0.012];
+      const HERO_DELAY = [0.15, 0.3, 0.5, 0.75];
+      // split once — replays reuse the same word spans
+      const heroFields = Array.from(heroText.children).map((node) => {
+        const field = node as HTMLElement;
+        const whole = field.hasAttribute("data-blur-block") || !!field.querySelector("a,button");
+        return {
+          whole,
+          targets: whole
             ? [field]
-            : [...Array.from(field.querySelectorAll<HTMLElement>("img")), ...splitWords(field)];
+            : [...Array.from(field.querySelectorAll<HTMLElement>("img")), ...splitWords(field)],
+        };
+      });
+      const playHeroText = (delayScale = 1) => {
+        gsap.set(heroText, { opacity: 1 });
+        heroFields.forEach(({ whole, targets }, i) => {
           gsap.fromTo(
             targets,
             { opacity: 0, y: 14, ...(whole ? {} : { filter: "blur(12px)" }) },
@@ -2381,12 +2439,13 @@ export function HeroSectionClient({
               ...(whole ? {} : { filter: "blur(0px)" }),
               duration: 0.8,
               ease: "power3.out",
-              stagger: whole ? 0 : HERO_STAGGER[rank],
-              delay: HERO_DELAY[Math.min(i, HERO_DELAY.length - 1)],
+              overwrite: true,
+              stagger: whole ? 0 : HERO_STAGGER[Math.min(i, 2)],
+              delay: HERO_DELAY[Math.min(i, HERO_DELAY.length - 1)] * delayScale,
             },
           );
         });
-      }
+      };
 
       // The hero server assembles itself on load (user: the copy blurs in nicely, the server just
       // "appeared"): the base rises into place, then the lower slab, upper slab and cap drop onto
@@ -2395,28 +2454,35 @@ export function HeroSectionClient({
       // that restores a later state just reveals it (the server has moved on by then).
       // Per-element CSS `translate` + opacity — the same channel the state-2 float uses, so it
       // can't fight the timeline's transforms — cleared when done or when a push cuts it short.
-      {
+      const playServerIntro = (delay = 0.3) => {
         gsap.set(serverSvgHost, { opacity: 1 });
-        if (saved === 0) {
-          const [cap, upper, lower, base] = float2Layers;
-          const intro = gsap.timeline({
-            delay: 0.3,
-            onComplete: () => {
-              gsap.set(float2Layers.flat(), { clearProps: "translate,opacity" });
-              serverIntro = null;
-            },
-          });
-          intro.fromTo(base, { translate: "0px 46px", opacity: 0 }, { translate: "0px 0px", opacity: 1, duration: 1, ease: "power3.out" }, 0);
-          [lower, upper, cap].forEach((els, k) => {
-            intro.fromTo(
-              els,
-              { translate: `0px ${-70 - k * 25}px`, opacity: 0 },
-              { translate: "0px 0px", opacity: 1, duration: 0.95, ease: "back.out(1.15)" },
-              0.2 + k * 0.17,
-            );
-          });
-          serverIntro = intro;
-        }
+        serverIntro?.kill();
+        const [cap, upper, lower, base] = float2Layers;
+        const intro = gsap.timeline({
+          delay,
+          onComplete: () => {
+            gsap.set(float2Layers.flat(), { clearProps: "translate,opacity" });
+            serverIntro = null;
+          },
+        });
+        intro.fromTo(base, { translate: "0px 46px", opacity: 0 }, { translate: "0px 0px", opacity: 1, duration: 1, ease: "power3.out" }, 0);
+        [lower, upper, cap].forEach((els, k) => {
+          intro.fromTo(
+            els,
+            { translate: `0px ${-70 - k * 25}px`, opacity: 0 },
+            { translate: "0px 0px", opacity: 1, duration: 0.95, ease: "back.out(1.15)" },
+            0.2 + k * 0.17,
+          );
+        });
+        serverIntro = intro;
+      };
+      gsap.set(serverSvgHost, { opacity: 1 });
+      if (saved === 0) {
+        playHeroText();
+        playServerIntro();
+      } else {
+        // a restored/deep-linked later state: the hero column is already behind us
+        gsap.set(heroText, { opacity: 1 });
       }
 
       // the left ruler's green overlay fills top-down across the ENTIRE pinned journey —

@@ -64,6 +64,18 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 61: nav/logo land with the page's own entrance; the state-7 green speck (2026-10-01)
+
+**1. A nav jump now PLAYS the page in.** Pass 60 seeked straight to the snap, so the target arrived with its artwork already finished ("the machine… svg უკვე ანიმირებულია, დასრულებული ანიმაციით შემოდის"). `jumpToState` now seeks to a new `ENTER_TIMES[i]` — the position where that page's OWN entrance begins, after the previous page's exits (0.05 / 1.28 / 2.6 / 4.8 / 6.45 / 9.05 / 11.75 / 13.2) — and tweens from there to the snap at the pace a scrolled crossing would give it (`CROSSING_SECONDS[i-1] × span / full`, so the Machine unfolds over ~2.8s). Verified frame by frame: the platforms arrive collapsed and open up.
+
+**2. The logo brings the hero back the same way.** It is a plain `/` link, so the click handler now also catches "same path, no hash" and calls `jumpToState(0)`. State 1's load-in never lived on the timeline, so it was refactored into `playHeroText()` / `playServerIntro()` — called once on mount, replayed on the jump. Verified: the copy blur-rises word by word and the server re-assembles.
+
+**3. The green speck that followed you around.** `resetPower7` hid the state-7 charge paths with `stroke-dasharray: L L` + `stroke-dashoffset: L`, which puts the on→off boundary exactly on the path's first point — and those strokes have ROUND caps, so Chrome painted that zero-length dash as a DOT. The squiggle's dot stayed visible on every other page (the connector layer is only faded out from state 8 on). New `lineHide7() = lineLen7() + 1` moves the boundary into the gap; used in `resetPower7` and in every `fromTo`/unwind "from" value so a reverse can't restore it either.
+
+**4. `transitionFrom` after a jump is the page you LANDED on**, not the one you left — otherwise an up-push during the entrance read as "turn around" and went back (a flick after navigating out of the footer dived straight back into it). The lock is 350ms, just long enough to swallow the click's own momentum; a wheel push after that interrupts the entrance normally, since `tweenTo` retargets from the live playhead.
+
+**Testing note worth keeping**: the dev server's HMR had accumulated duplicate wheel handlers by this point, and the gesture suite started reporting one extra state per flick. Against `next start` on a fresh port every case is exact — when the driver suddenly "counts double", test the PRODUCTION build before believing it.
+
 ## Polish pass 60: nav lands DIRECTLY on its page (2026-09-30)
 
 Clicking a nav item used to run `goToState`, which tweens the timeline — so the whole journey between the two pages played at speed ("ყველა გვერდი კი არ ჩაიაროს, არამედ პირდაპირ ის გვერდი გამოიტანოს… ოღონდ მხოლოდ მაშინ, როცა ნავიგაციიდან დააჭერ"). A new `jumpToState` is used by the header navigation ONLY — every scroll gesture still glides through its crossing exactly as before.
