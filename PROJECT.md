@@ -64,6 +64,16 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 62: two jump bugs — the state-7 power-down flash and the dead server (2026-10-02)
+
+Both reported together ("footer-ში ვარ, ვაჭერ logo-ს… section-7 lines ანიმაცია ჩანს წამიერად, როგორ კარგავს სიმწვანეს… ხან კიდე საერთოდ იკარგება და არაფერს გამოიტანს, ილეწება"), both caused by cutting something short:
+
+1. **The state-7 power-down played on top of the hero.** `jumpToState` seeked with events ON, so a jump from the footer crossed state 7's gate BACKWARDS and fired its `onReverseComplete` → `unwindPower7()`, a REAL-TIME timeline that un-greens the connector lines. The connector layer is only faded from state 8 on, so it ran in full view on state 1. The seek is now `tl.time(enter, true)` (suppressed) and the out-of-timeline sequences are put back by hand instead: `unwind7` killed, `seq7`/`seq6` reset, `resetPower7()`. Every nav target enters BELOW its gate, so the forward entrance tween re-fires whatever that page needs. Measured: 6 drawn green paths at +250ms before, 0 after.
+
+2. **Killing the server load-in left the artwork invisible.** `playServerIntro` animates per-element `translate`/`opacity`, and those same elements ARE states 2-3's stack. Killing the timeline mid-flight (any jump does) froze them — jumping away during the intro left all 170 svg children at opacity 0, i.e. a blank page. New `killServerIntro()` kills AND `clearProps: "translate,opacity"`. Verified against the clean path: both now land on exactly 146 hidden / 76 translated on Features (before: 170 hidden).
+
+Note for future debugging: the dev server's HMR had again accumulated duplicate handlers, which showed as "the hero text doesn't replay" (opacity already 1) and extra states per flick. Everything in this pass was confirmed on `next start` — on production the hero's blur-in reads 0.37 opacity mid-flight, exactly as intended.
+
 ## Polish pass 61: nav/logo land with the page's own entrance; the state-7 green speck (2026-10-01)
 
 **1. A nav jump now PLAYS the page in.** Pass 60 seeked straight to the snap, so the target arrived with its artwork already finished ("the machine… svg უკვე ანიმირებულია, დასრულებული ანიმაციით შემოდის"). `jumpToState` now seeks to a new `ENTER_TIMES[i]` — the position where that page's OWN entrance begins, after the previous page's exits (0.05 / 1.28 / 2.6 / 4.8 / 6.45 / 9.05 / 11.75 / 13.2) — and tweens from there to the snap at the pace a scrolled crossing would give it (`CROSSING_SECONDS[i-1] × span / full`, so the Machine unfolds over ~2.8s). Verified frame by frame: the platforms arrive collapsed and open up.

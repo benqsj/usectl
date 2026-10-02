@@ -1959,8 +1959,7 @@ export function HeroSectionClient({
         const target = Math.min(Math.max(0, Math.round(i)), LAST);
         gsap.killTweensOf(window);
         gsap.killTweensOf(tl);
-        serverIntro?.kill();
-        serverIntro = null;
+        killServerIntro();
         transitioning = true;
         flightStartedAt = performance.now();
         // a jump ends any chained-push acceleration and any half-finished gesture bookkeeping
@@ -1979,18 +1978,22 @@ export function HeroSectionClient({
         } catch {
           /* private mode */
         }
-        // land on the page first (scroll + the start of its entrance), then play it in
+        // land on the page first (scroll + the start of its entrance), then play it in.
+        // The seek SUPPRESSES events: crossing a gate backwards would otherwise fire its
+        // onReverseComplete, and state 7's gate starts a real-time power-down — which is why
+        // jumping home from the footer briefly showed the state-7 lines losing their green and
+        // fading out on top of the hero (user report). The sequences those gates drive live
+        // outside the timeline, so they are put back by hand right here instead; every nav target
+        // enters BELOW its gate, so the forward tween below re-fires whatever the page needs.
         const enter = Math.min(ENTER_TIMES[target] ?? SNAP_TIMES[target], SNAP_TIMES[target]);
-        tl.time(enter);
-        // same state-7 housekeeping as a glide: arrive with the board OFF, ready to ignite
-        if (enter < GATE7_AT && SNAP_TIMES[target] > GATE7_AT) {
-          if (unwind7) resume7();
-          else {
-            seq7.pause(0);
-            reset7();
-            resetPower7();
-          }
-        }
+        tl.time(enter, true);
+        unwind7?.kill();
+        unwind7 = null;
+        seq7.pause(0);
+        reset7();
+        resetPower7();
+        seq6.pause(0);
+        reset6();
         window.scrollTo(0, pinST.start + (SNAP_TIMES[target] / total) * PIN_SCROLL_DISTANCE);
         if (stageRef.current) {
           gsap.fromTo(stageRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
@@ -2454,9 +2457,20 @@ export function HeroSectionClient({
       // that restores a later state just reveals it (the server has moved on by then).
       // Per-element CSS `translate` + opacity — the same channel the state-2 float uses, so it
       // can't fight the timeline's transforms — cleared when done or when a push cuts it short.
+      // Killing the load-in outright leaves its per-element `translate`/`opacity` frozen at
+      // whatever frame it died on — and those elements are the SAME artwork states 2 and 3 use,
+      // so a jump away mid-intro left the whole server invisible on the next page (user: "ხან
+      // საერთოდ იკარგება და არაფერს გამოიტანს, ილეწება"). Cutting it short must always clear
+      // the props it set.
+      const killServerIntro = () => {
+        if (!serverIntro) return;
+        serverIntro.kill();
+        serverIntro = null;
+        gsap.set(float2Layers.flat(), { clearProps: "translate,opacity" });
+      };
       const playServerIntro = (delay = 0.3) => {
         gsap.set(serverSvgHost, { opacity: 1 });
-        serverIntro?.kill();
+        killServerIntro();
         const [cap, upper, lower, base] = float2Layers;
         const intro = gsap.timeline({
           delay,
