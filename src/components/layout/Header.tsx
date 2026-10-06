@@ -50,17 +50,12 @@ export function Header() {
           <ul className="flex items-center gap-8 whitespace-nowrap font-heading text-base text-white/80 max-[1279.98px]:gap-6 max-[1279.98px]:text-[15px]">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
-                {/* hover: the label warms to the brand green while a green rule sweeps in from
-                    the left under it (the page's own accent, not a plain white highlight) */}
+                {/* hover: the label warms to the brand green — colour only, no underline rule */}
                 <Link
                   href={link.href}
-                  className="group relative inline-block py-1 transition-colors duration-300 ease-out hover:text-brand"
+                  className="inline-block py-1 transition-colors duration-300 ease-out hover:text-brand"
                 >
                   {link.label}
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-brand transition-transform duration-300 ease-out group-hover:scale-x-100"
-                  />
                 </Link>
               </li>
             ))}
