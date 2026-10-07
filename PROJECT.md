@@ -64,6 +64,18 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## Polish pass 63: the state-6 ring followed you to the hero (2026-10-07)
+
+User: "section-6 ზე server svg ზე არის პატარა წრე სადანაც ანიმაცია მოდის ჟანგბადივით, ეს წრე რჩება როცა usectl ლოგოს ვაჭერ და საიტი section-hero ზე მიდის". Reproduced at 1920×1080: after a logo jump from the footer a 16px green ring sat at (1083, 623) design px over the hero.
+
+Cause: **rewinding a GSAP timeline re-applies its FROM values, and `node6`'s "from" is `autoAlpha: NODE6_DIM` — i.e. VISIBLE.** `jumpToState` parked `seq6` (`seq6.pause(0)` + `reset6()`) AFTER `tl.time(enter, true)`, so the seek correctly hid the ring and `seq6`'s rewind then put it straight back at 30%. The ring lives inside `pipe6Wrap`, which the main tl only fades from 9.0 on, so nothing downstream hid it again — it rode all the way to state 1.
+
+Fix: `seq6.pause(0); reset6();` now run BEFORE the seek, so the main timeline's own `node6`/`pushLine6` tweens have the last word. (The state-7 resets stay after the seek — pass 62's reasoning is unchanged; `resetPower7`'s values ARE the off state, so they don't fight the seek.)
+
+General rule: anything parked by hand in `jumpToState` must run before `tl.time()` unless its reset values are the state the destination page actually needs.
+
+Verified (synthetic wheel suite + nav clicks): ring hidden on the hero after a logo jump and on all four nav targets, still ignites normally when scrolling into state 6 — including straight after a jump home (terminal typed, glow + bubbles, cards wired). `tsc`/`eslint` clean.
+
 ## Polish pass 62: two jump bugs — the state-7 power-down flash and the dead server (2026-10-02)
 
 Both reported together ("footer-ში ვარ, ვაჭერ logo-ს… section-7 lines ანიმაცია ჩანს წამიერად, როგორ კარგავს სიმწვანეს… ხან კიდე საერთოდ იკარგება და არაფერს გამოიტანს, ილეწება"), both caused by cutting something short:
