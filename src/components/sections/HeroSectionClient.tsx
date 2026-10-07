@@ -1986,14 +1986,20 @@ export function HeroSectionClient({
         // outside the timeline, so they are put back by hand right here instead; every nav target
         // enters BELOW its gate, so the forward tween below re-fires whatever the page needs.
         const enter = Math.min(ENTER_TIMES[target] ?? SNAP_TIMES[target], SNAP_TIMES[target]);
+        // seq6 is parked BEFORE the seek, not after: rewinding it re-applies its FROM values, and
+        // the ring's "from" is autoAlpha NODE6_DIM — i.e. visible. Parked after the seek it put the
+        // state-6 ring back on screen at 30% over whatever page we landed on, and the ring lives in
+        // pipe6Wrap, which the main tl only fades from 9.0 on, so it survived all the way to the
+        // hero (user: "section-6 ... პატარა წრე ... section-hero ში მომყვება"). Seeking afterwards
+        // lets the main timeline's own node6/pipe tweens have the last word.
+        seq6.pause(0);
+        reset6();
         tl.time(enter, true);
         unwind7?.kill();
         unwind7 = null;
         seq7.pause(0);
         reset7();
         resetPower7();
-        seq6.pause(0);
-        reset6();
         window.scrollTo(0, pinST.start + (SNAP_TIMES[target] / total) * PIN_SCROLL_DISTANCE);
         if (stageRef.current) {
           gsap.fromTo(stageRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
