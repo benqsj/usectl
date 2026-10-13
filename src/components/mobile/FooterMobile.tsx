@@ -7,6 +7,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { m } from "./HeroMobile";
+import { DOCS_URL, type NavLink } from "@/lib/nav";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -14,13 +15,13 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 // reflow, so phones get this flow-layout version with the same content, stacked. Same staggered
 // fade-up on enter as the desktop one.
 
-const NAV_LINKS = [
+const NAV_LINKS: readonly NavLink[] = [
   { label: "The Machine", href: "#the-machine" },
   { label: "Agents", href: "#agents" },
   { label: "Features", href: "#features" },
   { label: "Pricing", href: "#pricing" },
-  { label: "Doc", href: "#documentation" },
-] as const;
+  { label: "Doc", href: DOCS_URL, external: true },
+];
 
 export function FooterMobile() {
   const ref = useRef<HTMLElement>(null);
@@ -131,7 +132,12 @@ export function FooterMobile() {
           <ul style={{ marginTop: m(16) }}>
             {NAV_LINKS.map((l) => (
               <li key={l.href} style={{ marginBottom: m(10) }}>
-                <Link href={l.href} className={link} style={{ fontSize: m(14.5) }}>
+                <Link
+                  href={l.href}
+                  {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                  className={link}
+                  style={{ fontSize: m(14.5) }}
+                >
                   {l.label}
                 </Link>
               </li>

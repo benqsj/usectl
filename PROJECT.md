@@ -64,6 +64,15 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## External destinations wired up: Documentation + Start Building (2026-10-13)
+
+The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usectl.com/#introduction`) and `SIGNUP_URL` (`https://manager.usectl.com/login`) so nothing can drift.
+
+- **Documentation** is no longer the inert `#documentation` hash: `NavLink` gained `external?: boolean`, and the link renders with `target="_blank" rel="noopener noreferrer"` in the Header, the burger menu, and both footers' "Doc" row (the two footers keep their own local link arrays — they are now typed `readonly NavLink[]`; `as const` would make `link.external` a type error on the members that lack it). The desktop `onNavClick` capture handler needs no change: the href doesn't start with `#` and the origin differs, so it falls through to the browser.
+- **Start Building** (hero state 1, state 9, HeroMobile, burger menu) points at `SIGNUP_URL` in the SAME tab — per the request's wording ("ახალ გვერდზე"), in contrast to Documentation's explicit "new blank tab".
+- **Deliberately untouched**: the "Start now from $15 / month" pricing CTA (desktop state 8 + HeroMobile) still points at `#start`, and so does "See how it works" (`#how`) — neither was in the request.
+- Verified in Chromium against the dev server: the Documentation click opens a second tab on the docs URL with the landing page left where it was; a Start Building click lands on the real manager login; the four hash nav items still jump exactly (11439 / 3859 / 10168 / 2088) with zero page errors. `tsc` / `eslint` / `next build` clean.
+
 ## Polish pass 63: the state-6 ring followed you to the hero (2026-10-07)
 
 User: "section-6 ზე server svg ზე არის პატარა წრე სადანაც ანიმაცია მოდის ჟანგბადივით, ეს წრე რჩება როცა usectl ლოგოს ვაჭერ და საიტი section-hero ზე მიდის". Reproduced at 1920×1080: after a logo jump from the footer a 16px green ring sat at (1083, 623) design px over the hero.

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { s } from "@/lib/grid";
+import { DOCS_URL, type NavLink } from "@/lib/nav";
 import { SceneLight } from "./SceneLight";
 
 // Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
@@ -11,13 +12,13 @@ import { SceneLight } from "./SceneLight";
 // logo.svg itself, desaturated via CSS filter. "© 2026 SYSTEMCTL" is what the design says — NOT
 // usectl — kept verbatim on purpose.
 
-const NAV_LINKS = [
+const NAV_LINKS: readonly NavLink[] = [
   { label: "The Machine", href: "#the-machine" },
   { label: "Agents", href: "#agents" },
   { label: "Features", href: "#features" },
   { label: "Pricing", href: "#pricing" },
-  { label: "Doc", href: "#documentation" },
-] as const;
+  { label: "Doc", href: DOCS_URL, external: true },
+];
 
 // A plain server component: its scroll-in fade-up was switched off (2026-09-29 — with the fullpage
 // footer glide it read as a second animation to wait out) and then removed with the gsap/client
@@ -124,6 +125,7 @@ export function Footer() {
             <li key={link.href} style={{ marginBottom: s(14) }}>
               <Link
                 href={link.href}
+                {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                 className="font-light text-white/55 transition-colors hover:text-white"
                 style={{ fontSize: s(15.5) }}
               >

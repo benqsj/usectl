@@ -8,6 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { mountMachine } from "./machineUnfold";
 import { processAgentSvg } from "@/lib/agentSvg";
+import { SIGNUP_URL } from "@/lib/nav";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -104,7 +105,7 @@ function Buttons() {
   return (
     // compact enough that both pills stay on ONE row down to a 360px phone (m() shrinks with the width)
     <div data-m-copy className="flex flex-nowrap items-center" style={{ gap: m(8), marginTop: m(22) }}>
-      <Link href="#start" className={`${PILL} shrink-0 whitespace-nowrap font-semibold`} style={{ height: m(38), paddingInline: m(16), fontSize: m(12.5) }}>
+      <Link href={SIGNUP_URL} className={`${PILL} shrink-0 whitespace-nowrap font-semibold`} style={{ height: m(38), paddingInline: m(16), fontSize: m(12.5) }}>
         Start Building
       </Link>
       <Link

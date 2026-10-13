@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { SIGNUP_URL } from "@/lib/nav";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -26,7 +27,7 @@ function MenuArrow({ size }: { size: number }) {
   );
 }
 
-type NavLink = { label: string; href: string };
+type NavLink = { label: string; href: string; external?: boolean };
 
 export function MobileMenu({ links }: { links: readonly NavLink[] }) {
   const [open, setOpen] = useState(false);
@@ -169,6 +170,7 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
                     <Link
                       data-menu-row
                       href={l.href}
+                      {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                       onClick={() => setOpen(false)}
                       className="group flex items-baseline gap-4 py-4 font-heading text-[30px] leading-none text-white/85 transition-colors hover:text-white sm:text-[38px]"
                     >
@@ -192,7 +194,7 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
             <div className="relative mx-auto mt-auto w-full max-w-[640px] px-5 pb-10 pt-10 sm:px-8">
               <div data-menu-foot className="flex flex-nowrap gap-2.5">
                 <Link
-                  href="#start"
+                  href={SIGNUP_URL}
                   onClick={() => setOpen(false)}
                   className="flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-white/25 px-5 font-heading text-[14px] font-semibold text-foreground transition-colors hover:border-brand hover:text-brand active:border-brand active:text-brand"
                 >

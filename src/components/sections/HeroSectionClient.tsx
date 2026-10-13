@@ -8,7 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 import { useGSAP } from "@gsap/react";
 import { s, readScale, HEADER_HEIGHT_PX } from "@/lib/grid";
-import { NAV_STATE_BY_HASH } from "@/lib/nav";
+import { NAV_STATE_BY_HASH, SIGNUP_URL } from "@/lib/nav";
 import { SceneLight } from "@/components/layout/SceneLight";
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, useGSAP);
@@ -2628,7 +2628,7 @@ export function HeroSectionClient({
         {/* gap 30 → 14 (team, 2026-09-29: "button ები ერთმანეთს დაშორება შეამცირე") */}
         <div className="flex items-center" style={{ gap: s(14), marginTop: s(34) }}>
           <Link
-            href="#start"
+            href={SIGNUP_URL}
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
             style={{ height: s(48), paddingLeft: s(32), paddingRight: s(32), fontSize: s(16) }}
           >
@@ -3991,7 +3991,7 @@ export function HeroSectionClient({
             ზემოთ… დაშორება ოდნავ შესამცირებელია", then again: "დაშორება შეამცირე") */}
         <div className="absolute flex items-center" style={{ left: s(187), top: s(606), gap: s(14) }}>
           <Link
-            href="#start"
+            href={SIGNUP_URL}
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
             style={{ height: s(48), paddingLeft: s(32), paddingRight: s(32), fontSize: s(16) }}
           >

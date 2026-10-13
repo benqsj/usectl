@@ -53,6 +53,7 @@ export function Header() {
                 {/* hover: the label warms to the brand green — colour only, no underline rule */}
                 <Link
                   href={link.href}
+                  {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                   className="inline-block py-1 transition-colors duration-300 ease-out hover:text-brand"
                 >
                   {link.label}
