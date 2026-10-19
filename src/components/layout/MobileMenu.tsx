@@ -201,7 +201,7 @@ export function MobileMenu({ links }: { links: readonly NavLink[] }) {
                   Start Building
                 </Link>
                 <Link
-                  href="#how"
+                  href={SIGNUP_URL}
                   onClick={() => setOpen(false)}
                   className="flex h-11 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded-full border border-white/25 pl-5 pr-4 font-heading text-[14px] text-white/90 transition-colors hover:border-brand hover:text-brand active:border-brand active:text-brand"
                 >

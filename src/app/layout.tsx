@@ -19,7 +19,7 @@ const spaceGrotesk = Space_Grotesk({
 
 const siteName = "UseCTL";
 const siteDescription = "TODO: Product description";
-const siteUrl = "https://usectlcom";
+const siteUrl = "https://usectl.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

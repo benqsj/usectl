@@ -109,7 +109,7 @@ function Buttons() {
         Start Building
       </Link>
       <Link
-        href="#how"
+        href={SIGNUP_URL}
         className={`${PILL} shrink-0 whitespace-nowrap font-normal text-white/90`}
         style={{ height: m(38), paddingLeft: m(16), paddingRight: m(12), fontSize: m(12.5), gap: m(2) }}
       >
@@ -803,7 +803,7 @@ export function HeroMobile() {
         </div>
         {/* the desktop CTA: bordered box with brighter blueprint corner brackets, brand label */}
         <a
-          href="#start"
+          href={SIGNUP_URL}
           className="relative flex items-center justify-center border border-white/20 font-heading text-brand transition-colors hover:bg-white/5 active:bg-white/5"
           style={{ marginTop: m(18), height: m(50), fontSize: m(14.5) }}
         >

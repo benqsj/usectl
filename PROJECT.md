@@ -73,6 +73,15 @@ The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usec
 - **Deliberately untouched**: the "Start now from $15 / month" pricing CTA (desktop state 8 + HeroMobile) still points at `#start`, and so does "See how it works" (`#how`) — neither was in the request.
 - Verified in Chromium against the dev server: the Documentation click opens a second tab on the docs URL with the landing page left where it was; a Start Building click lands on the real manager login; the four hash nav items still jump exactly (11439 / 3859 / 10168 / 2088) with zero page errors. `tsc` / `eslint` / `next build` clean.
 
+## Every CTA now lands on the manager, and the tab shows the brand mark (2026-10-19)
+
+- **The two remaining dead hashes are gone**: "See how it works" (`#how` — desktop state 1 + state 9, HeroMobile, burger menu) and the pricing CTA "Start now from $15 / month" (`#start` — desktop state 8 + HeroMobile) both point at `SIGNUP_URL`, same tab, exactly like Start Building (user: "see how it works, start now from აქედანაც რო გადადიოდეს იქ"). `src/` now contains ZERO `#how`/`#start` references, and the production HTML has 10 `manager.usectl.com/login` hrefs. The desktop capture-phase `onNavClick` needs no change — the hrefs no longer start with `#`, so they fall through to the browser (same path Documentation already took).
+- **Favicon**: the repo still shipped Create Next App's default `src/app/favicon.ico` (md5 c30c7d42…, untouched since the initial commit). Replaced by the usectl asterisk:
+  - `src/app/icon.svg` — the four asterisk bar paths copied VERBATIM from `public/logo/logo.svg` (its paths 7-10, bbox x 28.34-48.03 / y 0-24.28) inside a 32×32 box via `translate(-24.89 3) scale(1.0708)`. The wordmark is deliberately NOT in the icon — at 16px it's unreadable.
+  - `src/app/favicon.ico` — regenerated (16/32/48 PNG-in-ICO) by a throwaway Python script that rasterises the SAME mark as 4 round-capped segments (half-width 0.82 in logo units: the vertical bar, the two diagonals, the horizontal bar), 4×4 supersampled, `#11A32A` on transparent. No image library was needed; if it ever has to be redone, the segment endpoints are the midpoints of each path's two cap arcs.
+  - Next emits both `<link rel="icon">` tags; `/favicon.ico` and `/icon.svg` both serve 200 with the right content types.
+- **`metadataBase` typo fixed**: `siteUrl` was `https://usectlcom` (missing dot) — every canonical/OG URL was built on it. Now `https://usectl.com`. The `TODO: Product description` metadata copy is still open.
+
 ## Polish pass 63: the state-6 ring followed you to the hero (2026-10-07)
 
 User: "section-6 ზე server svg ზე არის პატარა წრე სადანაც ანიმაცია მოდის ჟანგბადივით, ეს წრე რჩება როცა usectl ლოგოს ვაჭერ და საიტი section-hero ზე მიდის". Reproduced at 1920×1080: after a logo jump from the footer a 16px green ring sat at (1083, 623) design px over the hero.

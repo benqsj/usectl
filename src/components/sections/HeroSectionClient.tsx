@@ -2635,7 +2635,7 @@ export function HeroSectionClient({
             Start Building
           </Link>
           <Link
-            href="#how"
+            href={SIGNUP_URL}
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-normal text-white/90 transition-colors hover:border-brand hover:text-brand"
             style={{ height: s(48), paddingLeft: s(32), paddingRight: s(26), fontSize: s(16), gap: s(4) }}
           >
@@ -3784,7 +3784,7 @@ export function HeroSectionClient({
           style={{ left: s(187), top: s(533), opacity: 0, visibility: "hidden" }}
         >
           <a
-            href="#start"
+            href={SIGNUP_URL}
             className="relative flex items-center justify-center border border-white/20 font-heading text-brand transition-colors hover:bg-white/5"
             style={{ width: s(345), height: s(60), fontSize: s(17) }}
           >
@@ -3998,7 +3998,7 @@ export function HeroSectionClient({
             Start Building
           </Link>
           <Link
-            href="#how"
+            href={SIGNUP_URL}
             className="flex items-center justify-center rounded-full border border-white/25 font-heading font-normal text-white/90 transition-colors hover:border-brand hover:text-brand"
             style={{ height: s(48), paddingLeft: s(32), paddingRight: s(26), fontSize: s(16), gap: s(4) }}
           >
