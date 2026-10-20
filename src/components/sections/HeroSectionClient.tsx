@@ -130,25 +130,36 @@ const STACK_GUIDES = [
   { x: 1168, y1: 333, y2: 644 },
 ] as const;
 
-// y values 30 up from the original ref-derived ones ("ტექსტიც მარჯვენა მხარეს მაღლა აწიე ოდნავ")
+// y values 30 up from the original ref-derived ones ("ტექსტიც მარჯვენა მხარეს მაღლა აწიე ოდნავ"),
+// then another 25 up on the same request repeated (2026-10-20). PANEL3_DY carries the second
+// nudge so the gradient line + the "USECTL MANAGED INFRASTRUCTURE" title move with the items.
+const PANEL3_DY = -25;
+// The vertical rule left of states 3 and 4's numbered panels. Four-stop gradient + 6px width
+// given by the team (2026-10-20, "ეგ უნდა იყოს gradient ეს ფერები ... width: 6px"); it used to be
+// a 3px two-stop green→blue ramp. Both panels share it so they can't drift apart. The stop
+// positions are the ones the state-6 deploy cards' accent bar already uses (border-form.svg's
+// own export), so the page has ONE accent gradient rather than two near-identical ones.
+const PANEL_LINE_W = 6;
+const PANEL_LINE_GRADIENT =
+  "linear-gradient(180deg, #11A32A 0%, #8FC6FF 32.9%, #8FEDF7 66.7%, #11A32A 100%)";
 const PANEL_ITEMS = [
   {
     no: "01/",
     title: "Application Services",
     desc: "Automated deployment for APIs, web apps, and microservices.",
-    y: 417,
+    y: 417 + PANEL3_DY,
   },
   {
     no: "02/",
     title: "Application Storage",
     desc: "High-availability managed databases and S3-compatible object storage.",
-    y: 519,
+    y: 519 + PANEL3_DY,
   },
   {
     no: "03/",
     title: "Background Jobs",
     desc: "Isolated worker queues, scheduled CRONs, and async processing.",
-    y: 622,
+    y: 622 + PANEL3_DY,
   },
 ] as const;
 
@@ -552,6 +563,7 @@ export function HeroSectionClient({
   useGSAP(
     () => {
       const section = sectionRef.current;
+      const stage = stageRef.current;
       const heroText = heroTextRef.current;
       const secondText = secondTextRef.current;
       const thirdText = thirdTextRef.current;
@@ -592,7 +604,7 @@ export function HeroSectionClient({
       const final9 = final9Ref.current;
       const rulerFill = rulerFillRef.current;
       if (
-        !section || !heroText || !secondText || !thirdText || !server || !serverSvgHost || !glow ||
+        !section || !stage || !heroText || !secondText || !thirdText || !server || !serverSvgHost || !glow ||
         !box || !callouts || !bottomPiece || !guides || !panel || !panelLine ||
         !fourthText || !machine || !machineOpen || !panel4 || !panel4Line ||
         !fifthText || !server5 || !pods ||
@@ -611,10 +623,34 @@ export function HeroSectionClient({
       // (no pin, no wheel driver, no state restore). See RESPONSIVE-PLAN.md.
       if (window.matchMedia("(max-width: 1023px)").matches) return;
 
+      // --- fit the s(980) design canvas into SHORT viewports --------------------------------
+      // The stage is vertically centred whenever the viewport below the header is taller than
+      // s(980); when it isn't (a small browser window, a 1920×800 screen, a laptop with the
+      // dock + devtools open) the design canvas simply ran off the bottom and the section's
+      // overflow-hidden cut it off — states 6 and 7 reach y≈950, so their bottom board / LIVE
+      // card were the first things to disappear (user: "height როცა პატარა აქვს, არ ჩანს, დაბლა
+      // ჩაცდენილია"). Instead of clipping, the whole stage is scaled down to fit about its top
+      // centre: everything inside it is positioned in s()-units and GSAP's px offsets come from
+      // the same --s, so one uniform factor shrinks the composition without changing it.
+      const fitStage = () => {
+        const avail = Math.min(section.clientHeight, window.innerHeight - HEADER_HEIGHT_PX);
+        const fit = avail / (980 * readScale());
+        stage.style.transformOrigin = "50% 0";
+        stage.style.transform = fit < 1 ? `scale(${fit.toFixed(4)})` : "";
+      };
+      fitStage();
+      window.addEventListener("resize", fitStage);
+      window.addEventListener("orientationchange", fitStage);
+
+      const removeFitListeners = () => {
+        window.removeEventListener("resize", fitStage);
+        window.removeEventListener("orientationchange", fitStage);
+      };
+
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         // no animation at all: just show the hero column, which is markup-hidden for the blur-in
         gsap.set([heroText, serverSvgHost], { opacity: 1 });
-        return;
+        return removeFitListeners;
       }
 
       const k = () => readScale();
@@ -2414,6 +2450,7 @@ export function HeroSectionClient({
       // resize: re-evaluate the timeline's function-based (scale-dependent) values and re-render
       // the parked state with them — the old scrub's invalidateOnRefresh used to cover this
       const onRefresh = () => {
+        fitStage(); // --s or the viewport height may both have changed
         tl.invalidate();
         tl.seek(tl.time(), false);
       };
@@ -2505,16 +2542,60 @@ export function HeroSectionClient({
         gsap.set(heroText, { opacity: 1 });
       }
 
-      // the left ruler's green overlay fills top-down across the ENTIRE pinned journey —
-      // added last so totalDuration() already includes every state and trailing hold
-      tl.fromTo(
-        rulerFill,
-        { clipPath: "inset(0px 0px 100% 0px)" },
-        { clipPath: "inset(0px 0px 0% 0px)", ease: "none", duration: tl.totalDuration() },
+      // The left ruler's green overlay fills top-down across the pinned journey, and every state
+      // now lands EXACTLY on one of the bar's LONG ticks — one long tick per section, never
+      // short of it and never past it (user: "ყოველი 5 პატარა ხაზის შემდეგ ერთი დიდი ხაზი მოდის,
+      // ეგ ერთი დიდი ხაზი შეივსოს, არც გადაცდეს არც დააკლდეს მომდევნო სექციაზე რომ მივალ").
+      //
+      // Measured off navigation-bar.png (35×913 native): the long ticks are the 26px-wide rows
+      // (the short ones are 15px) and sit at y 91-92 / 182-183 / 273-274 / 364-365 / 456 /
+      // 547-548 / 638-639 / 729-730 / 820-821, with exactly five short ticks between each pair.
+      // RULER_TICKS holds each long tick's BOTTOM edge, so the clip covers the whole tick; the
+      // fill div is inset-0 of the bar and the mask is stretched 100%×100%, so a fraction of the
+      // PNG's height is the same fraction of the div's height whatever --s is.
+      //
+      // Why a piecewise map instead of one straight ramp: the crossings are not equally long in
+      // timeline units, so a linear fill over totalDuration() parked at arbitrary positions.
+      const RULER_PNG_H = 913;
+      const RULER_TICKS = [0, 93, 184, 275, 366, 457, 549, 640, 731];
+      // A settled flight can park a hair off its snap time (measured: up to 1% of a crossing,
+      // which left the tick a fraction of a pixel short of full) — the first/last 2% of every
+      // crossing therefore snaps, so a state at rest is ALWAYS exactly on its tick.
+      const RULER_SNAP_EPS = 0.02;
+      const rulerFraction = (t: number) => {
+        const last = SNAP_TIMES.length - 1;
+        for (let i = 1; i <= last; i++) {
+          if (t < SNAP_TIMES[i] || i === last) {
+            const span = SNAP_TIMES[i] - SNAP_TIMES[i - 1];
+            let p = span > 0 ? gsap.utils.clamp(0, 1, (t - SNAP_TIMES[i - 1]) / span) : 1;
+            if (p > 1 - RULER_SNAP_EPS) p = 1;
+            else if (p < RULER_SNAP_EPS) p = 0;
+            const from = RULER_TICKS[Math.min(i - 1, RULER_TICKS.length - 1)];
+            const to = RULER_TICKS[Math.min(i, RULER_TICKS.length - 1)];
+            return (from + (to - from) * p) / RULER_PNG_H;
+          }
+        }
+        return 0;
+      };
+      // added last so totalDuration() already includes every state and trailing hold, and so the
+      // dead-zone index above (built before it) still sees only real content tweens
+      const rulerProxy = { t: 0 };
+      tl.to(
+        rulerProxy,
+        {
+          t: tl.totalDuration(),
+          duration: tl.totalDuration(),
+          ease: "none",
+          onUpdate: () => {
+            const bottom = (1 - rulerFraction(rulerProxy.t)) * 100;
+            rulerFill.style.clipPath = `inset(0px 0px ${bottom.toFixed(3)}% 0px)`;
+          },
+        },
         0,
       );
 
       return () => {
+        removeFitListeners();
         gsap.ticker.remove(tick6);
         gsap.ticker.remove(tickFloat);
         unwind7?.kill();
@@ -2609,9 +2690,12 @@ export function HeroSectionClient({
           Managed Kubernetes &amp; AI Agent Infrastructure
         </p>
 
+        {/* marginTop -10 → 10: the eyebrow sat almost glued to the heading, while every other
+            state's heading keeps a 10px gap below its own eyebrow (user: "ქვედა ტექსტი დააშორე
+            ისე როგორც სხვა სექციებშია") */}
         <h1
           className="font-heading font-medium tracking-[-0.02em] text-foreground"
-          style={{ fontSize: s(64), lineHeight: 1.26, marginTop: s(-10), maxWidth: s(1100) }}
+          style={{ fontSize: s(64), lineHeight: 1.26, marginTop: s(10), maxWidth: s(1100) }}
         >
           Build your product. We&rsquo;ll handle the infrastructure.
         </h1>
@@ -2873,10 +2957,10 @@ export function HeroSectionClient({
           className="absolute"
           style={{
             left: s(1322),
-            top: s(365),
-            width: s(3),
+            top: s(365 + PANEL3_DY),
+            width: s(PANEL_LINE_W),
             height: s(349),
-            background: "linear-gradient(180deg, #11a32a 0%, #3b82f6 100%)",
+            background: PANEL_LINE_GRADIENT,
             opacity: 0,
             visibility: "hidden",
           }}
@@ -2884,7 +2968,7 @@ export function HeroSectionClient({
         <p
           data-panel-item
           className="absolute font-mono font-medium text-white/90"
-          style={{ left: s(1346), top: s(378), fontSize: s(15), letterSpacing: "0.04em", opacity: 0, visibility: "hidden" }}
+          style={{ left: s(1346), top: s(378 + PANEL3_DY), fontSize: s(15), letterSpacing: "0.04em", opacity: 0, visibility: "hidden" }}
         >
           USECTL MANAGED INFRASTRUCTURE
         </p>
@@ -2962,9 +3046,9 @@ export function HeroSectionClient({
           style={{
             left: s(PANEL4_X),
             top: s(346),
-            width: s(3),
+            width: s(PANEL_LINE_W),
             height: s(274),
-            background: "linear-gradient(180deg, #11a32a 0%, #3b82f6 100%)",
+            background: PANEL_LINE_GRADIENT,
             opacity: 0,
             visibility: "hidden",
           }}

@@ -123,11 +123,17 @@ function Buttons() {
 function Panel({ items }: { items: readonly { no: string; title: string; desc: string }[] }) {
   return (
     <div data-m-panel className="relative font-mono" style={{ marginTop: m(36), paddingLeft: m(20) }}>
+      {/* same four-stop gradient as the desktop panels (2026-10-20); the width is the phone's
+          own proportion of the desktop 6px, not the raw value */}
       <span
         data-m-panel-line
         aria-hidden="true"
         className="absolute left-0 top-0 h-full"
-        style={{ width: 2, background: "linear-gradient(180deg, #11a32a 0%, #3b82f6 100%)", transformOrigin: "top" }}
+        style={{
+          width: m(4),
+          background: "linear-gradient(180deg, #11A32A 0%, #8FC6FF 32.9%, #8FEDF7 66.7%, #11A32A 100%)",
+          transformOrigin: "top",
+        }}
       />
       <p data-m-panel-item className="text-white/50" style={{ fontSize: m(11), letterSpacing: "0.08em" }}>
         USECTL MANAGED INFRASTRUCTURE

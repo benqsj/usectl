@@ -82,6 +82,29 @@ The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usec
   - Next emits both `<link rel="icon">` tags; `/favicon.ico` and `/icon.svg` both serve 200 with the right content types.
 - **`metadataBase` typo fixed**: `siteUrl` was `https://usectlcom` (missing dot) — every canonical/OG URL was built on it. Now `https://usectl.com`. The `TODO: Product description` metadata copy is still open.
 
+## Polish pass 64: short-screen fit, the ruler lands on its ticks, two copy nudges (2026-10-20)
+
+Four asks in one round, all in the desktop pinned scene (`HeroSectionClient.tsx`).
+
+**1. Hero eyebrow ↔ H1.** The H1 carried `marginTop: s(-10)` — the only negative one on the page — so "Managed Kubernetes & AI Agent Infrastructure" sat almost glued to it. Now `s(10)`, the value every other state's heading uses (measured gap at 1920: 10px).
+
+**2. State-3 right panel up 25.** New `PANEL3_DY = -25` folded into the gradient line's top, the "USECTL MANAGED INFRASTRUCTURE" title and all three `PANEL_ITEMS` y's, so the block moves as one piece.
+
+**2b. The panels' vertical rule (states 3 AND 4) is the team's accent gradient, 6px wide** (follow-up the same day): `PANEL_LINE_W = 6` + `PANEL_LINE_GRADIENT` (`#11A32A 0% → #8FC6FF 32.9% → #8FEDF7 66.7% → #11A32A 100%`) replace the old 3px `#11a32a → #3b82f6` ramp in both panels. The stop positions are copied from the state-6 deploy cards' accent bar (border-form.svg's own export), which already used exactly these four colours — so the page has ONE accent gradient, not two near-identical ones. `HeroMobile`'s shared `Panel` got the same gradient at `m(4)` (the phone's proportion of 6px). Measured in the browser: both rules render 6.00px wide with all four stops; the items were deliberately NOT shifted, so the gap between rule and text is 18 instead of 21.
+
+**3. Short viewports no longer clip states 6 and 7** ("height როცა პატარა აქვს, არ ჩანს, დაბლა ჩაცდენილია"). The stage is the s(980) design canvas vertically centred inside `calc(100svh - 96px)`; when the viewport is shorter than that (a small window, 1920×800, a laptop with devtools open) the bottom simply fell outside the section's `overflow-hidden` — and states 6/7 are the ones whose artwork reaches y≈950. New `fitStage()` scales the WHOLE stage to fit instead, about its top centre:
+```
+const avail = Math.min(section.clientHeight, window.innerHeight - HEADER_HEIGHT_PX);
+stage.style.transform = `scale(${avail / (980 * readScale())})`;   // only when < 1
+```
+Everything inside the stage is written in s()-units and GSAP's px offsets come from the same `--s`, so one uniform factor shrinks the composition without changing it; the pin, the wheel driver and the timeline are untouched. It runs on mount, on `resize`/`orientationchange` and inside ScrollTrigger's `refresh` handler (the reduced-motion branch now returns a cleanup so those listeners can't leak). Trade-off, accepted: on a short screen the scaled stage no longer lines up with the page's background grid (the grid keeps the width-driven `--s`) — the alternative, shrinking `--s` itself, would drag the grid and the header along and leave the whole page hugging the left edge on wide-but-short screens. Measured at 1920×800 / 1440×700 / 1280×620: scale 0.72 / 0.82 / 0.80, stage bottom == viewport bottom, states 6 and 7 fully on screen, zero page errors.
+
+**4. The ruler now lands EXACTLY on a long tick at every state** ("ყოველი 5 პატარა ხაზის შემდეგ ერთი დიდი ხაზი მოდის, ეგ ერთი დიდი ხაზი შეივსოს, არც გადაცდეს არც დააკლდეს"). `navigation-bar.png` decoded row by row (35×913): the long ticks are the 26px-wide rows at y 91-92 / 182-183 / 273-274 / 364-365 / 456 / 547-548 / 638-639 / 729-730 / 820-821 — exactly five 15px-wide short ticks between each pair, i.e. one long tick every ~10% of the bar. The old single linear `clipPath` tween over `totalDuration()` parked wherever a state's snap time happened to fall, because the crossings are NOT equally long in timeline units. Replaced by a proxy tween (same position/duration) whose `onUpdate` maps the playhead through `rulerFraction()`: piecewise-linear between `SNAP_TIMES`, with `RULER_TICKS` (each long tick's BOTTOM edge, so the whole tick ends up green) as the per-state targets, plus a 2% snap at each crossing's ends because a settled flight can park ~1% of a crossing off its snap time. Verified by pixel-scanning a crop of the bar at all nine states: the lowest green row is the bottom row of long tick N at state N+1, every time.
+  - **Open choice**: nine states = eight crossings, so the hero starts empty and state 9 finishes on the 8th long tick (80%) — the 9th tick and the bottom cap stay grey. If it should instead FINISH on the last long tick, shift `RULER_TICKS` by one (`[93, 184, …, 822]`) and the hero starts with one tick already green.
+  - The proxy tween is added after the dead-zone index is built (the same reason the old one was added last), so `contentSpans` still sees only real content tweens.
+
+Verified on `next start`: all eight crossings down and back up land on every state (1000 / 2089 / 3843 / 5402 / 7978 / 10168 / 11439 / 12801), the footer hop still works, a resize mid-journey re-fits without moving the state, a nav jump still lands exactly. `tsc` / `eslint` / `next build` clean.
+
 ## Polish pass 63: the state-6 ring followed you to the hero (2026-10-07)
 
 User: "section-6 ზე server svg ზე არის პატარა წრე სადანაც ანიმაცია მოდის ჟანგბადივით, ეს წრე რჩება როცა usectl ლოგოს ვაჭერ და საიტი section-hero ზე მიდის". Reproduced at 1920×1080: after a logo jump from the footer a 16px green ring sat at (1083, 623) design px over the hero.
