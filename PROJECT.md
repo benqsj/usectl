@@ -64,6 +64,17 @@ User supplied `public/section-hero/server.zip` (65 SVGs, extracted in place) and
 - Verified: text rows/extents pixel-matched to the reference at the same 1600 render width (eyebrow/H1 line 1+2/paragraph both lines/button text all within 2px), server stack bounds matched (capTop 128=128, right edge 1441=1441, bottom 614 vs 620), final side-by-side eyeball check. `tsc`/`eslint`/`next build` clean.
 - Still eyeballed, not measured: exact chip/cube/plate micro-positions on each layer's face (close but not pixel-derived), the L2↔L3 intermediate gap split. The reference's own background grid pitch differs slightly from ours — ours kept as-is deliberately.
 
+## SEO copy + link-preview card (2026-10-21)
+
+The brand is written **UseCTL** in all copy (user's call: "UseCTL ესე უფრო ლამაზია"); the logo wordmark and the domain stay `usectl`.
+
+- **`src/lib/seo.ts`** is the single source for every search/share string: `SITE_TITLE` (53 chars), `SITE_DESCRIPTION` (148 — Google cuts ~155), `SHARE_DESCRIPTION` (the shorter line link cards show), `SITE_KEYWORDS`, `SHARE_IMAGE_ALT`, `STARTING_PRICE_USD`. Change copy there, nowhere else.
+- **`layout.tsx`** metadata rebuilt on it (the `TODO: Product description` is gone): title, description, keywords, canonical, robots/googleBot (`max-image-preview: large`), OG (`locale en_US`) and Twitter (`summary_large_image`, `@usectlcloud`), plus `viewport.themeColor` #1e1d1d. A JSON-LD `@graph` (Organization + WebSite + SoftwareApplication with a $15 USD offer → SIGNUP_URL) is rendered as a `<script type="application/ld+json">` with `<` escaped, per the Next 16 JSON-LD guide.
+- **Link preview** = `src/app/opengraph-image.tsx` + `twitter-image.tsx`, both rendering `src/app/_og/card.tsx` (next/og → static 1200×630 PNG at build time; Next adds og:image/twitter:image with width/height/alt itself — don't also list images in `metadata`). The card is the hero in miniature: page grid, logo.svg, hatch eyebrow, H1, a one-line pitch, "From $15 / month" pill + usectl.com, new-server.svg on the right over a mint/green scene light. `_og` is a private folder (no route). Satori rules: every multi-child div needs `display:flex`, no CSS vars, plain `<img>` (eslint rule disabled in that file), fonts must be woff/ttf — hence `_og/SpaceGrotesk-{Light,Medium}.woff` from @fontsource (OFL).
+- **`robots.ts`** (allow all, disallow `/api/`, points at the sitemap) and **`sitemap.ts`** (the one page).
+- Verified on `next start`: every tag present in the HTML, `/opengraph-image` and `/twitter-image` serve 200 image/png 1200×630, `/robots.txt` + `/sitemap.xml` correct. `tsc`/`eslint`/`next build` clean (build run with the next/font/local swap — Google Fonts is unreachable from the cloud sandbox; not committed).
+- **After deploy**: messaging apps cache previews — test with the Facebook Sharing Debugger / LinkedIn Post Inspector / opengraph.xyz, and re-scrape there if an old preview sticks. Submit `https://usectl.com/sitemap.xml` in Google Search Console.
+
 ## External destinations wired up: Documentation + Start Building (2026-10-13)
 
 The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usectl.com/#introduction`) and `SIGNUP_URL` (`https://manager.usectl.com/login`) so nothing can drift.
@@ -72,6 +83,85 @@ The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usec
 - **Start Building** (hero state 1, state 9, HeroMobile, burger menu) points at `SIGNUP_URL` in the SAME tab — per the request's wording ("ახალ გვერდზე"), in contrast to Documentation's explicit "new blank tab".
 - **Deliberately untouched**: the "Start now from $15 / month" pricing CTA (desktop state 8 + HeroMobile) still points at `#start`, and so does "See how it works" (`#how`) — neither was in the request.
 - Verified in Chromium against the dev server: the Documentation click opens a second tab on the docs URL with the landing page left where it was; a Start Building click lands on the real manager login; the four hash nav items still jump exactly (11439 / 3859 / 10168 / 2088) with zero page errors. `tsc` / `eslint` / `next build` clean.
+
+## The header now sits on the same canvas the scene is drawn at (2026-10-21)
+
+User, on a big display: "section შუაში ზის მაგრამ header-ში ნავიგაცია გვერდზეა გასული". Cause: pass
+64's `fitStage()` shrinks the s(980) stage about its **top centre** whenever the viewport below the
+header is shorter than the design canvas — which also re-centres the scene horizontally — but the
+header is NOT inside the stage, so it stayed on the full `--s`. Measured at 3440×1440: the hero text
+column started at x 660 while the logo sat at 233, and the nav was a fixed 16px against 114px
+headings.
+
+- **New `--sh` in globals.css** = the scale the scene is REALLY drawn at:
+  `max(0.53333px, min(var(--s), calc((100svh - 96px) / 980)))` — i.e. `--s × fit`, mirroring
+  fitStage() (keep the two in step), plus `--s`'s own 1024/1920 floor so an absurdly short window
+  can't narrow the row until the logo runs into the centred nav. Registered with `@property` for
+  the same reason `--s` is (a JS read resolves to a length, not the raw `min(...)` string).
+- **`.header-row` / `.header-logo` / `.header-nav` (globals.css, ≥1024)** replace the row's inline
+  `paddingLeft: s(130)` / `paddingRight: INSET_VW` and the `lg:w-[150px]` / `text-base` utilities:
+  the row is `width: min(100%, sh × 1920)` centred with `margin-inline: auto` and padded 130/99 in
+  `--sh`, the logo is `max(150px, sh × 150)`, and ≥1280 the nav is `max(16px, sh × 16)` with a
+  matching gap. The floors mean **nothing below 1920 with a normal height changes** (there `--sh ==
+  --s`), while a big canvas scales the header up with everything else. These rules are unlayered on
+  purpose — Tailwind utilities live in `@layer utilities`, so plain CSS outranks them; that's also
+  why the competing utilities had to go from the JSX.
+  - The 1024–1279 `.header-cols` mask moved to `--sh` too, so the hole it punches still lands on
+    the logo when the row is scaled.
+  - Still on `--s` deliberately: the background grid and the header's own ColumnLines — pass 64's
+    documented trade-off (a short screen's grid doesn't follow the scaled stage).
+- Verified at nine viewports: the logo lands exactly 57 design px left of the text column
+  (`logo.left == h1.left − 57 × sh`, Δ ≤ 0.1px) at 3440×1440, 2560×1440, 2560×1080, 1920×1080,
+  1920×800, 1600×900, 1440×900, 1280×620, 1024×768; the nav stays on the viewport centre; nav font
+  22px at 3440 and unchanged 16/15px below 1920; no horizontal overflow anywhere; header crops at
+  1024–1280 show no line crossing the logo or nav. The scene itself is untouched: synthetic wheel
+  swipes still step 999 → 2088 → 3815 and back at both 1920 and 2560, a Pricing nav click still
+  lands on 11439, zero page errors. `tsc`/`eslint`/`next build` clean.
+
+## The footer Subscribe box actually sends (2026-10-21)
+
+The email field was decorative (no form, no handler). Now: type an address → a send icon fades in
+once it looks complete → the icon OR Enter posts it to our inbox.
+
+- **`src/components/layout/SubscribeForm.tsx`** (client) replaces the inline input + checkbox in
+  BOTH footers — one component, `variant="desktop" | "mobile"` only picks the scale variable
+  (`--s` via `s()` or `--m`), so the two can't drift. The send button is `absolute` inside the
+  field, hidden (`opacity-0`, `pointer-events-none`, `tabIndex -1`) until the address matches a
+  loose `EMAIL_RE`, and the input's right padding grows with it so text never slides under it. It
+  IS the form's submit button, so Enter and the click are the same path (the form `preventDefault`s
+  — the old comment about "no form so Enter can't reload" is satisfied that way now). A spinner
+  replaces the arrow while in flight; on success the field locks and a brand-green line appears;
+  errors render in `#ff8e8e` and clear as soon as the user types again. The consent checkbox is
+  the design's own shape as before, now controlled — and **required**: with it unticked the icon
+  still appears but renders dim (`border-white/10`, `text-white/25`, `cursor-not-allowed`) and a
+  click or Enter only produces "Please accept the terms and conditions first." — nothing leaves the
+  browser. Ticking the box clears that hint and lights the icon. The button is deliberately NOT
+  `disabled`/`aria-disabled`: a disabled control fires no click event, so the hint could never
+  appear (and Playwright refuses to click it, which is how that was caught). The server refuses
+  `consent !== true` with 400 `consent-required` as the backstop for anything posting directly.
+  - Layout trap: putting the 232px width on the `<form>` wrapped the "I agree to the terms and
+    conditions." label onto two lines — the width belongs on the input's wrapper, and the desktop
+    label is `whiteSpace: nowrap`.
+  - The phone field keeps `fontSize: 16` (anything smaller makes iOS Safari zoom on focus).
+- **`src/app/api/subscribe/route.ts`** — validates, rate-limits, then forwards. Delivery is chosen
+  from env so no key is in the repo: `WEB3FORMS_ACCESS_KEY` (simplest — web3forms.com mails the
+  submission to whatever address the key was made for, no domain verification) or `RESEND_API_KEY`
+  + `SUBSCRIBE_TO`/`SUBSCRIBE_FROM`. **With neither set the route still returns 200 and logs the
+  address to the server console**, which is how the UI was tested. `.env.example` documents both
+  (and `.gitignore` got a `!.env.example` exception — `.env*` had covered it).
+- **"Don't send it 100 times"** — five layers, the real ones server-side: per-IP max 3 accepted
+  submissions/hour (429 after), per-email dedupe for 24h (answers 200 `duplicate: true`, mails
+  nothing), and a honeypot `company` field (filled ⇒ 200 `dropped: true`, nothing sent). Client
+  side: the button is dead while a request is in flight, and a localStorage ledger
+  (`usectl:subscribe:v1`) blocks a repeat of the same address for 24h **without touching the
+  network** plus a 60s cooldown between sends, so reloading isn't a way around it. The server maps
+  are per instance and reset on redeploy (per-lambda on serverless) — fine here; a shared store
+  (KV/Redis) is the upgrade if it ever needs to be exact.
+- Verified on `next start` at 1920×1080 and 390×844: icon hidden at "ben", visible at a full
+  address, Enter sends, the success line appears, a reload + same address shows "already on the
+  list" with **zero** network calls, and curl drove the server limits (4th send → 429, bad address
+  → 400, honeypot → dropped, console shows the would-be mail). Zero page errors; `tsc`/`eslint`/
+  `next build` clean.
 
 ## Footer: X links to the real account, store badges hidden until launch (2026-10-21)
 
@@ -703,5 +793,4 @@ Built against a second user screenshot (`Desktop/new-version/second-section.png`
 ## Open items / TODO
 
 - New design build-out from scratch (user is supplying new references: `public/navigation-bar/navigation-bar.png`, `Group 1574.png`).
-- SEO metadata (`layout.tsx`) still placeholder `TODO:` copy.
 - Header nav anchors (`#the-machine` etc.) point at sections that no longer exist.

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { s } from "@/lib/grid";
 import { DOCS_URL, SHOW_STORE_BADGES, X_URL, type NavLink } from "@/lib/nav";
 import { SceneLight } from "./SceneLight";
+import { SubscribeForm } from "./SubscribeForm";
 
 // Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
 // design px = ref × 1.124). A REAL section after the pinned hero: its opaque background is what
@@ -178,35 +179,9 @@ export function Footer() {
         <h3 className="font-medium text-white/85" style={{ fontSize: s(16) }}>
           Subscribe
         </h3>
-        <input
-          type="email"
-          placeholder="email"
-          className="block rounded-lg border border-white/15 bg-transparent font-light text-white/80 outline-none placeholder:text-white/30 focus:border-white/35"
-          style={{ marginTop: s(24), width: s(232), height: s(42), paddingLeft: s(14), paddingRight: s(14), fontSize: s(14) }}
-        />
-        <label
-          className="flex cursor-pointer items-center font-light text-white/60"
-          style={{ marginTop: s(18), gap: s(9), fontSize: s(14.5) }}
-        >
-          {/* the native box rendered as a heavy solid square in dark mode — this is the design's
-              own shape instead: a thin-bordered rounded square that fills green when checked */}
-          <span className="relative inline-block shrink-0" style={{ width: s(15), height: s(15) }}>
-            <input
-              type="checkbox"
-              className="peer absolute inset-0 m-0 cursor-pointer appearance-none border border-white/25 bg-transparent transition-colors checked:border-brand checked:bg-brand"
-              style={{ borderRadius: s(4) }}
-            />
-            <svg
-              viewBox="0 0 12 12"
-              fill="none"
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 hidden h-full w-full peer-checked:block"
-            >
-              <path d="M3 6.2 5.1 8.3 9 4.2" stroke="#1e1d1d" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          I agree to the terms and conditions.
-        </label>
+        {/* the field, its send icon, the consent box and the status line (client component — it
+            posts to /api/subscribe and carries the repeat-send guards) */}
+        <SubscribeForm variant="desktop" />
       </div>
 
       {/* copyright */}

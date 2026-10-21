@@ -18,8 +18,27 @@
   initial-value: 1px;
 }
 
+/* registered for the same reason as --s: so a JS read resolves to a length instead of the raw
+   `min(...)` token string */
+@property --sh {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
 :root {
   --s: max(0.53333px, calc(100vw / 1920));
+
+  /* --sh is the scale the pinned scene is ACTUALLY drawn at: HeroSectionClient's fitStage() shrinks
+     the s(980) design canvas about its top centre whenever the viewport below the header is shorter
+     than that (`fit = (100svh - 96px) / (980 * --s)`), which also re-centres it horizontally. The
+     header is not inside the stage, so on a big screen it kept the full --s and its logo/nav drifted
+     away from the content below (2026-10-21: "დიდ ეკრანზე section შუაში ზის, header-ში ნავიგაცია
+     გვერდზეა"). Written as a scale, --sh is exactly `--s × fit`, i.e. min(--s, (100svh − 96px)/980),
+     so anything laid out with it lands on the same grid the scene does. Mirrors fitStage() — keep
+     the two in step — except for the same 1024/1920 floor --s has: on an absurdly short window the
+     row would otherwise narrow until the logo ran into the centred nav. */
+  --sh: max(0.53333px, min(var(--s), calc((100svh - 96px) / 980)));
 
   --background: #1e1d1d;
   --foreground: #ededed;
@@ -57,17 +76,40 @@
     --grid-pitch: calc((100vw - 64px) / 10);
   }
 }
+/* ≥ 1024: the header's own row is laid out on --sh, so it sits on the same centred canvas the
+   pinned scene is drawn at (identical to the old layout whenever the scene isn't being shrunk,
+   i.e. --sh == --s). The logo and the nav keep their design sizes as a FLOOR — they scale up with a
+   big canvas but never below today's 150px / 16px. */
+@media (min-width: 1024px) {
+  .header-row {
+    width: min(100%, calc(var(--sh) * 1920));
+    margin-inline: auto;
+    padding-left: calc(var(--sh) * 130);
+    padding-right: calc(var(--sh) * 99);
+  }
+  .header-logo {
+    width: max(150px, calc(var(--sh) * 150));
+  }
+}
+@media (min-width: 1280px) {
+  /* below 1280 the nav keeps its own tuned 15px / 1.5rem pair (see Header.tsx) */
+  .header-nav {
+    font-size: max(16px, calc(var(--sh) * 16));
+    gap: max(2rem, calc(var(--sh) * 32));
+  }
+}
+
 /* 1024-1279 (landscape tablets): the header's hide-lists are tuned for ≥1280, so here the lines are
-   masked off by geometry instead — clear of the logo (s(130), 150 wide) and the 458px nav */
+   masked off by geometry instead — clear of the logo (sh(130), 150 wide) and the 458px nav */
 @media (min-width: 1024px) and (max-width: 1279.98px) {
   .header-cols {
     mask-image: linear-gradient(
       to right,
       #000 0,
-      #000 calc(var(--s) * 31 - 14px),
-      transparent calc(var(--s) * 31 - 14px),
-      transparent calc(var(--s) * 31 + 164px),
-      #000 calc(var(--s) * 31 + 164px),
+      #000 calc(var(--sh) * 31 - 14px),
+      transparent calc(var(--sh) * 31 - 14px),
+      transparent calc(var(--sh) * 31 + 164px),
+      #000 calc(var(--sh) * 31 + 164px),
       #000 calc(50% - 247px),
       transparent calc(50% - 247px),
       transparent calc(50% + 247px),

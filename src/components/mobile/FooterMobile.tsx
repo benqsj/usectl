@@ -8,6 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { m } from "./HeroMobile";
 import { DOCS_URL, SHOW_STORE_BADGES, X_URL, type NavLink } from "@/lib/nav";
+import { SubscribeForm } from "@/components/layout/SubscribeForm";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -178,25 +179,8 @@ export function FooterMobile() {
         <h3 className={h3} style={{ fontSize: m(15) }}>
           Subscribe
         </h3>
-        <input
-          type="email"
-          placeholder="email"
-          className="block w-full rounded-lg border border-white/15 bg-transparent font-heading font-light text-white/80 outline-none placeholder:text-white/30 focus:border-white/35"
-          style={{ marginTop: m(14), height: m(44), paddingInline: m(14), fontSize: 16 }}
-        />
-        <label className="flex cursor-pointer items-center font-heading font-light text-white/60" style={{ marginTop: m(14), gap: m(9), fontSize: m(13.5) }}>
-          <span className="relative inline-block shrink-0" style={{ width: m(16), height: m(16) }}>
-            <input
-              type="checkbox"
-              className="peer absolute inset-0 m-0 cursor-pointer appearance-none border border-white/25 bg-transparent checked:border-brand checked:bg-brand"
-              style={{ borderRadius: m(4) }}
-            />
-            <svg viewBox="0 0 12 12" fill="none" aria-hidden="true" className="pointer-events-none absolute inset-0 hidden h-full w-full peer-checked:block">
-              <path d="M3 6.2 5.1 8.3 9 4.2" stroke="#1e1d1d" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          I agree to the terms and conditions.
-        </label>
+        {/* same component the desktop footer uses, on the phone's --m scale */}
+        <SubscribeForm variant="mobile" />
       </div>
 
       <Image

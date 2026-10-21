@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ColumnLines } from "@/components/layout/BackgroundLines";
 import { MobileMenu } from "@/components/layout/MobileMenu";
-import { INSET_VW, s, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW, LINE_COLOR, LINE_THICKNESS_PX } from "@/lib/grid";
+import { INSET_VW, HEADER_HIDE_WIDE, HEADER_HIDE_NARROW, LINE_COLOR, LINE_THICKNESS_PX } from "@/lib/grid";
 import { NAV_LINKS } from "@/lib/nav";
 
 export function Header() {
@@ -30,24 +30,21 @@ export function Header() {
           backgroundPositionX: `-${LINE_THICKNESS_PX / 2}px`,
         }}
       />
-      <div
-        className="relative flex h-16 w-full items-center max-lg:px-(--grid-inset)! lg:h-24"
-        style={
-          /* Was hardcoded "6.770833vw" / "5.15625vw" — the same 130px / 99px at the 1920 reference,
-             but in raw vw they kept shrinking past the 1280 floor while the grid they line up with
-             stopped. Both go through the shared scale now. */
-          { paddingLeft: s(130), paddingRight: INSET_VW }
-        }
-      >
+      {/* The row's ≥1024 geometry (width, centring, the 130/99 design paddings) lives in
+          globals.css's `.header-row`, because it is written in --sh — the scale the pinned scene is
+          really drawn at — so the logo keeps sitting on the content's column on any display. Below
+          1024 the `px-(--grid-inset)!` utility still rules. */}
+      <div className="header-row relative flex h-16 w-full items-center max-lg:px-(--grid-inset)! lg:h-24">
         <Link href="/" aria-label="usectl home" className="shrink-0">
-          <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority className="h-auto w-[120px] lg:w-[150px]" />
+          {/* ≥1024 the width comes from .header-logo (max(150px, sh×150)) */}
+          <Image src="/logo/logo.svg" alt="usectl" width={150} height={24} priority className="header-logo h-auto w-[120px]" />
         </Link>
 
         <nav
           aria-label="Primary"
           className="absolute left-1/2 hidden -translate-x-1/2 lg:block"
         >
-          <ul className="flex items-center gap-8 whitespace-nowrap font-heading text-base text-white/80 max-[1279.98px]:gap-6 max-[1279.98px]:text-[15px]">
+          <ul className="header-nav flex items-center gap-8 whitespace-nowrap font-heading text-base text-white/80 max-[1279.98px]:gap-6 max-[1279.98px]:text-[15px]">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
                 {/* hover: the label warms to the brand green — colour only, no underline rule */}
