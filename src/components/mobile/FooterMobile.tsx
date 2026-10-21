@@ -7,7 +7,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { m } from "./HeroMobile";
-import { DOCS_URL, type NavLink } from "@/lib/nav";
+import { DOCS_URL, SHOW_STORE_BADGES, X_URL, type NavLink } from "@/lib/nav";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -76,6 +76,8 @@ export function FooterMobile() {
         <p className="font-heading font-light text-white/60" style={{ marginTop: m(18), fontSize: m(14) }}>
           37 Zhiuli Shartava st., Tbilisi 2209 Georgia
         </p>
+        {/* store badges — hidden until the apps ship (see SHOW_STORE_BADGES) */}
+        {SHOW_STORE_BADGES && (
         <div className="flex flex-wrap items-center" style={{ marginTop: m(22), gap: m(12) }}>
           <a
             href="#"
@@ -122,6 +124,7 @@ export function FooterMobile() {
             </span>
           </a>
         </div>
+        )}
       </div>
 
       <div className="relative grid grid-cols-2" style={{ marginTop: m(40), columnGap: m(20), rowGap: m(36) }}>
@@ -158,7 +161,14 @@ export function FooterMobile() {
               +995 511 11 11 11
             </a>
           </p>
-          <a href="#" aria-label="usectl on X" className="inline-block opacity-60" style={{ marginTop: m(12) }}>
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="usectl on X"
+            className="inline-block opacity-60"
+            style={{ marginTop: m(12) }}
+          >
             <Image src="/footer/x-twitter.svg" alt="" width={24} height={24} style={{ width: m(17), height: m(17) }} />
           </a>
         </div>

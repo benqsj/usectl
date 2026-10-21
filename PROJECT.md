@@ -73,6 +73,12 @@ The two off-site URLs live in `src/lib/nav.ts` as `DOCS_URL` (`https://docs.usec
 - **Deliberately untouched**: the "Start now from $15 / month" pricing CTA (desktop state 8 + HeroMobile) still points at `#start`, and so does "See how it works" (`#how`) — neither was in the request.
 - Verified in Chromium against the dev server: the Documentation click opens a second tab on the docs URL with the landing page left where it was; a Start Building click lands on the real manager login; the four hash nav items still jump exactly (11439 / 3859 / 10168 / 2088) with zero page errors. `tsc` / `eslint` / `next build` clean.
 
+## Footer: X links to the real account, store badges hidden until launch (2026-10-21)
+
+- `src/lib/nav.ts` gained `X_URL` (`https://x.com/usectlcloud`) — the footer X icon in BOTH footers (`Footer.tsx`, `FooterMobile.tsx`) was a dead `href="#"`; it now opens the account in a NEW tab (`target="_blank" rel="noopener noreferrer"`, same treatment Documentation gets).
+- `SHOW_STORE_BADGES = false` in the same file hides the App Store + Google Play badges in both footers until the apps are actually published (user: "დროებით გააქრო … სანამ publish გვექნება"). The markup stays in place behind the flag — flipping it back to `true` restores both badge rows, and that is the only place to change. Their hrefs were never wired to anything, deliberately.
+- Verified on `next start` at 1920×1080 and 390×844: both footers render with zero badge elements, both X icons resolve to `https://x.com/usectlcloud`, the brand column/layout reads fine without the badge row. `tsc`/`eslint`/`next build` clean.
+
 ## Every CTA now lands on the manager, and the tab shows the brand mark (2026-10-19)
 
 - **The two remaining dead hashes are gone**: "See how it works" (`#how` — desktop state 1 + state 9, HeroMobile, burger menu) and the pricing CTA "Start now from $15 / month" (`#start` — desktop state 8 + HeroMobile) both point at `SIGNUP_URL`, same tab, exactly like Start Building (user: "see how it works, start now from აქედანაც რო გადადიოდეს იქ"). `src/` now contains ZERO `#how`/`#start` references, and the production HTML has 10 `manager.usectl.com/login` hrefs. The desktop capture-phase `onNavClick` needs no change — the hrefs no longer start with `#`, so they fall through to the browser (same path Documentation already took).

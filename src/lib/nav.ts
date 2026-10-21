@@ -7,9 +7,14 @@
 // carrying that id. `external` links leave the site instead (no state, opened in a new tab).
 export type NavLink = { label: string; href: string; state?: number; external?: boolean };
 
-// The two off-site destinations, kept here so every button/link that points at them agrees.
+// The off-site destinations, kept here so every button/link that points at them agrees.
 export const DOCS_URL = "https://docs.usectl.com/#introduction";
 export const SIGNUP_URL = "https://manager.usectl.com/login";
+export const X_URL = "https://x.com/usectlcloud";
+
+// The App Store / Google Play badges are hidden until the apps are actually published — the markup
+// stays in both footers behind this flag, so publishing is a one-line change back to `true`.
+export const SHOW_STORE_BADGES = false;
 
 export const NAV_LINKS: readonly NavLink[] = [
   { label: "The Machine", href: "#the-machine", state: 3 }, // "Give every project its own space"

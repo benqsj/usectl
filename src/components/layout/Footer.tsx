@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { s } from "@/lib/grid";
-import { DOCS_URL, type NavLink } from "@/lib/nav";
+import { DOCS_URL, SHOW_STORE_BADGES, X_URL, type NavLink } from "@/lib/nav";
 import { SceneLight } from "./SceneLight";
 
 // Footer (built 2026-09-28 against Desktop/new-version/footer/ — one 1708-wide screenshot,
@@ -66,7 +66,8 @@ export function Footer() {
           37 Zhiuli Shartava st., Tbilisi 2209 Georgia
         </p>
 
-        {/* store badges (inline art — no official assets in the repo) */}
+        {/* store badges (inline art — no official assets in the repo); hidden until the apps ship */}
+        {SHOW_STORE_BADGES && (
         <div className="flex items-center" style={{ marginTop: s(48), gap: s(20) }}>
           <a
             href="#"
@@ -113,6 +114,7 @@ export function Footer() {
             </span>
           </a>
         </div>
+        )}
       </div>
 
       {/* navigation column */}
@@ -159,7 +161,14 @@ export function Footer() {
             +995 511 11 11 11
           </a>
         </p>
-        <a href="#" aria-label="usectl on X" className="inline-block opacity-60 transition-opacity hover:opacity-100" style={{ marginTop: s(16) }}>
+        <a
+          href={X_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="usectl on X"
+          className="inline-block opacity-60 transition-opacity hover:opacity-100"
+          style={{ marginTop: s(16) }}
+        >
           <Image src="/footer/x-twitter.svg" alt="" width={24} height={24} style={{ width: s(18), height: s(18) }} />
         </a>
       </div>
